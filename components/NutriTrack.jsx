@@ -607,7 +607,7 @@ export default function App(){
   const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)'}}>
     <style>{CSS}</style>
     {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
-    {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}}
+    {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}
     {renaming && <div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
       <div onClick={()=>setRenaming(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
       <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(400px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
@@ -622,7 +622,7 @@ export default function App(){
           <button onClick={()=>{setClients(p=>p.map(x=>x.id===renaming.id?{...x,nick:renameVal}:x));setRenaming(null)}} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Сохранить</button>
         </div>
       </div>
-    </div>}}
+    </div>}
     {showNotif&&<div style={{position:'fixed',inset:0,zIndex:999,animation:'fadeIn .15s'}}>
       <div onClick={()=>setShowNotif(false)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.2)'}}/>
       <div style={{position:'absolute',top:0,right:0,bottom:0,width:'min(380px,92vw)',background:C.bg,boxShadow:C.shadowHover,overflowY:'auto',animation:'slideRight .25s',padding:24}}>
