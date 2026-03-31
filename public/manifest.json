@@ -1,0 +1,14 @@
+{
+  "name": "NutriTrack",
+  "short_name": "NutriTrack",
+  "description": "Дневник здоровья и нутрициологическое сопровождение",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F1EB",
+  "theme_color": "#2D5F3F",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
