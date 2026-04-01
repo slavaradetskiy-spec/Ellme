@@ -1,16 +1,14 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react";
+import { createClient } from '@supabase/supabase-js';
 
 // ═══ SUPABASE CLIENT ═══
 let supabase = null;
-if (typeof window !== 'undefined') {
-  try {
-    const { createClient } = require('@supabase/supabase-js');
-    const u = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const k = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (u && k && u !== 'undefined') supabase = createClient(u, k);
-  } catch(e) {}
+const sbUrl = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_URL : null;
+const sbKey = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY : null;
+if (sbUrl && sbKey && sbUrl !== 'undefined') {
+  supabase = createClient(sbUrl, sbKey);
 }
 
 // ═══ DESIGN TOKENS ═══
@@ -750,10 +748,36 @@ export default function App(){
   const dayData=activePid?getDay(activePid):{};
   const meals=dayData.meals||{};
 
+  const doRename = () => {
+    if (!renaming) return;
+    setClients(p => p.map(x => x.id === renaming.id ? Object.assign({}, x, {nick: renameVal}) : x));
+    setRenaming(null);
+  };
+
+  const markRead = (cid, cmId) => {
+    setComments(p => {
+      const list = (p[cid]||[]).map(x => x.id === cmId ? Object.assign({}, x, {read: true}) : x);
+      return Object.assign({}, p, {[cid]: list});
+    });
+  };
+
+  const toggleArchive = (clientId) => {
+    setClients(p => p.map(x => x.id === clientId ? Object.assign({}, x, {status: x.status === 'active' ? 'archive' : 'active'}) : x));
+  };
+
+  const sendComment = (clientId, dateKey, text) => {
+    const cm = {id:'cm'+Date.now(), date:dateKey, text, ts:Date.now(), read:false};
+    setComments(p => {
+      const list = [...(p[clientId]||[]), cm];
+      return Object.assign({}, p, {[clientId]: list});
+    });
+    setDocComment('');
+  };
+
   const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)'}}>
     <style>{CSS}</style>
     {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
-    {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}}
+    {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}
     {renaming && <div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
       <div onClick={()=>setRenaming(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
       <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(400px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
@@ -762,13 +786,13 @@ export default function App(){
         <input value={renameVal} onChange={e=>setRenameVal(e.target.value)} placeholder="Пометка для себя" autoFocus
           style={{width:'100%',padding:'14px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,marginBottom:14}}
           onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}
-          onKeyDown={e=>{if(e.key==='Enter'){setClients(p=>p.map(x=>x.id===renaming.id?{...x,nick:renameVal}:x));setRenaming(null)}}}/>
+          onKeyDown={e=>{if(e.key==='Enter') doRename()}}/>
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>setRenaming(null)} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
-          <button onClick={()=>{setClients(p=>p.map(x=>x.id===renaming.id?{...x,nick:renameVal}:x));setRenaming(null)}} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Сохранить</button>
+          <button onClick={doRename} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Сохранить</button>
         </div>
       </div>
-    </div>}}
+    </div>}
     {showNotif&&<div style={{position:'fixed',inset:0,zIndex:999,animation:'fadeIn .15s'}}>
       <div onClick={()=>setShowNotif(false)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.2)'}}/>
       <div style={{position:'absolute',top:0,right:0,bottom:0,width:'min(380px,92vw)',background:C.bg,boxShadow:C.shadowHover,overflowY:'auto',animation:'slideRight .25s',padding:24}}>
@@ -777,7 +801,7 @@ export default function App(){
           <IcoBtn icon={I.x} onClick={()=>setShowNotif(false)}/>
         </div>
         {(comments[user.cid]||[]).length===0?<p style={{color:C.muted,textAlign:'center',padding:40}}>Нет уведомлений</p>
-        :[...(comments[user.cid]||[])].reverse().map(c=><div key={c.id} onClick={()=>{setComments(p=>({...p,[user.cid]:(p[user.cid]||[]).map(x=>x.id===c.id?{...x,read:true}:x)}));const[y,m,day]=c.date.split('-');setDate(new Date(+y,+m-1,+day));setShowNotif(false);setScreen('home');setSelMeal(null)}} style={{padding:16,borderRadius:16,background:c.read?C.surface:C.accentSoft,boxShadow:c.read?'none':C.shadowCard,marginBottom:10,cursor:'pointer',border:`1px solid ${c.read?C.surfaceAlt:'transparent'}`}}>
+        :[...(comments[user.cid]||[])].reverse().map(c=><div key={c.id} onClick={()=>{markRead(user.cid,c.id);const ps=c.date.split('-');setDate(new Date(+ps[0],+ps[1]-1,+ps[2]));setShowNotif(false);setScreen('home');setSelMeal(null)}} style={{padding:16,borderRadius:16,background:c.read?C.surface:C.accentSoft,boxShadow:c.read?'none':C.shadowCard,marginBottom:10,cursor:'pointer',border:`1px solid ${c.read?C.surfaceAlt:'transparent'}`}}>
           <div style={{fontSize:12,color:C.muted,marginBottom:4}}>{c.date}</div>
           <p style={{fontSize:13,lineHeight:1.6,margin:0}}>{c.text}</p>
           <span style={{fontSize:12,color:C.accent,fontWeight:600,marginTop:6,display:'inline-block'}}>Перейти →</span>
@@ -845,7 +869,7 @@ export default function App(){
         <textarea value={docComment} onChange={e=>setDocComment(e.target.value)} placeholder="Напишите клиенту..." rows={3}
           style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,marginBottom:10}}
           onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
-        <button disabled={!docComment.trim()} onClick={()=>{setComments(p=>({...p,[selClient.id]:[...(p[selClient.id]||[]),{id:'cm'+Date.now(),date:key,text:docComment.trim(),ts:Date.now(),read:false}]}));setDocComment('')}} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:docComment.trim()?C.accent:'#ddd',color:docComment.trim()?'#fff':'#aaa',fontSize:14,fontWeight:600,cursor:docComment.trim()?'pointer':'default',fontFamily:'inherit'}}>Отправить</button>
+        <button disabled={!docComment.trim()} onClick={()=>sendComment(selClient.id,key,docComment.trim())} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:docComment.trim()?C.accent:'#ddd',color:docComment.trim()?'#fff':'#aaa',fontSize:14,fontWeight:600,cursor:docComment.trim()?'pointer':'default',fontFamily:'inherit'}}>Отправить</button>
         {(comments[selClient.id]||[]).filter(c=>c.date===key).map(c=><div key={c.id} style={{marginTop:10,padding:'12px 14px',borderRadius:12,background:C.surfaceAlt,fontSize:13,lineHeight:1.6}}>
           <div style={{fontSize:11,color:C.muted,marginBottom:3}}>{new Date(c.ts).toLocaleString('ru')}</div>{c.text}
         </div>)}
@@ -909,7 +933,7 @@ export default function App(){
         </button>
         <div style={{display:'flex',flexDirection:'column',gap:4}}>
           <button onClick={()=>{setRenaming(c);setRenameVal(c.nick||'')}} title="Переименовать" style={{background:C.surface,border:'none',cursor:'pointer',padding:8,borderRadius:10,color:C.muted,display:'flex',boxShadow:C.shadowCard}}>{I.edit}</button>
-          <button onClick={()=>setClients(p=>p.map(x=>x.id===c.id?{...x,status:c.status==='active'?'archive':'active'}:x))} title={c.status==='active'?'В архив':'Восстановить'} style={{background:C.surface,border:'none',cursor:'pointer',padding:8,borderRadius:10,color:c.status==='active'?C.muted:C.accent,display:'flex',boxShadow:C.shadowCard}}>{c.status==='active'?I.archive:I.restore}</button>
+          <button onClick={()=>toggleArchive(c.id)} title={c.status==='active'?'В архив':'Восстановить'} style={{background:C.surface,border:'none',cursor:'pointer',padding:8,borderRadius:10,color:c.status==='active'?C.muted:C.accent,display:'flex',boxShadow:C.shadowCard}}>{c.status==='active'?I.archive:I.restore}</button>
         </div>
       </div>)}
 
