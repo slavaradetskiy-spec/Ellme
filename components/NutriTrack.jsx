@@ -2,6 +2,17 @@
 
 import { useState, useRef, useEffect } from "react";
 
+// ═══ SUPABASE CLIENT ═══
+let supabase = null;
+if (typeof window !== 'undefined') {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const u = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const k = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (u && k && u !== 'undefined') supabase = createClient(u, k);
+  } catch(e) {}
+}
+
 // ═══ DESIGN TOKENS ═══
 const C = {
   bg:"#F4F1EB",surface:"#FFFFFF",surfaceAlt:"#EDE9E1",
@@ -503,69 +514,167 @@ function Celebration({type,onClose}){
 function Login({onLogin}){
   const[mode,setMode]=useState('auth'); // auth | register | doc
   const[authTab,setAuthTab]=useState('email');
-  const[login,setLogin]=useState('');
+  const[email,setEmail]=useState('');
+  const[phone,setPhone]=useState('');
   const[pass,setPass]=useState('');
+  const[pass2,setPass2]=useState('');
+  const[regName,setRegName]=useState('');
+  const[regEmail,setRegEmail]=useState('');
+  const[regPhone,setRegPhone]=useState('');
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState('');
+  const[success,setSuccess]=useState('');
   const[show,setShow]=useState(false);
   useEffect(()=>{setTimeout(()=>setShow(true),60)},[]);
 
   const inputStyle={width:'100%',padding:'16px 18px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:15,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text,marginBottom:12,transition:'border-color .2s'};
   const onFB=e=>e.target.style.borderColor=C.accent;
   const offFB=e=>e.target.style.borderColor=C.tileBorder;
+  const errBox = error ? <div style={{padding:'12px 16px',borderRadius:12,background:C.dangerSoft,color:C.danger,fontSize:13,marginBottom:12,animation:'enter .2s'}}>{error}</div> : null;
+  const sucBox = success ? <div style={{padding:'12px 16px',borderRadius:12,background:C.accentSoft,color:C.accent,fontSize:13,marginBottom:12,animation:'enter .2s'}}>{success}</div> : null;
 
-  return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',justifyContent:'space-between',background:C.bg,padding:'60px 24px 40px'}}>
+  // ── Sign In ──
+  const handleSignIn = async () => {
+    if (!supabase) { onLogin('client', email || phone, 'c1'); return; }
+    setLoading(true); setError('');
+    try {
+      const cred = authTab === 'email'
+        ? { email: email.trim(), password: pass }
+        : { phone: phone.trim(), password: pass };
+      const { error: err } = await supabase.auth.signInWithPassword(cred);
+      if (err) setError(err.message === 'Invalid login credentials' ? 'Неверный email или пароль' : err.message);
+    } catch(e) { setError('Ошибка подключения'); }
+    setLoading(false);
+  };
+
+  // ── Sign Up ──
+  const handleSignUp = async (role = 'client') => {
+    if (!supabase) { onLogin(role, regName || regEmail, null); return; }
+    if (pass !== pass2 && role === 'client') { setError('Пароли не совпадают'); return; }
+    setLoading(true); setError('');
+    try {
+      const signUpEmail = role === 'doc' ? email.trim() : regEmail.trim();
+      const signUpPass = pass;
+      const { error: err } = await supabase.auth.signUp({
+        email: signUpEmail,
+        password: signUpPass,
+        options: { data: { name: regName || signUpEmail, role } }
+      });
+      if (err) {
+        setError(err.message === 'User already registered' ? 'Этот email уже зарегистрирован' : err.message);
+      } else {
+        setSuccess('Проверьте почту — мы отправили ссылку для подтверждения.');
+        setError('');
+      }
+    } catch(e) { setError('Ошибка подключения'); }
+    setLoading(false);
+  };
+
+  // ── Doc Sign In ──
+  const handleDocSignIn = async () => {
+    if (!supabase) { onLogin('doc', email.trim() || 'Специалист', null); return; }
+    setLoading(true); setError('');
+    try {
+      const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
+      if (err) setError(err.message === 'Invalid login credentials' ? 'Неверный email или пароль' : err.message);
+    } catch(e) { setError('Ошибка подключения'); }
+    setLoading(false);
+  };
+
+  return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'40px 24px'}}>
     <div style={{width:'100%',maxWidth:400,margin:'0 auto',opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all .7s cubic-bezier(.16,1,.3,1)'}}>
 
       {mode==='auth'&&<>
         <h1 style={{fontFamily:'var(--fd)',fontSize:32,fontWeight:400,textAlign:'center',marginBottom:32,letterSpacing:'-.02em'}}>Авторизация</h1>
 
+        {errBox}{sucBox}
+
         <div style={{display:'flex',borderRadius:14,overflow:'hidden',background:C.surfaceAlt,marginBottom:20,padding:3}}>
           {[{id:'email',l:'Почта'},{id:'phone',l:'Телефон'}].map(t=>
-            <button key={t.id} onClick={()=>{setAuthTab(t.id);setLogin('')}} style={{flex:1,padding:'12px',border:'none',borderRadius:11,fontSize:14,fontWeight:authTab===t.id?600:400,fontFamily:'inherit',cursor:'pointer',background:authTab===t.id?C.surface:'transparent',color:authTab===t.id?C.text:C.muted,transition:'all .2s',boxShadow:authTab===t.id?C.shadowCard:'none'}}>{t.l}</button>
+            <button key={t.id} onClick={()=>{setAuthTab(t.id);setError('')}} style={{flex:1,padding:'12px',border:'none',borderRadius:11,fontSize:14,fontWeight:authTab===t.id?600:400,fontFamily:'inherit',cursor:'pointer',background:authTab===t.id?C.surface:'transparent',color:authTab===t.id?C.text:C.muted,transition:'all .2s',boxShadow:authTab===t.id?C.shadowCard:'none'}}>{t.l}</button>
           )}
         </div>
 
-        <input value={login} onChange={e=>setLogin(e.target.value)} placeholder={authTab==='email'?'Email':'Номер телефона'} type={authTab==='phone'?'tel':'email'}
-          style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+        {authTab==='email'
+          ? <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          : <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+7 999 123 4567" type="tel" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+        }
 
-        <button onClick={()=>{if(login.trim())onLogin('client',login.trim(),'c1')}} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:login.trim()?C.text:'#ccc',color:'#fff',fontSize:16,fontWeight:600,cursor:login.trim()?'pointer':'default',fontFamily:'inherit',marginBottom:20,transition:'all .2s',boxShadow:login.trim()?'0 2px 12px rgba(0,0,0,.12)':'none'}}>
-          Далее
+        <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}
+          onKeyDown={e=>{if(e.key==='Enter')handleSignIn()}}/>
+
+        <button disabled={loading} onClick={handleSignIn} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:(email.trim()||phone.trim())&&pass?C.text:'#ccc',color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:20,transition:'all .2s',boxShadow:'0 2px 12px rgba(0,0,0,.12)',opacity:loading?.7:1}}>
+          {loading?'Вхожу...':'Далее'}
         </button>
 
-        <button onClick={()=>setMode('register')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.surfaceAlt,color:C.text,fontSize:16,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+        <button onClick={()=>{setMode('register');setError('');setSuccess('')}} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.surfaceAlt,color:C.text,fontSize:16,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:16}}>
           Зарегистрироваться
         </button>
+
+        <div style={{textAlign:'center',paddingTop:8,borderTop:`1px solid ${C.tileBorder}`}}>
+          <button onClick={()=>{setMode('doc');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.accent,fontFamily:'inherit',padding:'12px 0',fontWeight:500}}>Вход для нутрициолога →</button>
+        </div>
       </>}
 
       {mode==='register'&&<div style={{animation:'enter .3s'}}>
         <h1 style={{fontFamily:'var(--fd)',fontSize:32,fontWeight:400,textAlign:'center',marginBottom:32}}>Регистрация</h1>
-        <input placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-        <input placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-        <input placeholder="Телефон" type="tel" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-        <input placeholder="Пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-        <input placeholder="Повторите пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-        <button onClick={()=>setMode('auth')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.text,color:'#fff',fontSize:16,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12}}>Создать аккаунт</button>
-        <button onClick={()=>setMode('auth')} style={{width:'100%',padding:'12px',border:'none',background:'transparent',color:C.accent,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Уже есть аккаунт? Войти</button>
+        {errBox}{sucBox}
+        {!success&&<>
+          <input value={regName} onChange={e=>setRegName(e.target.value)} placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <input value={regEmail} onChange={e=>setRegEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <input value={regPhone} onChange={e=>setRegPhone(e.target.value)} placeholder="Телефон (необязательно)" type="tel" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль (мин. 6 символов)" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <input value={pass2} onChange={e=>setPass2(e.target.value)} placeholder="Повторите пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <button disabled={loading} onClick={()=>handleSignUp('client')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.text,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:12,opacity:loading?.7:1}}>
+            {loading?'Создаю аккаунт...':'Создать аккаунт'}
+          </button>
+        </>}
+        <button onClick={()=>{setMode('auth');setError('');setSuccess('')}} style={{width:'100%',padding:'12px',border:'none',background:'transparent',color:C.accent,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+          {success?'Перейти ко входу':'Уже есть аккаунт? Войти'}
+        </button>
       </div>}
 
       {mode==='doc'&&<div style={{animation:'enter .3s'}}>
         <h1 style={{fontFamily:'var(--fd)',fontSize:28,fontWeight:400,textAlign:'center',marginBottom:8}}>Кабинет специалиста</h1>
         <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Вход для нутрициолога</p>
-        <input placeholder="Email" type="email" style={inputStyle} value={login} onChange={e=>setLogin(e.target.value)} onFocus={onFB} onBlur={offFB}/>
-        <input placeholder="Пароль" type="password" style={inputStyle} value={pass} onChange={e=>setPass(e.target.value)} onFocus={onFB} onBlur={offFB}/>
-        <button onClick={()=>{onLogin('doc',login.trim()||'Специалист',null)}} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:12,boxShadow:'0 2px 12px rgba(45,95,63,.2)'}}>Войти</button>
-        <button onClick={()=>setMode('auth')} style={{width:'100%',padding:'12px',border:'none',background:'transparent',color:C.accent,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Назад</button>
+        {errBox}{sucBox}
+        <input placeholder="Email" type="email" style={inputStyle} value={email} onChange={e=>setEmail(e.target.value)} onFocus={onFB} onBlur={offFB}/>
+        <input placeholder="Пароль" type="password" style={inputStyle} value={pass} onChange={e=>setPass(e.target.value)} onFocus={onFB} onBlur={offFB}
+          onKeyDown={e=>{if(e.key==='Enter')handleDocSignIn()}}/>
+        <button disabled={loading} onClick={handleDocSignIn} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:8,boxShadow:'0 2px 12px rgba(45,95,63,.2)',opacity:loading?.7:1}}>
+          {loading?'Вхожу...':'Войти'}
+        </button>
+        <button onClick={()=>{setMode('docReg');setError('');setSuccess('')}} style={{width:'100%',padding:'12px',border:'none',background:C.surfaceAlt,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',borderRadius:12,marginBottom:8}}>
+          Регистрация специалиста
+        </button>
+        <button onClick={()=>{setMode('auth');setError('');setSuccess('')}} style={{width:'100%',padding:'12px',border:'none',background:'transparent',color:C.accent,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Назад</button>
+      </div>}
+
+      {mode==='docReg'&&<div style={{animation:'enter .3s'}}>
+        <h1 style={{fontFamily:'var(--fd)',fontSize:28,fontWeight:400,textAlign:'center',marginBottom:8}}>Регистрация специалиста</h1>
+        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Кабинет нутрициолога</p>
+        {errBox}{sucBox}
+        {!success&&<>
+          <input value={regName} onChange={e=>setRegName(e.target.value)} placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль (мин. 6 символов)" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <input value={pass2} onChange={e=>setPass2(e.target.value)} placeholder="Повторите пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          <button disabled={loading} onClick={()=>handleSignUp('doc')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:12,opacity:loading?.7:1}}>
+            {loading?'Создаю...':'Создать аккаунт специалиста'}
+          </button>
+        </>}
+        <button onClick={()=>{setMode('doc');setError('');setSuccess('')}} style={{width:'100%',padding:'12px',border:'none',background:'transparent',color:C.accent,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
+          {success?'Перейти ко входу':'Назад'}
+        </button>
       </div>}
     </div>
-
-    {mode==='auth'&&<div style={{textAlign:'center',marginTop:32}}>
-      <button onClick={()=>setMode('doc')} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.text,fontFamily:'inherit',textDecoration:'underline',textUnderlineOffset:4}}>Вход для нутрициолога</button>
-    </div>}
   </div>;
 }
 
 // ═══ MAIN APP ═══
 export default function App(){
   const[user,setUser]=useState(null);
+  const[authLoading,setAuthLoading]=useState(!!supabase);
   const[diaries,setDiaries]=useState(mkDemo);
   const[comments,setComments]=useState(mkComments);
   const[clients,setClients]=useState(CL_INIT);
@@ -585,10 +694,47 @@ export default function App(){
   const[renameVal,setRenameVal]=useState('');
   const[profilePhoto,setProfilePhoto]=useState(null);
   const[waterNorm,setWaterNorm]=useState(2200);
-  const[celebration,setCelebration]=useState(null); // null | 'water' | 'sleep'
+  const[celebration,setCelebration]=useState(null);
 
-  const login=(r,n,c)=>{setUser({role:r,name:n,cid:c});setScreen('home')};
-  const logout=()=>{setUser(null);setScreen('home');setSelClient(null);setSelMeal(null)};
+  // ── Supabase auth listener ──
+  useEffect(() => {
+    if (!supabase) { setAuthLoading(false); return; }
+
+    const loadProfile = async (session) => {
+      if (!session?.user) { setUser(null); setAuthLoading(false); return; }
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+      if (profile) {
+        setUser({ id: profile.id, role: profile.role || 'client', name: profile.name || session.user.email, email: session.user.email, cid: profile.id, waterNorm: profile.water_norm || 2200 });
+        setWaterNorm(profile.water_norm || 2200);
+        if (profile.photo_url) setProfilePhoto(profile.photo_url);
+      } else {
+        setUser({ id: session.user.id, role: session.user.user_metadata?.role || 'client', name: session.user.user_metadata?.name || session.user.email, email: session.user.email, cid: session.user.id });
+      }
+      setAuthLoading(false);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadProfile(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const login = (r,n,c) => { setUser({role:r,name:n,cid:c}); setScreen('home'); };
+  const logout = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setUser(null); setScreen('home'); setSelClient(null); setSelMeal(null);
+  };
+
+  // ── Loading state ──
+  if (authLoading) return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
+    <div style={{textAlign:'center',animation:'enter .5s'}}>
+      <div style={{width:48,height:48,borderRadius:14,background:C.accent,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',color:'#fff'}}>{I.fork}</div>
+      <div style={{fontSize:14,color:C.muted}}>Загрузка...</div>
+    </div>
+  </div></>;
 
   if(!user) return <><style>{CSS}</style><Login onLogin={login}/></>;
 
@@ -607,7 +753,7 @@ export default function App(){
   const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)'}}>
     <style>{CSS}</style>
     {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
-    {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}
+    {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}}
     {renaming && <div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
       <div onClick={()=>setRenaming(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
       <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(400px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
@@ -622,7 +768,7 @@ export default function App(){
           <button onClick={()=>{setClients(p=>p.map(x=>x.id===renaming.id?{...x,nick:renameVal}:x));setRenaming(null)}} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Сохранить</button>
         </div>
       </div>
-    </div>}
+    </div>}}
     {showNotif&&<div style={{position:'fixed',inset:0,zIndex:999,animation:'fadeIn .15s'}}>
       <div onClick={()=>setShowNotif(false)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.2)'}}/>
       <div style={{position:'absolute',top:0,right:0,bottom:0,width:'min(380px,92vw)',background:C.bg,boxShadow:C.shadowHover,overflowY:'auto',animation:'slideRight .25s',padding:24}}>
