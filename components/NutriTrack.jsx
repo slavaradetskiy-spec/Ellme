@@ -30,7 +30,8 @@ const DS=["Вс","Пн","Вт","Ср","Чт","Пт","Сб"];
 const dk=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const sameD=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
 const ago=n=>{const d=new Date();d.setDate(d.getDate()-n);return d};
-const fmtD=d=>`${d.getDate()} ${MO[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
+const MO_R=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+const fmtD=d=>`${d.getDate()} ${MO_R[d.getMonth()]} ${d.getFullYear()}`;
 const daysBetween=(a,b)=>Math.floor((b-a)/(1000*60*60*24));
 
 const MEALS=[
@@ -117,7 +118,7 @@ function mkComments(){return{c1:[{id:"cm1",date:dk(ago(1)),text:"Анна, хо�
 
 // ═══ PRIMITIVES ═══
 function TopBar({left,title,right}){
-  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52}}>
+  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:`1px solid ${C.surfaceAlt}`}}>
     <div style={{width:44,display:'flex',justifyContent:'flex-start'}}>{left}</div>
     <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text}}>{title}</div>
     <div style={{width:44,display:'flex',justifyContent:'flex-end'}}>{right}</div>
@@ -342,12 +343,12 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
     <SecCard icon={I.moon} title="Сон">
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <div style={{display:'flex',alignItems:'center',gap:6}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><Lbl>Подъём</Lbl></div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><Lbl>Подъём сегодня</Lbl></div>
           {dis?<span style={{fontSize:14,fontWeight:500,color:d.sleep?.wake?C.text:C.muted}}>{d.sleep?.wake||'—'}</span>
             :<input type="time" value={d.sleep?.wake||''} onChange={e=>{const ns={...(d.sleep||{}),wake:e.target.value};upd('sleep',ns);checkSleep(ns)}} style={{padding:'10px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,outline:'none',color:d.sleep?.wake?C.text:C.muted,width:140}}/>}
         </div>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <div style={{display:'flex',alignItems:'center',gap:6}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><Lbl>Отход ко сну</Lbl></div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><Lbl>Отход ко сну вчера</Lbl></div>
           {dis?<span style={{fontSize:14,fontWeight:500,color:d.sleep?.bed?C.text:C.muted}}>{d.sleep?.bed||'—'}</span>
             :<input type="time" value={d.sleep?.bed||''} onChange={e=>{const ns={...(d.sleep||{}),bed:e.target.value};upd('sleep',ns);checkSleep(ns)}} style={{padding:'10px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,outline:'none',color:d.sleep?.bed?C.text:C.muted,width:140}}/>}
         </div>
@@ -448,7 +449,12 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       {inp('Имя и фамилия',name,setName)}
       <div style={{display:'flex',gap:10}}>
         <div style={{flex:1}}>{inp('Возраст',age,setAge)}</div>
-        <div style={{flex:1}}>{inp('Пол',gender,setGender)}</div>
+        <div style={{flex:1}}>
+          <Lbl>Пол</Lbl>
+          <div style={{display:'flex',gap:6}}>
+            {['Мужской','Женский'].map(g=><button key={g} onClick={()=>setGender(g)} style={{flex:1,padding:'12px',borderRadius:14,border:`1.5px solid ${gender===g?C.accent:C.tileBorder}`,background:gender===g?C.accentSoft:C.surface,color:gender===g?C.accent:C.soft,fontSize:14,fontWeight:gender===g?600:400,cursor:'pointer',fontFamily:'inherit',transition:'all .15s'}}>{g}</button>)}
+          </div>
+        </div>
       </div>
       {inp('Email',email,setEmail)}
       {inp('Телефон',phone,setPhone)}
@@ -733,9 +739,9 @@ function Login({onLogin}){
 export default function App(){
   const[user,setUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(!!supabase);
-  const[diaries,setDiaries]=useState(mkDemo);
-  const[comments,setComments]=useState(mkComments);
-  const[clients,setClients]=useState(CL_INIT);
+  const[diaries,setDiaries]=useState({});
+  const[comments,setComments]=useState({});
+  const[clients,setClients]=useState([]);
   const[date,setDate]=useState(new Date());
   const[lb,setLb]=useState(null);
 
@@ -991,7 +997,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={null} title="NutriTrack" right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+    <TopBar left={null} title="ELLME" right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <SecCard icon={I.fork} title="Приёмы пищи">
@@ -1069,7 +1075,7 @@ export default function App(){
     const invLink=`nutritrack.app/invite/${Math.random().toString(36).slice(2,8)}`;
 
     return shell(<>
-      <TopBar left={null} title="NutriTrack" right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
+      <TopBar left={null} title="ELLME" right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
 
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
