@@ -1,7 +1,7 @@
 {
-  "name": "NutriTrack",
-  "short_name": "NutriTrack",
-  "description": "Дневник здоровья и нутрициологическое сопровождение",
+  "name": "ELLME – дневник питания",
+  "short_name": "ELLME",
+  "description": "Пространство осознанного отношения к себе, своему здоровью и питанию",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F4F1EB",
