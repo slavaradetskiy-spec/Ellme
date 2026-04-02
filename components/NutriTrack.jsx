@@ -595,12 +595,16 @@ function Login({onLogin}){
     });
   };
 
-  // ── OAuth: Yandex (custom flow) ──
-  const handleYandex = () => {
-    const clientId = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_YANDEX_CLIENT_ID : null;
-    if (!clientId) { setError('Яндекс ID не настроен'); return; }
-    const redirectUri = encodeURIComponent(window.location.origin + '/auth/yandex/callback');
-    window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redirectUri;
+  // ── OAuth: Yandex (via Supabase custom provider) ──
+  const handleYandex = async () => {
+    if (!supabase) { setError('Сервис недоступен'); return; }
+    setLoading(true);
+    const { error: err } = await supabase.auth.signInWithOAuth({
+      provider: 'custom:yandex',
+      options: { redirectTo: window.location.origin + '/' }
+    });
+    if (err) setError(err.message);
+    setLoading(false);
   };
 
   // ── OAuth Buttons ──
@@ -756,25 +760,111 @@ export default function App(){
 
     const loadProfile = async (session) => {
       if (!session?.user) { setUser(null); setAuthLoading(false); return; }
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-      if (profile) {
-        setUser({ id: profile.id, role: profile.role || 'client', name: profile.name || session.user.email, email: session.user.email, cid: profile.id, waterNorm: profile.water_norm || 2200 });
-        setWaterNorm(profile.water_norm || 2200);
-        if (profile.photo_url) setProfilePhoto(profile.photo_url);
-      } else {
-        setUser({ id: session.user.id, role: session.user.user_metadata?.role || 'client', name: session.user.user_metadata?.name || session.user.email, email: session.user.email, cid: session.user.id });
+      const u = session.user;
+      const authEmail = u.email || u.user_metadata?.email || '';
+      const authName = u.user_metadata?.name || u.user_metadata?.full_name || authEmail.split('@')[0] || '';
+      const authRole = u.user_metadata?.role || 'client';
+
+      // Load or create profile
+      let { data: profile } = await supabase.from('profiles').select('*').eq('id', u.id).single();
+
+      if (!profile) {
+        // Profile trigger may not have fired yet, create manually
+        await supabase.from('profiles').upsert({ id: u.id, role: authRole, name: authName, email: authEmail });
+        profile = { id: u.id, role: authRole, name: authName, email: authEmail, water_norm: 2200 };
       }
+
+      // Update email in profile if it was empty (OAuth login)
+      if (authEmail && !profile.email) {
+        await supabase.from('profiles').update({ email: authEmail, name: authName || profile.name }).eq('id', u.id);
+        profile.email = authEmail;
+        if (authName) profile.name = authName;
+      }
+
+      setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200 });
+      setWaterNorm(profile.water_norm || 2200);
+      if (profile.photo_url) setProfilePhoto(profile.photo_url);
       setAuthLoading(false);
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      loadProfile(session);
-    });
-
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => loadProfile(session));
     return () => subscription.unsubscribe();
   }, []);
+
+  // ── Database: load day ──
+  const loadDayFromDb = async (pid, dateStr) => {
+    if (!supabase || !pid) return null;
+    try {
+      const { data: day } = await supabase.from('diary_days').select('*').eq('user_id', pid).eq('date', dateStr).single();
+      if (!day) return {};
+      // Load meals for this day
+      const { data: mealRows } = await supabase.from('meals').select('*').eq('diary_day_id', day.id);
+      const meals = {};
+      (mealRows || []).forEach(m => {
+        meals[m.meal_type] = { time: m.time, hunger: m.hunger, text: m.description, feeling: m.feeling, feelingNote: m.feeling_note, photo: m.photo_url };
+      });
+      return {
+        meals, water: day.water_ml || 0, supplements: day.supplements || '',
+        sleep: { wake: day.sleep_wake, bed: day.sleep_bed, quality: day.sleep_quality },
+        movement: day.movement || '',
+        stress: { level: day.stress_level, practices: day.stress_practices || '' },
+        stoolState: day.stool_state, stoolNote: day.stool_note || '',
+        well: { energy: day.energy, mood: day.mood, comment: day.day_comment || '' },
+        _dayId: day.id,
+      };
+    } catch(e) { return {}; }
+  };
+
+  // ── Database: save day ──
+  const saveDayToDb = async (pid, dateStr, dayData) => {
+    if (!supabase || !pid) return;
+    try {
+      const payload = {
+        user_id: pid, date: dateStr,
+        water_ml: dayData.water || 0, supplements: dayData.supplements || '',
+        sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
+        movement: dayData.movement || '',
+        stress_level: dayData.stress?.level || null, stress_practices: dayData.stress?.practices || '',
+        stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
+        energy: dayData.well?.energy || null, mood: dayData.well?.mood != null ? dayData.well.mood : null,
+        day_comment: dayData.well?.comment || '',
+        updated_at: new Date().toISOString(),
+      };
+      const { data: day } = await supabase.from('diary_days').upsert(payload, { onConflict: 'user_id,date' }).select().single();
+      if (!day) return;
+      // Save meals
+      const meals = dayData.meals || {};
+      for (const mealType of Object.keys(meals)) {
+        const m = meals[mealType];
+        if (!m) continue;
+        await supabase.from('meals').upsert({
+          diary_day_id: day.id, meal_type: mealType,
+          time: m.time || null, hunger: m.hunger || null,
+          description: m.text || '', feeling: m.feeling || null,
+          feeling_note: m.feelingNote || '', photo_url: m.photo || null,
+        }, { onConflict: 'diary_day_id,meal_type' });
+      }
+    } catch(e) { console.error('Save error:', e); }
+  };
+
+  // ── Load day data on date change ──
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+    const pid = isDoc ? (screen === 'myDiary' ? user.id : selClient?.id) : user.id;
+    if (!pid) return;
+    const dateStr = dk(date);
+    loadDayFromDb(pid, dateStr).then(data => {
+      if (data && Object.keys(data).length > 0) {
+        setDiaries(p => {
+          const updated = Object.assign({}, p);
+          if (!updated[pid]) updated[pid] = {};
+          updated[pid][dateStr] = data;
+          return updated;
+        });
+      }
+    });
+  }, [date, user?.id, screen, selClient?.id]);
 
   const login = (r,n,c) => { setUser({role:r,name:n,cid:c}); setScreen('home'); };
   const logout = async () => {
@@ -795,9 +885,26 @@ export default function App(){
   const isDoc=user.role==='doc';
   const key=dk(date);
   const getDay=pid=>(diaries[pid]||{})[key]||{};
-  const setDay=(pid,val)=>setDiaries(p=>({...p,[pid]:{...(p[pid]||{}),[key]:val}}));
+  const setDay=(pid,val)=>{
+    setDiaries(p => {
+      const updated = Object.assign({}, p);
+      if (!updated[pid]) updated[pid] = {};
+      updated[pid] = Object.assign({}, updated[pid]);
+      updated[pid][key] = val;
+      return updated;
+    });
+    // Auto-save to database (debounced)
+    if (supabase && pid && pid !== 'doc') {
+      clearTimeout(window._saveTimer);
+      window._saveTimer = setTimeout(() => saveDayToDb(pid, key, val), 1500);
+    }
+    if (supabase && pid === 'doc' && user?.id) {
+      clearTimeout(window._saveTimer);
+      window._saveTimer = setTimeout(() => saveDayToDb(user.id, key, val), 1500);
+    }
+  };
 
-  const activePid=isDoc?(screen==='myDiary'?'doc':selClient?.id||null):(user.cid||'c1');
+  const activePid=isDoc?(screen==='myDiary'?user?.id:selClient?.id||null):(user?.id||user?.cid||'c1');
   const dis=isDoc&&screen==='clientView';
   const unread=!isDoc?(comments[user.cid]||[]).filter(c=>!c.read).length:0;
 
@@ -808,6 +915,13 @@ export default function App(){
     if (!renaming) return;
     setClients(p => p.map(x => x.id === renaming.id ? Object.assign({}, x, {nick: renameVal}) : x));
     setRenaming(null);
+  };
+
+  const updateMeal = (pid, mealId, val) => {
+    const day = getDay(pid);
+    const updatedMeals = Object.assign({}, day.meals || {});
+    updatedMeals[mealId] = val;
+    setDay(pid, Object.assign({}, day, { meals: updatedMeals }));
   };
 
   const markRead = (cid, cmId) => {
@@ -872,7 +986,7 @@ export default function App(){
 
   // ═══ CLIENT — MEAL DETAIL ═══
   if(!isDoc&&selMeal)return shell(<>
-    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={meals[selMeal]} onChange={v=>setDay(activePid,{...dayData,meals:{...meals,[selMeal]:v}})} onZoom={setLb} onBack={()=>setSelMeal(null)} dis={false}/>
+    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={meals[selMeal]} onChange={v=>updateMeal(activePid,selMeal,v)} onZoom={setLb} onBack={()=>setSelMeal(null)} dis={false}/>
   </>);
 
   // ═══ CLIENT — HOME ═══
@@ -897,7 +1011,7 @@ export default function App(){
 
   // My diary meal detail
   if(isDoc&&screen==='myMealDetail'&&selMeal)return shell(<>
-    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay('doc').meals||{})[selMeal]} onChange={v=>setDay('doc',{...getDay('doc'),meals:{...(getDay('doc').meals||{}),[selMeal]:v}})} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('myDiary')}} dis={false}/>
+    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay('doc').meals||{})[selMeal]} onChange={v=>updateMeal('doc',selMeal,v)} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('myDiary')}} dis={false}/>
   </>);
 
   // Client diary view
