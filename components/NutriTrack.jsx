@@ -117,10 +117,13 @@ function mkDemo(){
 function mkComments(){return{c1:[{id:"cm1",date:dk(ago(1)),text:"Анна, хороший день! После борща тяжесть — уменьшите порцию хлеба. Калораж ~1650 — в норме.",ts:Date.now()-86400000,read:false}],c2:[{id:"cm3",date:dk(new Date()),text:"Калораж ~2800 — отлично. Добавьте овощи к завтраку.",ts:Date.now()-3600000,read:false}],c3:[]};}
 
 // ═══ PRIMITIVES ═══
-function TopBar({left,title,right}){
+function TopBar({left,title,subtitle,right}){
   return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:`1px solid ${C.surfaceAlt}`}}>
     <div style={{width:44,display:'flex',justifyContent:'flex-start'}}>{left}</div>
-    <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text}}>{title}</div>
+    <div style={{textAlign:'center'}}>
+      <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text}}>{title}</div>
+      {subtitle&&<div style={{fontSize:10,color:C.muted,letterSpacing:'.08em',textTransform:'uppercase',marginTop:1}}>{subtitle}</div>}
+    </div>
     <div style={{width:44,display:'flex',justifyContent:'flex-end'}}>{right}</div>
   </div>;
 }
@@ -405,7 +408,7 @@ function Cal({sel,onSelect}){
 }
 
 // ═══ PROFILE PAGE ═══
-function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNormChange}){
+function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNormChange,onZoom}){
   const[name,setName]=useState(user.name||'');
   const[email,setEmail]=useState('');
   const[phone,setPhone]=useState('');
@@ -430,17 +433,16 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     <TopBar left={<BackBtn onClick={onBack}/>} title="Профиль" right={null}/>
     <div style={{textAlign:'center',marginBottom:24}}>
       <input ref={avatarRef} type="file" accept="image/*" onChange={handleAvatar} style={{display:'none'}}/>
-      <div onClick={()=>avatarRef.current?.click()} style={{width:88,height:88,borderRadius:26,background:photo?'transparent':C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',color:C.accent,boxShadow:'0 6px 24px rgba(45,95,63,.15)',cursor:'pointer',overflow:'hidden',position:'relative',transition:'transform .3s,box-shadow .3s',animation:'pulseGlow 3s ease infinite'}}
-        onMouseOver={e=>{e.currentTarget.style.transform='scale(1.05)';e.currentTarget.style.boxShadow='0 8px 32px rgba(45,95,63,.2)'}}
-        onMouseOut={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 6px 24px rgba(45,95,63,.15)'}}>
+      <div style={{position:'relative',width:110,height:110,margin:'0 auto 12px'}}>
+        <div onClick={()=>photo?onZoom(photo):avatarRef.current?.click()} style={{width:110,height:110,borderRadius:30,background:photo?'transparent':C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,boxShadow:'0 6px 24px rgba(45,95,63,.15)',cursor:'pointer',overflow:'hidden',transition:'transform .3s,box-shadow .3s'}}
+        onMouseOver={e=>{e.currentTarget.style.transform='scale(1.05)'}}
+        onMouseOut={e=>{e.currentTarget.style.transform='scale(1)'}}>
         {photo
           ? <img src={photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
           : isDoc?I.steth:I.user
         }
-        <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.3)',display:'flex',alignItems:'center',justifyContent:'center',opacity:0,transition:'opacity .2s'}}
-          onMouseOver={e=>e.currentTarget.style.opacity='1'} onMouseOut={e=>e.currentTarget.style.opacity='0'}>
-          <span style={{color:'#fff',display:'flex'}}>{I.cam}</span>
         </div>
+        <button onClick={()=>avatarRef.current?.click()} style={{position:'absolute',bottom:0,right:0,width:32,height:32,borderRadius:10,background:C.accent,border:'3px solid '+C.bg,color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>{I.cam}</button>
       </div>
       <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>{name}</div>
       <div style={{fontSize:13,color:C.muted}}>{isDoc?'Специалист':'Клиент'}</div>
@@ -459,7 +461,10 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
         </div>
       </div>
       {inp('Email',email,setEmail)}
-      {inp('Телефон',phone,setPhone)}
+      <div style={{marginBottom:16}}>
+        <Lbl>Телефон</Lbl>
+        <input value={phone} onChange={e=>{let v=e.target.value.replace(/\D/g,'');if(v.startsWith('8'))v='7'+v.slice(1);if(v.length>11)v=v.slice(0,11);let f='';if(v.length>0)f='+'+v[0];if(v.length>1)f+=' ('+v.slice(1,4);if(v.length>4)f+=') '+v.slice(4,7);if(v.length>7)f+='-'+v.slice(7,9);if(v.length>9)f+='-'+v.slice(9,11);setPhone(f)}} placeholder="+7 (999) 123-45-67" type="tel" style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
+      </div>
       <div style={{display:'flex',gap:10}}>
         <div style={{flex:1}}>{inp('Рост, см',height,setHeight)}</div>
         <div style={{flex:1}}>{inp('Вес, кг',weight,setWeight)}</div>
@@ -773,7 +778,8 @@ export default function App(){
   const[profilePhoto,setProfilePhoto]=useState(null);
   const[waterNorm,setWaterNorm]=useState(2200);
   const[celebration,setCelebration]=useState(null);
-  const[clientMenu,setClientMenu]=useState(null); // client id for open menu
+  const[clientMenu,setClientMenu]=useState(null);
+  const[clientProfileData,setClientProfileData]=useState(null); // client id for open menu
 
   // ── Supabase auth listener ──
   useEffect(() => {
@@ -1006,11 +1012,20 @@ export default function App(){
         </div>)}
       </div>
     </div>}
-    <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>{ch}</div>
+    <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>
+      {ch}
+      <footer style={{marginTop:40,padding:'20px 0',borderTop:`1px solid ${C.surfaceAlt}`,textAlign:'center',fontSize:12,color:C.muted,lineHeight:2}}>
+        <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.accent,textDecoration:'none',fontWeight:500}}>radema.ru</a></div>
+        <div style={{display:'flex',justifyContent:'center',gap:16,marginTop:4}}>
+          <a href="/privacy" style={{color:C.muted,textDecoration:'none'}}>Политика конфиденциальности</a>
+          <a href="/terms" style={{color:C.muted,textDecoration:'none'}}>Оферта</a>
+        </div>
+      </footer>
+    </div>
   </div>;
 
   // ═══ PROFILE ═══
-  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={setProfilePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm}/>);
+  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={setProfilePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb}/>);
 
   // ═══ CLIENT — MEAL DETAIL ═══
   if(!isDoc&&selMeal)return shell(<>
@@ -1019,7 +1034,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={null} title="ELLME" right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+    <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <SecCard icon={I.fork} title="Приёмы пищи">
@@ -1037,6 +1052,29 @@ export default function App(){
     <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay(selClient.id).meals||{})[selMeal]} onChange={()=>{}} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('clientView')}} dis={true}/>
   </>);
 
+  // Client profile (read-only)
+  if(isDoc&&screen==='clientProfile'&&selClient){
+    if(!clientProfileData&&supabase){supabase.from('profiles').select('*').eq('id',selClient.id).single().then(({data})=>{if(data)setClientProfileData(data)});}
+    const cp=clientProfileData;
+    return shell(<div style={{animation:'slideRight .3s ease'}}>
+      <TopBar left={<BackBtn onClick={()=>{setScreen('clientView');setClientProfileData(null)}}/>} title="Профиль клиента" right={null}/>
+      <div style={{textAlign:'center',marginBottom:20}}>
+        <div style={{width:72,height:72,borderRadius:22,background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:28,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>
+        <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>{selClient.nick||selClient.name}</div>
+        {selClient.nick&&<div style={{fontSize:13,color:C.muted}}>{selClient.name}</div>}
+      </div>
+      <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard}}>
+        {[['Email',cp?.email],['Телефон',cp?.phone],['Возраст',cp?.age?cp.age+' лет':null],['Пол',cp?.gender],['Рост',cp?.height_cm?cp.height_cm+' см':null],['Вес',cp?.weight_kg?cp.weight_kg+' кг':null],['Норма воды',cp?.water_norm?cp.water_norm+' мл/день':null],['Запрос',cp?.request]].map(([label,val])=>
+          <div key={label} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:`1px solid ${C.surfaceAlt}`}}>
+            <span style={{fontSize:13,color:C.muted}}>{label}</span>
+            <span style={{fontSize:14,fontWeight:500,color:val?C.text:C.muted}}>{val||'—'}</span>
+          </div>
+        )}
+        <div style={{fontSize:11,color:C.muted,marginTop:12}}>Зарегистрирован: {cp?.created_at?new Date(cp.created_at).toLocaleDateString('ru'):'—'}</div>
+      </div>
+    </div>);
+  }
+
   // My diary meal detail
   if(isDoc&&screen==='myMealDetail'&&selMeal)return shell(<>
     <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay('doc').meals||{})[selMeal]} onChange={v=>updateMeal('doc',selMeal,v)} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('myDiary')}} dis={false}/>
@@ -1046,13 +1084,14 @@ export default function App(){
   if(isDoc&&screen==='clientView'&&selClient){
     const cd=getDay(selClient.id),cm=cd.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('')}}/>} title={selClient.nick||selClient.name} right={null}/>
+      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('')}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>setScreen('clientProfile')}/>}/>
       <div style={{background:C.surface,borderRadius:16,padding:'12px 16px',marginBottom:12,boxShadow:C.shadowCard,display:'flex',alignItems:'center',gap:12}}>
         <div style={{width:40,height:40,borderRadius:12,background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>
         <div style={{flex:1}}>
           <div style={{fontSize:13,color:C.soft}}>{selClient.request} · {selClient.age} лет</div>
           <div style={{fontSize:11,color:C.muted}}>Работает {daysBetween(selClient.joined,new Date())} дн.</div>
         </div>
+        <button onClick={()=>setScreen('clientProfile')} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',padding:'6px 12px',borderRadius:8,fontSize:12,color:C.accent,fontFamily:'inherit',fontWeight:500}}>Профиль</button>
       </div>
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
@@ -1094,10 +1133,10 @@ export default function App(){
   if(isDoc&&screen==='home'){
     const active=clients.filter(c=>c.status==='active'),archive=clients.filter(c=>c.status==='archive');
     const list=docTab==='active'?active:archive;
-    const invLink=`nutritrack.app/invite/${Math.random().toString(36).slice(2,8)}`;
+    const invLink=`https://ellme.ru/i/${Math.random().toString(36).slice(2,8)}`;
 
     return shell(<>
-      <TopBar left={null} title="ELLME" right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
+      <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
 
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
