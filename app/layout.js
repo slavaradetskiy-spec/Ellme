@@ -1,15 +1,15 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'NutriTrack — Дневник здоровья',
-  description: 'Платформа нутрициологического сопровождения',
+  title: 'ELLME – дневник питания',
+  description: 'Пространство осознанного отношения к себе, своему здоровью и питанию. Подходит для самостоятельного ведения или совместной работы с нутрициологом.',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
   manifest: '/manifest.json',
   themeColor: '#2D5F3F',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'NutriTrack',
+    title: 'ELLME',
   },
 }
 
