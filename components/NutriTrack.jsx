@@ -415,10 +415,12 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   const[gender,setGender]=useState('');
   const[request,setRequest]=useState('');
   const[wn,setWn]=useState(String(waterNorm||2200));
+  const[saved,setSaved]=useState(false);
   const isDoc=user.role==='doc';
   const avatarRef=useRef(null);
   const handleAvatar=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>onPhotoChange(ev.target.result);r.readAsDataURL(f);e.target.value='';};
-
+  useEffect(()=>{if(!supabase||!user?.id)return;supabase.from('profiles').select('*').eq('id',user.id).single().then(({data:p})=>{if(!p)return;if(p.email)setEmail(p.email);if(p.phone)setPhone(p.phone);if(p.age)setAge(String(p.age));if(p.gender)setGender(p.gender);if(p.height_cm)setHeight(String(p.height_cm));if(p.weight_kg)setWeight(String(p.weight_kg));if(p.request)setRequest(p.request);});},[user?.id]);
+  const saveProfile=async()=>{if(!supabase||!user?.id)return;const wnVal=parseInt(wn)||2200;await supabase.from('profiles').update({name,email,phone,age:parseInt(age)||null,gender,height_cm:parseInt(height)||null,weight_kg:parseFloat(weight)||null,request,water_norm:wnVal,updated_at:new Date().toISOString()}).eq('id',user.id);onWaterNormChange(wnVal);setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const inp=(label,val,set)=><div style={{marginBottom:16}}>
     <Lbl>{label}</Lbl>
     <input value={val} onChange={e=>set(e.target.value)} style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
@@ -470,6 +472,9 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
         </div>
       </div>}
       {!isDoc&&<>{inp('Основной запрос',request,setRequest)}</>}
+      <button onClick={saveProfile} style={{width:'100%',padding:'14px',borderRadius:14,border:'none',background:saved?C.accentSoft:C.accent,color:saved?C.accent:'#fff',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:4,transition:'all .3s',boxShadow:saved?'none':'0 2px 8px rgba(45,95,63,.2)'}}>
+        {saved?'Сохранено ✓':'Сохранить'}
+      </button>
     </div>
 
     <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard,marginTop:12}}>
@@ -525,6 +530,7 @@ function Login({onLogin}){
   const[loading,setLoading]=useState(false);
   const[error,setError]=useState('');
   const[success,setSuccess]=useState('');
+  const[consent,setConsent]=useState(false);
   const[show,setShow]=useState(false);
   useEffect(()=>{setTimeout(()=>setShow(true),60)},[]);
 
@@ -565,13 +571,21 @@ function Login({onLogin}){
     setLoading(false);
   };
 
-  // ── Doc Sign In ──
+  // ── Doc Sign In (checks role after login) ──
   const handleDocSignIn = async () => {
     if (!supabase) { onLogin('doc', email.trim() || 'Специалист', null); return; }
     setLoading(true); setError('');
     try {
-      const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
-      if (err) setError(err.message === 'Invalid login credentials' ? 'Неверный email или пароль' : err.message);
+      const { data, error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
+      if (err) { setError(err.message === 'Invalid login credentials' ? 'Неверный email или пароль' : err.message); setLoading(false); return; }
+      // Check if user is actually a doc
+      if (data?.user) {
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
+        if (profile && profile.role !== 'doc') {
+          setError('Этот аккаунт зарегистрирован как клиент. Используйте форму входа для клиентов.');
+          await supabase.auth.signOut();
+        }
+      }
     } catch(e) { setError('Ошибка подключения'); }
     setLoading(false);
   };
@@ -601,16 +615,12 @@ function Login({onLogin}){
     });
   };
 
-  // ── OAuth: Yandex (via Supabase custom provider) ──
-  const handleYandex = async () => {
-    if (!supabase) { setError('Сервис недоступен'); return; }
-    setLoading(true);
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'custom:yandex',
-      options: { redirectTo: window.location.origin + '/' }
-    });
-    if (err) setError(err.message);
-    setLoading(false);
+  // ── OAuth: Yandex (via server route) ──
+  const handleYandex = () => {
+    const clientId = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_YANDEX_CLIENT_ID : null;
+    if (!clientId) { setError('Яндекс ID не настроен'); return; }
+    const redir = encodeURIComponent(window.location.origin + '/auth/yandex/callback');
+    window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir;
   };
 
   // ── OAuth Buttons ──
@@ -670,7 +680,11 @@ function Login({onLogin}){
           <input value={regEmail} onChange={e=>setRegEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
           <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль (мин. 6 символов)" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
           <input value={pass2} onChange={e=>setPass2(e.target.value)} placeholder="Повторите пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-          <button disabled={loading} onClick={()=>handleSignUp('client')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.text,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:12,opacity:loading?.7:1}}>
+          <label style={{display:'flex',gap:10,alignItems:'flex-start',marginBottom:14,cursor:'pointer',fontSize:13,color:C.soft,lineHeight:1.5}}>
+            <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} style={{marginTop:3,accentColor:C.accent,width:18,height:18,flexShrink:0}}/>
+            <span>Я даю согласие на обработку персональных данных и принимаю <a href="/privacy" target="_blank" style={{color:C.accent}}>политику конфиденциальности</a></span>
+          </label>
+          <button disabled={loading||!consent} onClick={()=>handleSignUp('client')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:consent?C.text:'#ccc',color:'#fff',fontSize:16,fontWeight:600,cursor:(loading||!consent)?'default':'pointer',fontFamily:'inherit',marginBottom:12,opacity:loading?.7:1}}>
             {loading?'Создаю аккаунт...':'Создать аккаунт'}
           </button>
         </>}
@@ -759,6 +773,7 @@ export default function App(){
   const[profilePhoto,setProfilePhoto]=useState(null);
   const[waterNorm,setWaterNorm]=useState(2200);
   const[celebration,setCelebration]=useState(null);
+  const[clientMenu,setClientMenu]=useState(null); // client id for open menu
 
   // ── Supabase auth listener ──
   useEffect(() => {
@@ -941,6 +956,13 @@ export default function App(){
     setClients(p => p.map(x => x.id === clientId ? Object.assign({}, x, {status: x.status === 'active' ? 'archive' : 'active'}) : x));
   };
 
+  const deleteClient = (clientId) => {
+    if (confirm('Удалить клиента? Это действие нельзя отменить.')) {
+      setClients(p => p.filter(x => x.id !== clientId));
+    }
+    setClientMenu(null);
+  };
+
   const sendComment = (clientId, dateKey, text) => {
     const cm = {id:'cm'+Date.now(), date:dateKey, text, ts:Date.now(), read:false};
     setComments(p => {
@@ -1107,9 +1129,16 @@ export default function App(){
           </div>
           <span style={{color:C.muted,display:'flex'}}>{I.chev}</span>
         </button>
-        <div style={{display:'flex',flexDirection:'column',gap:4}}>
-          <button onClick={()=>{setRenaming(c);setRenameVal(c.nick||'')}} title="Переименовать" style={{background:C.surface,border:'none',cursor:'pointer',padding:8,borderRadius:10,color:C.muted,display:'flex',boxShadow:C.shadowCard}}>{I.edit}</button>
-          <button onClick={()=>toggleArchive(c.id)} title={c.status==='active'?'В архив':'Восстановить'} style={{background:C.surface,border:'none',cursor:'pointer',padding:8,borderRadius:10,color:c.status==='active'?C.muted:C.accent,display:'flex',boxShadow:C.shadowCard}}>{c.status==='active'?I.archive:I.restore}</button>
+        <div style={{position:'relative'}}>
+          <button onClick={e=>{e.stopPropagation();setClientMenu(clientMenu===c.id?null:c.id)}} style={{background:C.surface,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.muted,display:'flex',boxShadow:C.shadowCard,fontSize:18,lineHeight:1}}>⋮</button>
+          {clientMenu===c.id&&<div style={{position:'absolute',right:0,top:44,background:C.surface,borderRadius:14,boxShadow:C.shadowHover,padding:6,zIndex:50,width:180,animation:'scaleIn .15s ease'}}>
+            <button onClick={()=>{setRenaming(c);setRenameVal(c.nick||'');setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
+              onMouseOver={e=>e.currentTarget.style.background=C.surfaceAlt} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{I.edit} Переименовать</button>
+            <button onClick={()=>{toggleArchive(c.id);setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
+              onMouseOver={e=>e.currentTarget.style.background=C.surfaceAlt} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{c.status==='active'?I.archive:I.restore} {c.status==='active'?'В архив':'В активные'}</button>
+            <button onClick={()=>deleteClient(c.id)} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.danger,display:'flex',alignItems:'center',gap:8}}
+              onMouseOver={e=>e.currentTarget.style.background=C.dangerSoft} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{I.x} Удалить</button>
+          </div>}
         </div>
       </div>)}
 
