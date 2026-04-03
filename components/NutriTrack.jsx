@@ -424,7 +424,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   const[pw1,setPw1]=useState('');const[pw2,setPw2]=useState('');const[pw3,setPw3]=useState('');
   const[showPw1,setShowPw1]=useState(false);const[showPw2,setShowPw2]=useState(false);const[showPw3,setShowPw3]=useState(false);
   const[pwMsg,setPwMsg]=useState('');const[pwErr,setPwErr]=useState('');const[pwLoading,setPwLoading]=useState(false);
-  const[supportText,setSupportText]=useState('');const[supportFile,setSupportFile]=useState(null);const[supportSent,setSupportSent]=useState(false);const[supportLoading,setSupportLoading]=useState(false);
+  const[supportText,setSupportText]=useState('');const[supportFile,setSupportFile]=useState(null);const[supportSent,setSupportSent]=useState(false);const[supportLoading,setSupportLoading]=useState(false);const[showSupport,setShowSupport]=useState(false);
   const supportFileRef=useRef(null);
   const isDoc=user.role==='doc';
   const avatarRef=useRef(null);
@@ -445,17 +445,25 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   const handleSendSupport=async()=>{
     if(!supportText.trim())return;
     setSupportLoading(true);
-    let fileUrl=null;
-    if(supportFile&&supabase){
-      const path='support/'+user.id+'/'+Date.now()+'_'+supportFile.name;
-      await supabase.storage.from('photos').upload(path,supportFile,{upsert:true}).catch(()=>{});
-      const{data}=supabase.storage.from('photos').getPublicUrl(path);
-      fileUrl=data?.publicUrl||null;
-    }
-    const body=encodeURIComponent(supportText.trim()+(fileUrl?'\n\nСкриншот: '+fileUrl:''));
-    window.open('mailto:slavaradetskiy@gmail.com?subject='+encodeURIComponent('ELLME Поддержка — '+(email||user.email||''))+'&body='+body,'_blank');
-    setSupportSent(true);setSupportText('');setSupportFile(null);
-    setTimeout(()=>setSupportSent(false),3000);
+    try{
+      let fileUrl=null;
+      if(supportFile&&supabase){
+        const path='support/'+user.id+'/'+Date.now()+'_'+supportFile.name;
+        await supabase.storage.from('photos').upload(path,supportFile,{upsert:true}).catch(()=>{});
+        const{data}=supabase.storage.from('photos').getPublicUrl(path);
+        fileUrl=data?.publicUrl||null;
+      }
+      if(supabase){
+        await supabase.from('support_messages').insert({
+          user_id:user.id,
+          email:email||user.email||'',
+          text:supportText.trim(),
+          file_url:fileUrl
+        });
+      }
+      setSupportSent(true);setSupportText('');setSupportFile(null);
+      setTimeout(()=>setSupportSent(false),3000);
+    }catch(e){console.error(e);}
     setSupportLoading(false);
   };
 
@@ -572,26 +580,32 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       </div>
     </div>}
 
-    {/* Support */}
-    <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard,marginTop:12}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
-        {I.support}
-        <span style={{fontSize:15,fontWeight:600}}>Поддержка</span>
-      </div>
-      <textarea value={supportText} onChange={e=>setSupportText(e.target.value)} placeholder="Опишите проблему или задайте вопрос..." rows={3}
-        style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,marginBottom:10}}
-        onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
-      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
-        <input ref={supportFileRef} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)setSupportFile(f);e.target.value=''}} style={{display:'none'}}/>
-        <button onClick={()=>supportFileRef.current?.click()} style={{padding:'8px 14px',borderRadius:10,border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:12,color:C.soft,fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-          {supportFile?supportFile.name:'Прикрепить скриншот'}
-        </button>
-        {supportFile&&<button onClick={()=>setSupportFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:C.danger,fontSize:12}}>✕</button>}
-      </div>
-      <button disabled={supportLoading||!supportText.trim()} onClick={handleSendSupport} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:supportSent?C.accentSoft:supportText.trim()?C.accent:'#ccc',color:supportSent?C.accent:'#fff',fontSize:14,fontWeight:600,cursor:supportText.trim()?'pointer':'default',fontFamily:'inherit',transition:'all .3s'}}>
-        {supportSent?'Отправлено ✓':supportLoading?'Отправляю...':'Отправить в поддержку'}
+    {/* Support - collapsible */}
+    <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:12,overflow:'hidden'}}>
+      <button onClick={()=>setShowSupport(!showSupport)} style={{width:'100%',padding:'16px 20px',border:'none',background:'transparent',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          {I.support}
+          <span style={{fontSize:15,fontWeight:600,color:C.text}}>Поддержка</span>
+        </div>
+        <span style={{color:C.muted,display:'flex',transition:'transform .2s',transform:showSupport?'rotate(90deg)':'rotate(0)'}}>{I.chev}</span>
       </button>
+      {showSupport&&<div style={{padding:'0 20px 20px',borderTop:`1px solid ${C.surfaceAlt}`,animation:'enter .2s'}}>
+        <p style={{fontSize:12,color:C.muted,marginBottom:12,marginTop:12}}>Опишите проблему — мы ответим на вашу почту</p>
+        <textarea value={supportText} onChange={e=>setSupportText(e.target.value)} placeholder="Опишите проблему или задайте вопрос..." rows={3}
+          style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,marginBottom:10}}
+          onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
+        <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
+          <input ref={supportFileRef} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)setSupportFile(f);e.target.value=''}} style={{display:'none'}}/>
+          <button onClick={()=>supportFileRef.current?.click()} style={{padding:'8px 14px',borderRadius:10,border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:12,color:C.soft,fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            {supportFile?supportFile.name:'Прикрепить скриншот'}
+          </button>
+          {supportFile&&<button onClick={()=>setSupportFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:C.danger,fontSize:12}}>✕</button>}
+        </div>
+        <button disabled={supportLoading||!supportText.trim()} onClick={handleSendSupport} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:supportSent?C.accentSoft:supportText.trim()?C.accent:'#ccc',color:supportSent?C.accent:'#fff',fontSize:14,fontWeight:600,cursor:supportText.trim()?'pointer':'default',fontFamily:'inherit',transition:'all .3s'}}>
+          {supportSent?'Отправлено ✓':supportLoading?'Отправляю...':'Отправить'}
+        </button>
+      </div>}
     </div>
 
     <button onClick={onLogout} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:14,border:'none',background:C.dangerSoft,color:C.danger,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>{I.logout} Выйти из аккаунта</button>
@@ -707,7 +721,7 @@ function Login({onLogin}){
     setLoading(true); setError('');
     try {
       const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: window.location.origin + '/'
+        redirectTo: window.location.origin + '/reset-password'
       });
       if (err) { setError(err.message); }
       else { setSuccess('Ссылка для сброса пароля отправлена на ' + email.trim()); }
