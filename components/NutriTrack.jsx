@@ -140,6 +140,23 @@ function IcoBtn({icon,onClick,badge,style:st}){
   </button>;
 }
 
+function TimePick({value,onChange,placeholder}){
+  const h=value?value.split(':')[0]:'';
+  const m=value?value.split(':')[1]:'';
+  const selStyle={padding:'10px 4px',borderRadius:10,border:`1.5px solid ${C.tileBorder}`,fontSize:15,fontFamily:'inherit',background:C.surface,outline:'none',color:value?C.text:C.muted,appearance:'none',WebkitAppearance:'none',textAlign:'center',cursor:'pointer',width:52};
+  return <div style={{display:'flex',alignItems:'center',gap:2}}>
+    <select value={h} onChange={e=>{const nv=e.target.value+':'+(m||'00');onChange(nv)}} style={selStyle}>
+      <option value="" disabled>чч</option>
+      {Array.from({length:24},(_,i)=>String(i).padStart(2,'0')).map(v=><option key={v} value={v}>{v}</option>)}
+    </select>
+    <span style={{fontSize:18,fontWeight:700,color:C.muted}}>:</span>
+    <select value={m} onChange={e=>{const nv=(h||'00')+':'+e.target.value;onChange(nv)}} style={selStyle}>
+      <option value="" disabled>мм</option>
+      {['00','05','10','15','20','25','30','35','40','45','50','55'].map(v=><option key={v} value={v}>{v}</option>)}
+    </select>
+  </div>;
+}
+
 function Chip({children,sel,onClick,dis}){
   if(dis&&!sel)return null;
   return <button onClick={dis?undefined:onClick} style={{padding:'7px 16px',borderRadius:100,fontSize:13,fontWeight:sel?600:400,fontFamily:'inherit',border:`1.5px solid ${sel?C.accent:'transparent'}`,cursor:dis?'default':'pointer',background:sel?C.accentSoft:C.surfaceAlt,color:sel?C.accent:C.soft,transition:'all .15s'}}>{children}</button>;
@@ -241,7 +258,7 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis}){
         <Lbl>Время приёма</Lbl>
         {dis
           ?<span style={{fontSize:15,fontWeight:600,color:d.time?C.text:C.muted}}>{d.time||'—'}</span>
-          :<input type="time" value={d.time||''} onChange={e=>upd('time',e.target.value)} style={{padding:'8px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,outline:'none',color:C.text,width:130}}/>
+          :<TimePick value={d.time||''} onChange={v=>upd('time',v)}/>
         }
       </div>
 
@@ -349,12 +366,12 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><Lbl>Подъём сегодня</Lbl></div>
           {dis?<span style={{fontSize:14,fontWeight:500,color:d.sleep?.wake?C.text:C.muted}}>{d.sleep?.wake||'—'}</span>
-            :<input type="time" value={d.sleep?.wake||''} onChange={e=>{const ns={...(d.sleep||{}),wake:e.target.value};upd('sleep',ns);checkSleep(ns)}} style={{padding:'10px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,outline:'none',color:d.sleep?.wake?C.text:C.muted,width:140}}/>}
+            :<TimePick value={d.sleep?.wake||''} onChange={v=>{const ns=Object.assign({},d.sleep||{},{wake:v});upd('sleep',ns);checkSleep(ns)}}/>}
         </div>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><Lbl>Отход ко сну вчера</Lbl></div>
           {dis?<span style={{fontSize:14,fontWeight:500,color:d.sleep?.bed?C.text:C.muted}}>{d.sleep?.bed||'—'}</span>
-            :<input type="time" value={d.sleep?.bed||''} onChange={e=>{const ns={...(d.sleep||{}),bed:e.target.value};upd('sleep',ns);checkSleep(ns)}} style={{padding:'10px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,outline:'none',color:d.sleep?.bed?C.text:C.muted,width:140}}/>}
+            :<TimePick value={d.sleep?.bed||''} onChange={v=>{const ns=Object.assign({},d.sleep||{},{bed:v});upd('sleep',ns);checkSleep(ns)}}/>}
         </div>
         <div><Lbl>Качество сна</Lbl><Scale max={10} value={d.sleep?.quality} onChange={v=>upd('sleep',{...(d.sleep||{}),quality:v})} dis={dis}/></div>
       </div>
@@ -1243,7 +1260,8 @@ export default function App(){
   if(isDoc&&screen==='home'){
     const active=clients.filter(c=>c.status==='active'),archive=clients.filter(c=>c.status==='archive');
     const list=docTab==='active'?active:archive;
-    const invLink=`https://ellme.ru/i/${Math.random().toString(36).slice(2,8)}`;
+    const invCode=Math.random().toString(36).slice(2,8);
+    const invLink=`https://ellme.ru/?invite=${invCode}`;
 
     return shell(<>
       <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
