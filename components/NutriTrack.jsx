@@ -584,7 +584,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       </div>}
     </div>
 
-    <button onClick={onLogout} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:14,border:'none',background:C.dangerSoft,color:C.danger,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>{I.logout} Выйти из аккаунта</button>
+    <button onClick={onLogout} style={{width:'100%',marginTop:16,marginBottom:40,padding:'16px',borderRadius:14,border:'none',background:C.dangerSoft,color:C.danger,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,WebkitTapHighlightColor:'transparent'}}>{I.logout} Выйти из аккаунта</button>
   </div>;
 }
 
@@ -990,8 +990,10 @@ export default function App(){
 
   const login = (r,n,c) => { setUser({role:r,name:n,cid:c}); setScreen('home'); };
   const logout = async () => {
-    if (supabase) await supabase.auth.signOut();
+    try { if (supabase) await supabase.auth.signOut(); } catch(e) {}
     setUser(null); setScreen('home'); setSelClient(null); setSelMeal(null);
+    setDiaries({}); setComments({}); setClients([]);
+    window.location.href = '/';
   };
 
   // ── Loading state ──
