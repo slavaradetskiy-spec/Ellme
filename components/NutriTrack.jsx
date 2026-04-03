@@ -424,7 +424,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   const[pw1,setPw1]=useState('');const[pw2,setPw2]=useState('');const[pw3,setPw3]=useState('');
   const[showPw1,setShowPw1]=useState(false);const[showPw2,setShowPw2]=useState(false);const[showPw3,setShowPw3]=useState(false);
   const[pwMsg,setPwMsg]=useState('');const[pwErr,setPwErr]=useState('');const[pwLoading,setPwLoading]=useState(false);
-  const[supportText,setSupportText]=useState('');const[supportFile,setSupportFile]=useState(null);const[supportSent,setSupportSent]=useState(false);const[supportLoading,setSupportLoading]=useState(false);const[showSupport,setShowSupport]=useState(false);
+  const[supportText,setSupportText]=useState('');const[supportFile,setSupportFile]=useState(null);const[supportSent,setSupportSent]=useState(false);const[supportLoading,setSupportLoading]=useState(false);const[showSupport,setShowSupport]=useState(false);const[isOAuth,setIsOAuth]=useState(false);
   const supportFileRef=useRef(null);
   const isDoc=user.role==='doc';
   const avatarRef=useRef(null);
@@ -497,7 +497,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       }
     }
   };
-  useEffect(()=>{if(!supabase||!user?.id)return;supabase.from('profiles').select('*').eq('id',user.id).single().then(({data:p})=>{if(!p)return;if(p.email)setEmail(p.email);if(p.phone)setPhone(p.phone);if(p.age)setAge(String(p.age));if(p.gender)setGender(p.gender);if(p.height_cm)setHeight(String(p.height_cm));if(p.weight_kg)setWeight(String(p.weight_kg));if(p.request)setRequest(p.request);});},[user?.id]);
+  useEffect(()=>{if(!supabase||!user?.id)return;supabase.from('profiles').select('*').eq('id',user.id).single().then(({data:p})=>{if(!p)return;if(p.email)setEmail(p.email);if(p.phone)setPhone(p.phone);if(p.age)setAge(String(p.age));if(p.gender)setGender(p.gender);if(p.height_cm)setHeight(String(p.height_cm));if(p.weight_kg)setWeight(String(p.weight_kg));if(p.request)setRequest(p.request);});supabase.auth.getSession().then(({data})=>{const prov=data?.session?.user?.app_metadata?.provider;if(prov&&prov!=='email')setIsOAuth(true);});},[user?.id]);
   const saveProfile=async()=>{if(!supabase||!user?.id)return;const wnVal=parseInt(wn)||2200;await supabase.from('profiles').update({name,email,phone,age:parseInt(age)||null,gender,height_cm:parseInt(height)||null,weight_kg:parseFloat(weight)||null,request,water_norm:wnVal,updated_at:new Date().toISOString()}).eq('id',user.id);onWaterNormChange(wnVal);setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const inp=(label,val,set)=><div style={{marginBottom:16}}>
     <Lbl>{label}</Lbl>
@@ -557,7 +557,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       </button>
     </div>
 
-    <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard,marginTop:12}}>
+    {!isOAuth&&<div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard,marginTop:12}}>
       <button onClick={async()=>{setShowPwPopup(true);setPwErr('');setPwMsg('');setPw1('');setPw2('');setPw3('');
         if(supabase){const{data}=await supabase.auth.getSession();const prov=data?.session?.user?.app_metadata?.provider;if(prov&&prov!=='email')setPwErr('oauth:'+({google:'Google',yandex:'Яндекс'}[prov]||prov));}
       }} style={{width:'100%',padding:'14px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .15s'}}
@@ -566,7 +566,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         Сменить пароль
       </button>
-    </div>
+    </div>}
 
     {/* Password popup */}
     {showPwPopup&&<div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
