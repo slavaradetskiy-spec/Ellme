@@ -436,9 +436,20 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     if(pw2.length<6){setPwErr('Минимум 6 символов');return;}
     if(!supabase){setPwErr('Сервис недоступен');return;}
     setPwLoading(true);
-    const{error}=await supabase.auth.updateUser({password:pw2});
-    if(error)setPwErr(error.message);
-    else{setPwMsg('Пароль изменён');setPw1('');setPw2('');setPw3('');setTimeout(()=>{setShowPwPopup(false);setPwMsg('')},1500);}
+    try{
+      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Таймаут — попробуйте ещё раз')),10000));
+      const updatePromise=supabase.auth.updateUser({password:pw2});
+      const{error}=await Promise.race([updatePromise,timeoutPromise]);
+      if(error){
+        const msg=error.message||'';
+        if(msg.includes('same'))setPwErr('Новый пароль должен отличаться от текущего');
+        else if(msg.includes('weak'))setPwErr('Пароль слишком простой');
+        else setPwErr(msg||'Ошибка при смене пароля');
+      }else{
+        setPwMsg('Пароль изменён ✓');setPw1('');setPw2('');setPw3('');
+        setTimeout(()=>{setShowPwPopup(false);setPwMsg('')},1500);
+      }
+    }catch(e){setPwErr(e.message||'Ошибка подключения');}
     setPwLoading(false);
   };
 
