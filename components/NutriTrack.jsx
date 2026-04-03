@@ -435,14 +435,19 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     if(pw2!==pw3){setPwErr('Пароли не совпадают');return;}
     if(pw2.length<6){setPwErr('Минимум 6 символов');return;}
     if(!supabase){setPwErr('Сервис недоступен');return;}
+    // Check if user has a password (email provider) or is OAuth-only
+    const{data:sessionData}=await supabase.auth.getSession();
+    const provider=sessionData?.session?.user?.app_metadata?.provider;
+    if(provider&&provider!=='email'){
+      setPwErr('Вы вошли через '+({google:'Google',yandex:'Яндекс'}[provider]||provider)+'. Смена пароля доступна только для аккаунтов с email/паролем. Используйте «Забыли пароль» на экране входа, чтобы задать пароль.');
+      return;
+    }
     setPwLoading(true);
     try{
-      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Таймаут — попробуйте ещё раз')),10000));
-      const updatePromise=supabase.auth.updateUser({password:pw2});
-      const{error}=await Promise.race([updatePromise,timeoutPromise]);
+      const{error}=await supabase.auth.updateUser({password:pw2});
       if(error){
         const msg=error.message||'';
-        if(msg.includes('same'))setPwErr('Новый пароль должен отличаться от текущего');
+        if(msg.includes('same')||msg.includes('different'))setPwErr('Новый пароль должен отличаться от текущего');
         else if(msg.includes('weak'))setPwErr('Пароль слишком простой');
         else setPwErr(msg||'Ошибка при смене пароля');
       }else{
