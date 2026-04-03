@@ -27,13 +27,17 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     if (!supabase) { setStatus('expired'); return }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') setStatus('ready')
+      setStatus(prev => {
+        if (prev === 'success') return 'success'
+        if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') return 'ready'
+        return prev
+      })
     })
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setStatus('ready')
       else setTimeout(() => {
         supabase.auth.getSession().then(({ data: { session: s2 } }) => {
-          setStatus(s2 ? 'ready' : 'expired')
+          setStatus(prev => prev === 'success' ? 'success' : s2 ? 'ready' : 'expired')
         })
       }, 2000)
     })
@@ -51,6 +55,8 @@ export default function ResetPasswordPage() {
     else {
       setStatus('success')
       try { await supabase.auth.signOut() } catch(e) {}
+      // Clean redirect after 2 seconds
+      setTimeout(() => { window.location.replace('/') }, 2000)
     }
     setLoading(false)
   }
