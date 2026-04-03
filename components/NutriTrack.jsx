@@ -467,14 +467,10 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     setSupportLoading(false);
   };
 
-  const EyeBtn=({show,toggle})=><button type="button" onClick={toggle} style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex',padding:2}}>
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">{show?<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>:<><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>}</svg>
-  </button>;
-
-  const PwInput=({val,set,show,toggle,placeholder})=><div style={{position:'relative',marginBottom:10}}>
-    <input type={show?'text':'password'} value={val} onChange={e=>set(e.target.value)} placeholder={placeholder} style={{width:'100%',padding:'14px 44px 14px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
-    <EyeBtn show={show} toggle={()=>toggle(!show)}/>
-  </div>;
+  const eyeSvgOpen=<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+  const eyeSvgClosed=<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>;
+  const pwFieldStyle={width:'100%',padding:'14px 44px 14px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text};
+  const eyeBtnStyle={position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex',padding:2};
   const handleAvatar=async(e)=>{
     const f=e.target.files?.[0];if(!f)return;
     // Show preview immediately
@@ -570,9 +566,18 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
         <div style={{fontSize:12,color:C.muted,marginBottom:16}}>Введите текущий и новый пароль</div>
         {pwErr&&<div style={{padding:'10px 14px',borderRadius:10,background:C.dangerSoft,color:C.danger,fontSize:13,marginBottom:10}}>{pwErr}</div>}
         {pwMsg&&<div style={{padding:'10px 14px',borderRadius:10,background:C.accentSoft,color:C.accent,fontSize:13,marginBottom:10}}>{pwMsg}</div>}
-        <PwInput val={pw1} set={setPw1} show={showPw1} toggle={setShowPw1} placeholder="Текущий пароль"/>
-        <PwInput val={pw2} set={setPw2} show={showPw2} toggle={setShowPw2} placeholder="Новый пароль"/>
-        <PwInput val={pw3} set={setPw3} show={showPw3} toggle={setShowPw3} placeholder="Повторите новый пароль"/>
+        <div style={{position:'relative',marginBottom:10}}>
+          <input type={showPw1?'text':'password'} value={pw1} onChange={e=>setPw1(e.target.value)} placeholder="Текущий пароль" style={pwFieldStyle}/>
+          <button type="button" onClick={()=>setShowPw1(!showPw1)} style={eyeBtnStyle}>{showPw1?eyeSvgOpen:eyeSvgClosed}</button>
+        </div>
+        <div style={{position:'relative',marginBottom:10}}>
+          <input type={showPw2?'text':'password'} value={pw2} onChange={e=>setPw2(e.target.value)} placeholder="Новый пароль" style={pwFieldStyle}/>
+          <button type="button" onClick={()=>setShowPw2(!showPw2)} style={eyeBtnStyle}>{showPw2?eyeSvgOpen:eyeSvgClosed}</button>
+        </div>
+        <div style={{position:'relative',marginBottom:10}}>
+          <input type={showPw3?'text':'password'} value={pw3} onChange={e=>setPw3(e.target.value)} placeholder="Повторите новый пароль" style={pwFieldStyle}/>
+          <button type="button" onClick={()=>setShowPw3(!showPw3)} style={eyeBtnStyle}>{showPw3?eyeSvgOpen:eyeSvgClosed}</button>
+        </div>
         <div style={{display:'flex',gap:8,marginTop:4}}>
           <button onClick={()=>setShowPwPopup(false)} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
           <button disabled={pwLoading} onClick={handleChangePw} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:pwLoading?'wait':'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)',opacity:pwLoading?.7:1}}>{pwLoading?'Сохраняю...':'Сохранить'}</button>
@@ -582,12 +587,10 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
 
     {/* Support - collapsible */}
     <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:12,overflow:'hidden'}}>
-      <button onClick={()=>setShowSupport(!showSupport)} style={{width:'100%',padding:'16px 20px',border:'none',background:'transparent',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          {I.support}
-          <span style={{fontSize:15,fontWeight:600,color:C.text}}>Поддержка</span>
-        </div>
-        <span style={{color:C.muted,display:'flex',transition:'transform .2s',transform:showSupport?'rotate(90deg)':'rotate(0)'}}>{I.chev}</span>
+      <button onClick={()=>setShowSupport(!showSupport)} style={{width:'100%',padding:'14px',borderRadius:showSupport?'20px 20px 0 0':20,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .15s'}}
+        onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}}
+        onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.text}}>
+        {I.support} Поддержка
       </button>
       {showSupport&&<div style={{padding:'0 20px 20px',borderTop:`1px solid ${C.surfaceAlt}`,animation:'enter .2s'}}>
         <p style={{fontSize:12,color:C.muted,marginBottom:12,marginTop:12}}>Опишите проблему — мы ответим на вашу почту</p>
