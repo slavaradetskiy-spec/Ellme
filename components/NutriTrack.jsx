@@ -92,6 +92,7 @@ const I={
   edit:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
   link:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
   logout:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+  support:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>,
   fork:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>,
   stool:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 2h6l1 7H8L9 2z"/><path d="M8 9l-2 13M16 9l2 13M12 9v13"/></svg>,
   steth:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4.8 2.3A.3.3 0 105 2H4a2 2 0 00-2 2v5a6 6 0 006 6 6 6 0 006-6V4a2 2 0 00-2-2h-1a.2.2 0 10.3.3"/><path d="M8 15v1a6 6 0 006 6 6 6 0 006-6v-4"/><circle cx="20" cy="10" r="2"/></svg>,
@@ -117,14 +118,14 @@ function mkDemo(){
 function mkComments(){return{c1:[{id:"cm1",date:dk(ago(1)),text:"Анна, хороший день! После борща тяжесть — уменьшите порцию хлеба. Калораж ~1650 — в норме.",ts:Date.now()-86400000,read:false}],c2:[{id:"cm3",date:dk(new Date()),text:"Калораж ~2800 — отлично. Добавьте овощи к завтраку.",ts:Date.now()-3600000,read:false}],c3:[]};}
 
 // ═══ PRIMITIVES ═══
-function TopBar({left,title,subtitle,right}){
+function TopBar({left,title,subtitle,right,onHome}){
   return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:`1px solid ${C.surfaceAlt}`}}>
-    <div style={{width:44,display:'flex',justifyContent:'flex-start'}}>{left}</div>
-    <div style={{textAlign:'center'}}>
+    <div style={{width:48,display:'flex',justifyContent:'flex-start'}}>{left}</div>
+    <div style={{textAlign:'center',cursor:onHome?'pointer':'default'}} onClick={onHome||undefined}>
       <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text}}>{title}</div>
-      {subtitle&&<div style={{fontSize:10,color:C.muted,letterSpacing:'.08em',textTransform:'uppercase',marginTop:1}}>{subtitle}</div>}
+      {subtitle&&<div style={{fontSize:9,color:C.muted,letterSpacing:'.1em',textTransform:'uppercase',marginTop:1}}>{subtitle}</div>}
     </div>
-    <div style={{width:44,display:'flex',justifyContent:'flex-end'}}>{right}</div>
+    <div style={{width:48,display:'flex',justifyContent:'flex-end'}}>{right}</div>
   </div>;
 }
 
@@ -419,9 +420,71 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   const[request,setRequest]=useState('');
   const[wn,setWn]=useState(String(waterNorm||2200));
   const[saved,setSaved]=useState(false);
+  const[showPwPopup,setShowPwPopup]=useState(false);
+  const[pw1,setPw1]=useState('');const[pw2,setPw2]=useState('');const[pw3,setPw3]=useState('');
+  const[showPw1,setShowPw1]=useState(false);const[showPw2,setShowPw2]=useState(false);const[showPw3,setShowPw3]=useState(false);
+  const[pwMsg,setPwMsg]=useState('');const[pwErr,setPwErr]=useState('');const[pwLoading,setPwLoading]=useState(false);
+  const[supportText,setSupportText]=useState('');const[supportFile,setSupportFile]=useState(null);const[supportSent,setSupportSent]=useState(false);const[supportLoading,setSupportLoading]=useState(false);
+  const supportFileRef=useRef(null);
   const isDoc=user.role==='doc';
   const avatarRef=useRef(null);
-  const handleAvatar=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>onPhotoChange(ev.target.result);r.readAsDataURL(f);e.target.value='';};
+
+  const handleChangePw=async()=>{
+    setPwErr('');setPwMsg('');
+    if(!pw2||!pw3){setPwErr('Заполните все поля');return;}
+    if(pw2!==pw3){setPwErr('Пароли не совпадают');return;}
+    if(pw2.length<6){setPwErr('Минимум 6 символов');return;}
+    if(!supabase){setPwErr('Сервис недоступен');return;}
+    setPwLoading(true);
+    const{error}=await supabase.auth.updateUser({password:pw2});
+    if(error)setPwErr(error.message);
+    else{setPwMsg('Пароль изменён');setPw1('');setPw2('');setPw3('');setTimeout(()=>{setShowPwPopup(false);setPwMsg('')},1500);}
+    setPwLoading(false);
+  };
+
+  const handleSendSupport=async()=>{
+    if(!supportText.trim())return;
+    setSupportLoading(true);
+    let fileUrl=null;
+    if(supportFile&&supabase){
+      const path='support/'+user.id+'/'+Date.now()+'_'+supportFile.name;
+      await supabase.storage.from('photos').upload(path,supportFile,{upsert:true}).catch(()=>{});
+      const{data}=supabase.storage.from('photos').getPublicUrl(path);
+      fileUrl=data?.publicUrl||null;
+    }
+    const body=encodeURIComponent(supportText.trim()+(fileUrl?'\n\nСкриншот: '+fileUrl:''));
+    window.open('mailto:slavaradetskiy@gmail.com?subject='+encodeURIComponent('ELLME Поддержка — '+(email||user.email||''))+'&body='+body,'_blank');
+    setSupportSent(true);setSupportText('');setSupportFile(null);
+    setTimeout(()=>setSupportSent(false),3000);
+    setSupportLoading(false);
+  };
+
+  const EyeBtn=({show,toggle})=><button type="button" onClick={toggle} style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex',padding:2}}>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">{show?<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>:<><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>}</svg>
+  </button>;
+
+  const PwInput=({val,set,show,toggle,placeholder})=><div style={{position:'relative',marginBottom:10}}>
+    <input type={show?'text':'password'} value={val} onChange={e=>set(e.target.value)} placeholder={placeholder} style={{width:'100%',padding:'14px 44px 14px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
+    <EyeBtn show={show} toggle={()=>toggle(!show)}/>
+  </div>;
+  const handleAvatar=async(e)=>{
+    const f=e.target.files?.[0];if(!f)return;
+    // Show preview immediately
+    const r=new FileReader();r.onload=ev=>onPhotoChange(ev.target.result);r.readAsDataURL(f);
+    e.target.value='';
+    // Upload to Supabase Storage
+    if(supabase&&user?.id){
+      const ext=f.name.split('.').pop()||'jpg';
+      const path=user.id+'/avatar.'+ext;
+      await supabase.storage.from('photos').upload(path,f,{upsert:true});
+      const{data:urlData}=supabase.storage.from('photos').getPublicUrl(path);
+      if(urlData?.publicUrl){
+        const photoUrl=urlData.publicUrl+'?t='+Date.now();
+        await supabase.from('profiles').update({photo_url:photoUrl}).eq('id',user.id);
+        onPhotoChange(photoUrl);
+      }
+    }
+  };
   useEffect(()=>{if(!supabase||!user?.id)return;supabase.from('profiles').select('*').eq('id',user.id).single().then(({data:p})=>{if(!p)return;if(p.email)setEmail(p.email);if(p.phone)setPhone(p.phone);if(p.age)setAge(String(p.age));if(p.gender)setGender(p.gender);if(p.height_cm)setHeight(String(p.height_cm));if(p.weight_kg)setWeight(String(p.weight_kg));if(p.request)setRequest(p.request);});},[user?.id]);
   const saveProfile=async()=>{if(!supabase||!user?.id)return;const wnVal=parseInt(wn)||2200;await supabase.from('profiles').update({name,email,phone,age:parseInt(age)||null,gender,height_cm:parseInt(height)||null,weight_kg:parseFloat(weight)||null,request,water_norm:wnVal,updated_at:new Date().toISOString()}).eq('id',user.id);onWaterNormChange(wnVal);setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const inp=(label,val,set)=><div style={{marginBottom:16}}>
@@ -483,10 +546,52 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     </div>
 
     <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard,marginTop:12}}>
-      <Lbl>Смена пароля</Lbl>
-      <input type="password" placeholder="Текущий пароль" style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text,marginBottom:8}}/>
-      <input type="password" placeholder="Новый пароль" style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text,marginBottom:10}}/>
-      <button style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Сменить пароль</button>
+      <button onClick={()=>{setShowPwPopup(true);setPwErr('');setPwMsg('');setPw1('');setPw2('');setPw3('')}} style={{width:'100%',padding:'14px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .15s'}}
+        onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}}
+        onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.text}}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        Сменить пароль
+      </button>
+    </div>
+
+    {/* Password popup */}
+    {showPwPopup&&<div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
+      <div onClick={()=>setShowPwPopup(false)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
+      <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(400px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
+        <div style={{fontSize:18,fontWeight:700,fontFamily:'var(--fd)',marginBottom:4}}>Смена пароля</div>
+        <div style={{fontSize:12,color:C.muted,marginBottom:16}}>Введите текущий и новый пароль</div>
+        {pwErr&&<div style={{padding:'10px 14px',borderRadius:10,background:C.dangerSoft,color:C.danger,fontSize:13,marginBottom:10}}>{pwErr}</div>}
+        {pwMsg&&<div style={{padding:'10px 14px',borderRadius:10,background:C.accentSoft,color:C.accent,fontSize:13,marginBottom:10}}>{pwMsg}</div>}
+        <PwInput val={pw1} set={setPw1} show={showPw1} toggle={setShowPw1} placeholder="Текущий пароль"/>
+        <PwInput val={pw2} set={setPw2} show={showPw2} toggle={setShowPw2} placeholder="Новый пароль"/>
+        <PwInput val={pw3} set={setPw3} show={showPw3} toggle={setShowPw3} placeholder="Повторите новый пароль"/>
+        <div style={{display:'flex',gap:8,marginTop:4}}>
+          <button onClick={()=>setShowPwPopup(false)} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
+          <button disabled={pwLoading} onClick={handleChangePw} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:pwLoading?'wait':'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)',opacity:pwLoading?.7:1}}>{pwLoading?'Сохраняю...':'Сохранить'}</button>
+        </div>
+      </div>
+    </div>}
+
+    {/* Support */}
+    <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard,marginTop:12}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+        {I.support}
+        <span style={{fontSize:15,fontWeight:600}}>Поддержка</span>
+      </div>
+      <textarea value={supportText} onChange={e=>setSupportText(e.target.value)} placeholder="Опишите проблему или задайте вопрос..." rows={3}
+        style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,marginBottom:10}}
+        onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
+        <input ref={supportFileRef} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)setSupportFile(f);e.target.value=''}} style={{display:'none'}}/>
+        <button onClick={()=>supportFileRef.current?.click()} style={{padding:'8px 14px',borderRadius:10,border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:12,color:C.soft,fontFamily:'inherit',display:'flex',alignItems:'center',gap:6}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          {supportFile?supportFile.name:'Прикрепить скриншот'}
+        </button>
+        {supportFile&&<button onClick={()=>setSupportFile(null)} style={{background:'none',border:'none',cursor:'pointer',color:C.danger,fontSize:12}}>✕</button>}
+      </div>
+      <button disabled={supportLoading||!supportText.trim()} onClick={handleSendSupport} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:supportSent?C.accentSoft:supportText.trim()?C.accent:'#ccc',color:supportSent?C.accent:'#fff',fontSize:14,fontWeight:600,cursor:supportText.trim()?'pointer':'default',fontFamily:'inherit',transition:'all .3s'}}>
+        {supportSent?'Отправлено ✓':supportLoading?'Отправляю...':'Отправить в поддержку'}
+      </button>
     </div>
 
     <button onClick={onLogout} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:14,border:'none',background:C.dangerSoft,color:C.danger,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>{I.logout} Выйти из аккаунта</button>
@@ -978,6 +1083,9 @@ export default function App(){
     setDocComment('');
   };
 
+  const goHome = () => { setScreen('home'); setSelMeal(null); setSelClient(null); };
+  const openSupport = () => { window.open('https://t.me/ellme_support','_blank'); };
+
   const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)'}}>
     <style>{CSS}</style>
     {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
@@ -1034,7 +1142,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+    <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <SecCard icon={I.fork} title="Приёмы пищи">
@@ -1136,7 +1244,7 @@ export default function App(){
     const invLink=`https://ellme.ru/i/${Math.random().toString(36).slice(2,8)}`;
 
     return shell(<>
-      <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
+      <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
 
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
