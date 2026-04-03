@@ -435,13 +435,6 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     if(pw2!==pw3){setPwErr('Пароли не совпадают');return;}
     if(pw2.length<6){setPwErr('Минимум 6 символов');return;}
     if(!supabase){setPwErr('Сервис недоступен');return;}
-    // Check if user has a password (email provider) or is OAuth-only
-    const{data:sessionData}=await supabase.auth.getSession();
-    const provider=sessionData?.session?.user?.app_metadata?.provider;
-    if(provider&&provider!=='email'){
-      setPwErr('Вы вошли через '+({google:'Google',yandex:'Яндекс'}[provider]||provider)+'. Смена пароля доступна только для аккаунтов с email/паролем. Используйте «Забыли пароль» на экране входа, чтобы задать пароль.');
-      return;
-    }
     setPwLoading(true);
     try{
       const{error}=await supabase.auth.updateUser({password:pw2});
@@ -566,7 +559,9 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     </div>
 
     <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard,marginTop:12}}>
-      <button onClick={()=>{setShowPwPopup(true);setPwErr('');setPwMsg('');setPw1('');setPw2('');setPw3('')}} style={{width:'100%',padding:'14px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .15s'}}
+      <button onClick={async()=>{setShowPwPopup(true);setPwErr('');setPwMsg('');setPw1('');setPw2('');setPw3('');
+        if(supabase){const{data}=await supabase.auth.getSession();const prov=data?.session?.user?.app_metadata?.provider;if(prov&&prov!=='email')setPwErr('oauth:'+({google:'Google',yandex:'Яндекс'}[prov]||prov));}
+      }} style={{width:'100%',padding:'14px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .15s'}}
         onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}}
         onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.text}}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -579,9 +574,15 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       <div onClick={()=>setShowPwPopup(false)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
       <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(400px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
         <div style={{fontSize:18,fontWeight:700,fontFamily:'var(--fd)',marginBottom:4}}>Смена пароля</div>
-        <div style={{fontSize:12,color:C.muted,marginBottom:16}}>Введите текущий и новый пароль</div>
-        {pwErr&&<div style={{padding:'10px 14px',borderRadius:10,background:C.dangerSoft,color:C.danger,fontSize:13,marginBottom:10}}>{pwErr}</div>}
-        {pwMsg&&<div style={{padding:'10px 14px',borderRadius:10,background:C.accentSoft,color:C.accent,fontSize:13,marginBottom:10}}>{pwMsg}</div>}
+        {pwErr&&pwErr.startsWith('oauth:')?<>
+          <div style={{padding:'14px',borderRadius:12,background:C.surfaceAlt,fontSize:13,color:C.soft,lineHeight:1.6,marginTop:12,marginBottom:16}}>
+            Вы вошли через <strong>{pwErr.replace('oauth:','')}</strong>. Чтобы задать пароль, выйдите из аккаунта и на экране входа нажмите «Забыли пароль?» — на вашу почту придёт ссылка для создания пароля.
+          </div>
+          <button onClick={()=>setShowPwPopup(false)} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>Понятно</button>
+        </>:<>
+          <div style={{fontSize:12,color:C.muted,marginBottom:16}}>Введите текущий и новый пароль</div>
+          {pwErr&&<div style={{padding:'10px 14px',borderRadius:10,background:C.dangerSoft,color:C.danger,fontSize:13,marginBottom:10}}>{pwErr}</div>}
+          {pwMsg&&<div style={{padding:'10px 14px',borderRadius:10,background:C.accentSoft,color:C.accent,fontSize:13,marginBottom:10}}>{pwMsg}</div>}
         <div style={{position:'relative',marginBottom:10}}>
           <input type={showPw1?'text':'password'} value={pw1} onChange={e=>setPw1(e.target.value)} placeholder="Текущий пароль" style={pwFieldStyle}/>
           <button type="button" onClick={()=>setShowPw1(!showPw1)} style={eyeBtnStyle}>{showPw1?eyeSvgOpen:eyeSvgClosed}</button>
@@ -598,6 +599,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
           <button onClick={()=>setShowPwPopup(false)} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
           <button disabled={pwLoading} onClick={handleChangePw} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:pwLoading?'wait':'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)',opacity:pwLoading?.7:1}}>{pwLoading?'Сохраняю...':'Сохранить'}</button>
         </div>
+        </>}
       </div>
     </div>}
 
