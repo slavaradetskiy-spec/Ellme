@@ -884,7 +884,40 @@ export default function App(){
   const[docComment,setDocComment]=useState('');
   const[showNotif,setShowNotif]=useState(false);
   const[inv,setInv]=useState(false);
+  const[invCode,setInvCode]=useState('');
   const[copied,setCopied]=useState(false);
+
+  // Create invite and save to DB
+  const createInvite=async()=>{
+    const code=Math.random().toString(36).slice(2,8);
+    setInvCode(code);
+    setInv(true);
+    if(supabase&&user?.id){
+      await supabase.from('invites').insert({doc_id:user.id,code,used:false}).catch(()=>{});
+    }
+  };
+
+  // Load doc's clients from DB
+  const loadClients=async()=>{
+    if(!supabase||!user?.id||user.role!=='doc')return;
+    const{data:links}=await supabase.from('doc_clients').select('*,profiles!doc_clients_client_id_fkey(id,name,email,age,request,created_at)').eq('doc_id',user.id);
+    if(links&&links.length>0){
+      const cls=links.map(l=>({
+        id:l.client_id,
+        name:l.profiles?.name||l.profiles?.email||'Клиент',
+        email:l.profiles?.email,
+        age:l.profiles?.age,
+        request:l.profiles?.request||'',
+        nick:l.nick||'',
+        status:l.status||'active',
+        joined:new Date(l.profiles?.created_at||l.created_at),
+      }));
+      setClients(cls);
+    }
+  };
+
+  // Load clients when doc logs in
+  useEffect(()=>{if(user?.role==='doc')loadClients()},[user?.id,user?.role]);
   const[renaming,setRenaming]=useState(null);
   const[renameVal,setRenameVal]=useState('');
   const[profilePhoto,setProfilePhoto]=useState(null);
@@ -933,6 +966,26 @@ export default function App(){
       setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200 });
       setWaterNorm(profile.water_norm || 2200);
       if (profile.photo_url) setProfilePhoto(profile.photo_url);
+
+      // Handle invite linking — if client registered via invite link
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const inviteCode = params.get('invite');
+        if (inviteCode && (profile.role || authRole) === 'client') {
+          const { data: inv } = await supabase.from('invites').select('*').eq('code', inviteCode).eq('used', false).single();
+          if (inv) {
+            // Check if link already exists
+            const { data: existing } = await supabase.from('doc_clients').select('id').eq('doc_id', inv.doc_id).eq('client_id', u.id).single();
+            if (!existing) {
+              await supabase.from('doc_clients').insert({ doc_id: inv.doc_id, client_id: u.id, status: 'active' });
+            }
+            await supabase.from('invites').update({ used: true, used_by: u.id }).eq('id', inv.id);
+            // Clean URL
+            window.history.replaceState({}, '', '/');
+          }
+        }
+      }
+
       setAuthLoading(false);
     };
 
@@ -1260,8 +1313,7 @@ export default function App(){
   if(isDoc&&screen==='home'){
     const active=clients.filter(c=>c.status==='active'),archive=clients.filter(c=>c.status==='archive');
     const list=docTab==='active'?active:archive;
-    const invCode=Math.random().toString(36).slice(2,8);
-    const invLink=`https://ellme.ru/?invite=${invCode}`;
+    const invLink=invCode?((typeof window!=='undefined'?window.location.origin:'https://ellme.ru')+'/?invite='+invCode):'';
 
     return shell(<>
       <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
@@ -1309,7 +1361,7 @@ export default function App(){
         </div>
       </div>)}
 
-      <button onClick={()=>setInv(true)} style={{width:'100%',marginTop:10,padding:'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:14,fontWeight:500,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
+      <button onClick={createInvite} style={{width:'100%',marginTop:10,padding:'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:14,fontWeight:500,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
         onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}} onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.muted}}>
         {I.plus} Добавить клиента
       </button>
