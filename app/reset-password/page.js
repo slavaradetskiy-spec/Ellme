@@ -27,13 +27,17 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     if (!supabase) { setStatus('expired'); return }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') setStatus('ready')
+      setStatus(prev => {
+        if (prev === 'success') return 'success'
+        if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') return 'ready'
+        return prev
+      })
     })
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setStatus('ready')
       else setTimeout(() => {
         supabase.auth.getSession().then(({ data: { session: s2 } }) => {
-          setStatus(s2 ? 'ready' : 'expired')
+          setStatus(prev => prev === 'success' ? 'success' : s2 ? 'ready' : 'expired')
         })
       }, 2000)
     })
@@ -48,7 +52,20 @@ export default function ResetPasswordPage() {
     setLoading(true)
     const { error: err } = await supabase.auth.updateUser({ password: pw })
     if (err) setError(err.message === 'New password should be different from the old password.' ? 'Новый пароль должен отличаться от текущего' : err.message)
-    else setStatus('success')
+    else {
+      setStatus('success')
+      try { await supabase.auth.signOut({ scope: 'global' }) } catch(e) {}
+      // Force clear all Supabase auth storage
+      try {
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) localStorage.removeItem(key)
+        })
+        Object.keys(sessionStorage || {}).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) sessionStorage.removeItem(key)
+        })
+      } catch(e) {}
+      setTimeout(() => { window.location.href = '/' }, 2000)
+    }
     setLoading(false)
   }
 
@@ -93,7 +110,7 @@ export default function ResetPasswordPage() {
         {status === 'success' && <div style={{ textAlign:'center', padding:20 }}>
           <div style={{ fontSize:48, marginBottom:16 }}>✅</div>
           <p style={{ color:C.soft, fontSize:14, lineHeight:1.6, marginBottom:24 }}>Пароль успешно обновлён. Теперь вы можете войти с новым паролем.</p>
-          <a href="/" style={{ display:'inline-block', padding:'14px 32px', borderRadius:16, background:C.accent, color:'#fff', fontSize:15, fontWeight:600, textDecoration:'none' }}>Войти</a>
+          <button onClick={async()=>{try{await supabase.auth.signOut()}catch(e){}window.location.href='/'}} style={{ display:'inline-block', padding:'14px 32px', borderRadius:16, background:C.accent, color:'#fff', fontSize:15, fontWeight:600, border:'none', cursor:'pointer', fontFamily:'inherit' }}>Войти</button>
         </div>}
       </div>
     </div>
