@@ -54,9 +54,17 @@ export default function ResetPasswordPage() {
     if (err) setError(err.message === 'New password should be different from the old password.' ? 'Новый пароль должен отличаться от текущего' : err.message)
     else {
       setStatus('success')
-      try { await supabase.auth.signOut() } catch(e) {}
-      // Clean redirect after 2 seconds
-      setTimeout(() => { window.location.replace('/') }, 2000)
+      try { await supabase.auth.signOut({ scope: 'global' }) } catch(e) {}
+      // Force clear all Supabase auth storage
+      try {
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) localStorage.removeItem(key)
+        })
+        Object.keys(sessionStorage || {}).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) sessionStorage.removeItem(key)
+        })
+      } catch(e) {}
+      setTimeout(() => { window.location.href = '/' }, 2000)
     }
     setLoading(false)
   }
