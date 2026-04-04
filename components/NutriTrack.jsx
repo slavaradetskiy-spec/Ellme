@@ -989,7 +989,22 @@ export default function App(){
       setAuthLoading(false);
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
+    // Проверяем hash — если в URL есть access_token (после Яндекс OAuth), устанавливаем сессию
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (hash.includes('access_token=')) {
+      const params = new URLSearchParams(hash.substring(1));
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data: { session } }) => {
+          // Убираем токены из URL
+          window.history.replaceState({}, '', '/');
+          loadProfile(session);
+        });
+      }
+    } else {
+      supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
+    }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => loadProfile(session));
     return () => subscription.unsubscribe();
   }, []);
