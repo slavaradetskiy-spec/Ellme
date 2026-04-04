@@ -50,48 +50,44 @@ export async function GET(request) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    // 4. Создаём пользователя если не существует (ошибку дубликата игнорируем)
-    await sb.auth.admin.createUser({
-      email: yEmail,
-      email_confirm: true,
-      user_metadata: { name: yName, role: 'client', provider: 'yandex' },
-    })
+    // 4. Ищем пользователя по email
+    const { data: { users } } = await sb.auth.admin.listUsers()
+    let user = users?.find(u => u.email === yEmail)
 
-    // 5. Генерируем magic link
-    const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
-      type: 'magiclink',
-      email: yEmail,
-    })
-
-    console.log('generateLink result:', JSON.stringify({ linkErr, hasData: !!linkData, hasProps: !!linkData?.properties, hasToken: !!linkData?.properties?.hashed_token, email: yEmail }))
-
-    if (linkErr || !linkData?.properties?.hashed_token) {
-      console.error('magic_link error:', linkErr, 'linkData:', JSON.stringify(linkData))
-      return NextResponse.redirect(origin + '/?error=magic_link&detail=' + encodeURIComponent(linkErr?.message || 'no_token'))
+    // 5. Если не найден — создаём нового
+    if (!user) {
+      const { data: newUser, error: createErr } = await sb.auth.admin.createUser({
+        email: yEmail,
+        email_confirm: true,
+        user_metadata: { name: yName, role: 'client', provider: 'yandex' },
+      })
+      if (createErr || !newUser?.user) {
+        return NextResponse.redirect(origin + '/?error=create_user')
+      }
+      user = newUser.user
     }
 
-    // 6. Верифицируем токен на сервере — получаем session
-    const verifyRes = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+    // 6. Ставим временный пароль и логиним через него
+    const tempPass = crypto.randomUUID()
+    await sb.auth.admin.updateUser(user.id, { password: tempPass })
+
+    // 7. Логинимся с временным паролем через REST API
+    const signInRes = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': ANON_KEY,
       },
-      body: JSON.stringify({
-        type: 'magiclink',
-        token_hash: linkData.properties.hashed_token,
-      }),
+      body: JSON.stringify({ email: yEmail, password: tempPass }),
     })
-    const session = await verifyRes.json()
-
-    console.log('verify result:', JSON.stringify({ hasAccess: !!session?.access_token, hasRefresh: !!session?.refresh_token }))
+    const session = await signInRes.json()
 
     if (!session?.access_token || !session?.refresh_token) {
-      console.error('verify error:', JSON.stringify(session))
-      return NextResponse.redirect(origin + '/?error=verify_failed&detail=' + encodeURIComponent(JSON.stringify(session).slice(0, 200)))
+      console.error('signIn error:', JSON.stringify(session))
+      return NextResponse.redirect(origin + '/?error=signin_failed')
     }
 
-    // 7. Редиректим на клиент с токенами в hash — Supabase JS подхватит сессию
+    // 8. Редиректим на клиент с токенами в hash — Supabase JS подхватит сессию
     const redirectUrl = origin + '/#access_token=' + session.access_token + '&refresh_token=' + session.refresh_token + '&token_type=bearer&type=magiclink'
     return NextResponse.redirect(redirectUrl)
 
