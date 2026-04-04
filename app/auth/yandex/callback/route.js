@@ -51,22 +51,26 @@ export async function GET(request) {
     })
 
     // 4. Ищем или создаём пользователя
-    const { data: users } = await sb.auth.admin.listUsers({ perPage: 1000 })
-    const existing = users?.users?.find(u => u.email === yEmail)
-
     let userId
-    if (existing) {
-      userId = existing.id
+
+    // Сначала пробуем создать — если email уже есть, просто найдём существующего
+    const { data: newUser, error: createErr } = await sb.auth.admin.createUser({
+      email: yEmail,
+      email_confirm: true,
+      user_metadata: { name: yName, role: 'client', provider: 'yandex' },
+    })
+
+    if (newUser?.user) {
+      userId = newUser.user.id
     } else {
-      const { data: newUser, error: err } = await sb.auth.admin.createUser({
-        email: yEmail,
-        email_confirm: true,
-        user_metadata: { name: yName, role: 'client', provider: 'yandex' },
-      })
-      if (err || !newUser?.user) {
+      // Пользователь уже существует — ищем по email
+      const { data: users } = await sb.auth.admin.listUsers()
+      const existing = users?.users?.find(u => u.email === yEmail)
+      if (existing) {
+        userId = existing.id
+      } else {
         return NextResponse.redirect(origin + '/?error=create_user')
       }
-      userId = newUser.user.id
     }
 
     // 5. Генерируем magic link
