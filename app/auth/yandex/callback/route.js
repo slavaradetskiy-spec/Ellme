@@ -45,17 +45,14 @@ export async function GET(request) {
     const yEmail = (profile.default_email || (profile.emails && profile.emails[0]) || (profile.login + '@yandex.ru')).toLowerCase()
     const yName = profile.display_name || profile.real_name || profile.login || ''
 
-    console.log('Yandex profile email:', yEmail, 'name:', yName)
-
-    // 3. Supabase admin client
+    // 3. Supabase admin client (service key обходит RLS)
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    // 4. Временный пароль
     const tempPass = crypto.randomUUID()
 
-    // 5. Пробуем создать пользователя
+    // 4. Пробуем создать пользователя
     const { data: created, error: createErr } = await sb.auth.admin.createUser({
       email: yEmail,
       password: tempPass,
@@ -63,59 +60,50 @@ export async function GET(request) {
       user_metadata: { name: yName, role: 'client', provider: 'yandex' },
     })
 
-    console.log('createUser result:', created?.user?.id || 'null', 'error:', createErr?.message || 'none')
-
     if (created?.user) {
-      // Новый пользователь создан — логинимся
-      console.log('New user created, signing in...')
+      // Новый пользователь — сразу логинимся
     } else {
-      // Пользователь существует — ищем и обновляем пароль
-      // Пробуем несколько страниц
-      let foundUser = null
-      for (let page = 1; page <= 10 && !foundUser; page++) {
-        const { data: pageData, error: listErr } = await sb.auth.admin.listUsers({ page, perPage: 1000 })
-        console.log('listUsers page', page, ':', pageData?.users?.length || 0, 'users, error:', listErr?.message || 'none')
-        if (!pageData?.users?.length) break
-        foundUser = pageData.users.find(u => u.email?.toLowerCase() === yEmail)
-      }
+      // Пользователь существует — ищем ID через таблицу profiles
+      const { data: prof } = await sb.from('profiles').select('id').eq('email', yEmail).single()
 
-      if (!foundUser) {
-        console.error('User not found for email:', yEmail)
-        return NextResponse.redirect(origin + '/?error=user_not_found&email=' + encodeURIComponent(yEmail))
-      }
+      if (prof?.id) {
+        await sb.auth.admin.updateUser(prof.id, { password: tempPass })
+      } else {
+        // Профиль не найден — ищем напрямую в auth.users через GoTrue REST
+        const res = await fetch(SUPABASE_URL + '/auth/v1/admin/users', {
+          headers: { 'Authorization': 'Bearer ' + SERVICE_KEY, 'apikey': ANON_KEY }
+        })
+        const body = await res.json()
+        const allUsers = body.users || body || []
+        const found = allUsers.find(u => u.email?.toLowerCase() === yEmail)
 
-      console.log('Found user:', foundUser.id, 'updating password...')
-      const { error: updateErr } = await sb.auth.admin.updateUser(foundUser.id, { password: tempPass })
-      if (updateErr) {
-        console.error('updateUser error:', updateErr.message)
-        return NextResponse.redirect(origin + '/?error=update_user')
+        if (!found) {
+          console.error('Yandex auth: user not found anywhere for', yEmail, 'REST response keys:', Object.keys(body), 'users count:', allUsers.length)
+          return NextResponse.redirect(origin + '/?error=user_not_found')
+        }
+
+        await sb.auth.admin.updateUser(found.id, { password: tempPass })
       }
     }
 
-    // 6. Логинимся с временным паролем
+    // 5. Логинимся с временным паролем
     const signInRes = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': ANON_KEY,
-      },
+      headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
       body: JSON.stringify({ email: yEmail, password: tempPass }),
     })
     const session = await signInRes.json()
 
     if (!session?.access_token || !session?.refresh_token) {
-      console.error('signIn error:', JSON.stringify(session))
+      console.error('Yandex auth signIn error:', JSON.stringify(session))
       return NextResponse.redirect(origin + '/?error=signin_failed')
     }
 
-    console.log('Sign in success, redirecting...')
-
-    // 7. Редиректим на клиент с токенами в hash
-    const redirectUrl = origin + '/#access_token=' + session.access_token + '&refresh_token=' + session.refresh_token + '&token_type=bearer&type=magiclink'
-    return NextResponse.redirect(redirectUrl)
+    // 6. Редиректим с токенами — Supabase JS подхватит сессию
+    return NextResponse.redirect(origin + '/#access_token=' + session.access_token + '&refresh_token=' + session.refresh_token + '&token_type=bearer&type=magiclink')
 
   } catch (e) {
     console.error('Yandex auth error:', e)
-    return NextResponse.redirect(origin + '/?error=yandex_error&detail=' + encodeURIComponent(e.message))
+    return NextResponse.redirect(origin + '/?error=yandex_error')
   }
 }
