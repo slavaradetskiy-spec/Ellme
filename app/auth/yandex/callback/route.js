@@ -42,45 +42,52 @@ export async function GET(request) {
       headers: { Authorization: 'OAuth ' + tokenData.access_token },
     })
     const profile = await profileRes.json()
-    const yEmail = profile.default_email || (profile.emails && profile.emails[0]) || (profile.login + '@yandex.ru')
+    const yEmail = (profile.default_email || (profile.emails && profile.emails[0]) || (profile.login + '@yandex.ru')).toLowerCase()
     const yName = profile.display_name || profile.real_name || profile.login || ''
+
+    console.log('Yandex profile email:', yEmail, 'name:', yName)
 
     // 3. Supabase admin client
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    // 4. Временный пароль для логина
+    // 4. Временный пароль
     const tempPass = crypto.randomUUID()
 
-    // 5. Пробуем создать пользователя с паролем
-    const { data: created } = await sb.auth.admin.createUser({
+    // 5. Пробуем создать пользователя
+    const { data: created, error: createErr } = await sb.auth.admin.createUser({
       email: yEmail,
       password: tempPass,
       email_confirm: true,
       user_metadata: { name: yName, role: 'client', provider: 'yandex' },
     })
 
-    if (!created?.user) {
-      // Пользователь уже существует — ищем через REST API с большим лимитом
-      const usersRes = await fetch(SUPABASE_URL + '/auth/v1/admin/users?per_page=10000', {
-        headers: {
-          'Authorization': 'Bearer ' + SERVICE_KEY,
-          'apikey': SERVICE_KEY,
-        },
-      })
-      const usersData = await usersRes.json()
-      const existing = usersData.users?.find(u => u.email === yEmail)
+    console.log('createUser result:', created?.user?.id || 'null', 'error:', createErr?.message || 'none')
 
-      if (!existing) {
-        console.error('User not found by email:', yEmail)
-        return NextResponse.redirect(origin + '/?error=user_not_found')
+    if (created?.user) {
+      // Новый пользователь создан — логинимся
+      console.log('New user created, signing in...')
+    } else {
+      // Пользователь существует — ищем и обновляем пароль
+      // Пробуем несколько страниц
+      let foundUser = null
+      for (let page = 1; page <= 10 && !foundUser; page++) {
+        const { data: pageData, error: listErr } = await sb.auth.admin.listUsers({ page, perPage: 1000 })
+        console.log('listUsers page', page, ':', pageData?.users?.length || 0, 'users, error:', listErr?.message || 'none')
+        if (!pageData?.users?.length) break
+        foundUser = pageData.users.find(u => u.email?.toLowerCase() === yEmail)
       }
 
-      // Обновляем пароль существующего пользователя
-      const { error: updateErr } = await sb.auth.admin.updateUser(existing.id, { password: tempPass })
+      if (!foundUser) {
+        console.error('User not found for email:', yEmail)
+        return NextResponse.redirect(origin + '/?error=user_not_found&email=' + encodeURIComponent(yEmail))
+      }
+
+      console.log('Found user:', foundUser.id, 'updating password...')
+      const { error: updateErr } = await sb.auth.admin.updateUser(foundUser.id, { password: tempPass })
       if (updateErr) {
-        console.error('updateUser error:', updateErr)
+        console.error('updateUser error:', updateErr.message)
         return NextResponse.redirect(origin + '/?error=update_user')
       }
     }
@@ -101,12 +108,14 @@ export async function GET(request) {
       return NextResponse.redirect(origin + '/?error=signin_failed')
     }
 
-    // 7. Редиректим на клиент с токенами в hash — Supabase JS подхватит сессию
+    console.log('Sign in success, redirecting...')
+
+    // 7. Редиректим на клиент с токенами в hash
     const redirectUrl = origin + '/#access_token=' + session.access_token + '&refresh_token=' + session.refresh_token + '&token_type=bearer&type=magiclink'
     return NextResponse.redirect(redirectUrl)
 
   } catch (e) {
     console.error('Yandex auth error:', e)
-    return NextResponse.redirect(origin + '/?error=yandex_error')
+    return NextResponse.redirect(origin + '/?error=yandex_error&detail=' + encodeURIComponent(e.message))
   }
 }
