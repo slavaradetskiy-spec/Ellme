@@ -45,14 +45,14 @@ export async function GET(request) {
     const yEmail = (profile.default_email || (profile.emails && profile.emails[0]) || (profile.login + '@yandex.ru')).toLowerCase()
     const yName = profile.display_name || profile.real_name || profile.login || ''
 
-    // 3. Supabase admin client (service key обходит RLS)
+    // 3. Supabase admin client
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
     const tempPass = crypto.randomUUID()
 
-    // 4. Пробуем создать пользователя
+    // 4. Создаём пользователя (или находим существующего и обновляем пароль)
     const { data: created } = await sb.auth.admin.createUser({
       email: yEmail,
       password: tempPass,
@@ -61,16 +61,13 @@ export async function GET(request) {
     })
 
     if (!created?.user) {
-      // Пользователь уже существует — ищем его ID и ставим пароль
       let userId = null
 
-      // Способ 1: через profiles
       try {
         const { data: prof } = await sb.from('profiles').select('id').eq('email', yEmail).maybeSingle()
         if (prof?.id) userId = prof.id
       } catch (e) { /* игнорируем */ }
 
-      // Способ 2: через admin listUsers по страницам
       if (!userId) {
         try {
           for (let page = 1; page <= 20 && !userId; page++) {
@@ -84,12 +81,12 @@ export async function GET(request) {
       }
 
       if (!userId) {
-        return NextResponse.redirect(origin + '/?error=user_not_found&email=' + encodeURIComponent(yEmail))
+        return NextResponse.redirect(origin + '/?error=auth_failed')
       }
 
       const { error: upErr } = await sb.auth.admin.updateUserById(userId, { password: tempPass })
       if (upErr) {
-        return NextResponse.redirect(origin + '/?error=update_failed&detail=' + encodeURIComponent(upErr.message))
+        return NextResponse.redirect(origin + '/?error=auth_failed')
       }
     }
 
@@ -102,7 +99,7 @@ export async function GET(request) {
     const session = await signInRes.json()
 
     if (!session?.access_token || !session?.refresh_token) {
-      return NextResponse.redirect(origin + '/?error=signin_failed&detail=' + encodeURIComponent(session?.error_description || session?.msg || 'unknown'))
+      return NextResponse.redirect(origin + '/?error=auth_failed')
     }
 
     // 6. Редиректим с токенами — Supabase JS подхватит сессию
@@ -110,6 +107,6 @@ export async function GET(request) {
 
   } catch (e) {
     console.error('Yandex auth error:', e)
-    return NextResponse.redirect(origin + '/?error=yandex_error&detail=' + encodeURIComponent(e.message || 'unknown'))
+    return NextResponse.redirect(origin + '/?error=auth_failed')
   }
 }
