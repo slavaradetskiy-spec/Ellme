@@ -87,7 +87,7 @@ export async function GET(request) {
         return NextResponse.redirect(origin + '/?error=user_not_found&email=' + encodeURIComponent(yEmail))
       }
 
-      const { error: upErr } = await sb.auth.admin.updateUser(userId, { password: tempPass })
+      const { error: upErr } = await sb.auth.admin.updateUserById(userId, { password: tempPass })
       if (upErr) {
         return NextResponse.redirect(origin + '/?error=update_failed&detail=' + encodeURIComponent(upErr.message))
       }
