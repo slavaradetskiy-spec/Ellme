@@ -63,6 +63,8 @@ export async function GET(request) {
     if (created?.user) {
       // Новый пользователь — сразу логинимся
     } else {
+      // createUser не сработал — выводим реальную ошибку в URL для дебага
+      console.error('createUser failed:', createErr?.message, createErr?.status, JSON.stringify(createErr))
       // Пользователь существует — ищем ID через таблицу profiles
       const { data: prof } = await sb.from('profiles').select('id').eq('email', yEmail).single()
 
@@ -78,8 +80,8 @@ export async function GET(request) {
         const found = allUsers.find(u => u.email?.toLowerCase() === yEmail)
 
         if (!found) {
-          console.error('Yandex auth: user not found anywhere for', yEmail, 'REST response keys:', Object.keys(body), 'users count:', allUsers.length)
-          return NextResponse.redirect(origin + '/?error=user_not_found')
+          console.error('Yandex auth: user not found anywhere for', yEmail, 'REST keys:', Object.keys(body), 'count:', allUsers.length)
+          return NextResponse.redirect(origin + '/?error=user_not_found&create_err=' + encodeURIComponent(createErr?.message || 'unknown') + '&rest_keys=' + encodeURIComponent(Object.keys(body).join(',')) + '&rest_count=' + allUsers.length)
         }
 
         await sb.auth.admin.updateUser(found.id, { password: tempPass })
