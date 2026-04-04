@@ -50,28 +50,42 @@ export async function GET(request) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    // 4. Ищем пользователя по email
-    const { data: { users } } = await sb.auth.admin.listUsers()
-    let user = users?.find(u => u.email === yEmail)
+    // 4. Временный пароль для логина
+    const tempPass = crypto.randomUUID()
 
-    // 5. Если не найден — создаём нового
-    if (!user) {
-      const { data: newUser, error: createErr } = await sb.auth.admin.createUser({
-        email: yEmail,
-        email_confirm: true,
-        user_metadata: { name: yName, role: 'client', provider: 'yandex' },
+    // 5. Пробуем создать пользователя с паролем
+    const { data: created } = await sb.auth.admin.createUser({
+      email: yEmail,
+      password: tempPass,
+      email_confirm: true,
+      user_metadata: { name: yName, role: 'client', provider: 'yandex' },
+    })
+
+    if (!created?.user) {
+      // Пользователь уже существует — ищем через REST API с большим лимитом
+      const usersRes = await fetch(SUPABASE_URL + '/auth/v1/admin/users?per_page=10000', {
+        headers: {
+          'Authorization': 'Bearer ' + SERVICE_KEY,
+          'apikey': SERVICE_KEY,
+        },
       })
-      if (createErr || !newUser?.user) {
-        return NextResponse.redirect(origin + '/?error=create_user')
+      const usersData = await usersRes.json()
+      const existing = usersData.users?.find(u => u.email === yEmail)
+
+      if (!existing) {
+        console.error('User not found by email:', yEmail)
+        return NextResponse.redirect(origin + '/?error=user_not_found')
       }
-      user = newUser.user
+
+      // Обновляем пароль существующего пользователя
+      const { error: updateErr } = await sb.auth.admin.updateUser(existing.id, { password: tempPass })
+      if (updateErr) {
+        console.error('updateUser error:', updateErr)
+        return NextResponse.redirect(origin + '/?error=update_user')
+      }
     }
 
-    // 6. Ставим временный пароль и логиним через него
-    const tempPass = crypto.randomUUID()
-    await sb.auth.admin.updateUser(user.id, { password: tempPass })
-
-    // 7. Логинимся с временным паролем через REST API
+    // 6. Логинимся с временным паролем
     const signInRes = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
       method: 'POST',
       headers: {
@@ -87,7 +101,7 @@ export async function GET(request) {
       return NextResponse.redirect(origin + '/?error=signin_failed')
     }
 
-    // 8. Редиректим на клиент с токенами в hash — Supabase JS подхватит сессию
+    // 7. Редиректим на клиент с токенами в hash — Supabase JS подхватит сессию
     const redirectUrl = origin + '/#access_token=' + session.access_token + '&refresh_token=' + session.refresh_token + '&token_type=bearer&type=magiclink'
     return NextResponse.redirect(redirectUrl)
 
