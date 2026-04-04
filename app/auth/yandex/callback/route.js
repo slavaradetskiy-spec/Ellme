@@ -63,8 +63,11 @@ export async function GET(request) {
       email: yEmail,
     })
 
+    console.log('generateLink result:', JSON.stringify({ linkErr, hasData: !!linkData, hasProps: !!linkData?.properties, hasToken: !!linkData?.properties?.hashed_token, email: yEmail }))
+
     if (linkErr || !linkData?.properties?.hashed_token) {
-      return NextResponse.redirect(origin + '/?error=magic_link')
+      console.error('magic_link error:', linkErr, 'linkData:', JSON.stringify(linkData))
+      return NextResponse.redirect(origin + '/?error=magic_link&detail=' + encodeURIComponent(linkErr?.message || 'no_token'))
     }
 
     // 6. Верифицируем токен на сервере — получаем session
@@ -81,8 +84,11 @@ export async function GET(request) {
     })
     const session = await verifyRes.json()
 
+    console.log('verify result:', JSON.stringify({ hasAccess: !!session?.access_token, hasRefresh: !!session?.refresh_token }))
+
     if (!session?.access_token || !session?.refresh_token) {
-      return NextResponse.redirect(origin + '/?error=verify_failed')
+      console.error('verify error:', JSON.stringify(session))
+      return NextResponse.redirect(origin + '/?error=verify_failed&detail=' + encodeURIComponent(JSON.stringify(session).slice(0, 200)))
     }
 
     // 7. Редиректим на клиент с токенами в hash — Supabase JS подхватит сессию
