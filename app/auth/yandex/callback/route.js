@@ -14,13 +14,14 @@ export async function GET(request) {
   const YANDEX_CLIENT_SECRET = process.env.YANDEX_CLIENT_SECRET
   const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!YANDEX_CLIENT_ID || !YANDEX_CLIENT_SECRET || !SERVICE_KEY) {
     return NextResponse.redirect(origin + '/?error=config_missing')
   }
 
   try {
-    // 1. Exchange code for token
+    // 1. Обмениваем code на access_token Яндекса
     const tokenRes = await fetch('https://oauth.yandex.ru/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -36,7 +37,7 @@ export async function GET(request) {
       return NextResponse.redirect(origin + '/?error=yandex_token')
     }
 
-    // 2. Get Yandex profile
+    // 2. Получаем профиль из Яндекса
     const profileRes = await fetch('https://login.yandex.ru/info?format=json', {
       headers: { Authorization: 'OAuth ' + tokenData.access_token },
     })
@@ -49,7 +50,7 @@ export async function GET(request) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    // 4. Find or create user
+    // 4. Ищем или создаём пользователя
     const { data: users } = await sb.auth.admin.listUsers({ perPage: 1000 })
     const existing = users?.users?.find(u => u.email === yEmail)
 
@@ -68,7 +69,7 @@ export async function GET(request) {
       userId = newUser.user.id
     }
 
-    // 5. Generate magic link
+    // 5. Генерируем magic link
     const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
       type: 'magiclink',
       email: yEmail,
@@ -78,9 +79,27 @@ export async function GET(request) {
       return NextResponse.redirect(origin + '/?error=magic_link')
     }
 
-    // 6. Redirect through Supabase verify endpoint
-    const verifyUrl = SUPABASE_URL + '/auth/v1/verify?token=' + linkData.properties.hashed_token + '&type=magiclink&redirect_to=' + encodeURIComponent(origin + '/')
-    return NextResponse.redirect(verifyUrl)
+    // 6. Верифицируем токен на сервере — получаем session
+    const verifyRes = await fetch(SUPABASE_URL + '/auth/v1/verify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': ANON_KEY,
+      },
+      body: JSON.stringify({
+        type: 'magiclink',
+        token_hash: linkData.properties.hashed_token,
+      }),
+    })
+    const session = await verifyRes.json()
+
+    if (!session?.access_token || !session?.refresh_token) {
+      return NextResponse.redirect(origin + '/?error=verify_failed')
+    }
+
+    // 7. Редиректим на клиент с токенами в hash — Supabase JS подхватит сессию
+    const redirectUrl = origin + '/#access_token=' + session.access_token + '&refresh_token=' + session.refresh_token + '&token_type=bearer&type=magiclink'
+    return NextResponse.redirect(redirectUrl)
 
   } catch (e) {
     console.error('Yandex auth error:', e)
