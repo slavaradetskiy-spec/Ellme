@@ -53,38 +53,43 @@ export async function GET(request) {
     const tempPass = crypto.randomUUID()
 
     // 4. Пробуем создать пользователя
-    const { data: created, error: createErr } = await sb.auth.admin.createUser({
+    const { data: created } = await sb.auth.admin.createUser({
       email: yEmail,
       password: tempPass,
       email_confirm: true,
       user_metadata: { name: yName, role: 'client', provider: 'yandex' },
     })
 
-    if (created?.user) {
-      // Новый пользователь — сразу логинимся
-    } else {
-      // createUser не сработал — выводим реальную ошибку в URL для дебага
-      console.error('createUser failed:', createErr?.message, createErr?.status, JSON.stringify(createErr))
-      // Пользователь существует — ищем ID через таблицу profiles
-      const { data: prof } = await sb.from('profiles').select('id').eq('email', yEmail).single()
+    if (!created?.user) {
+      // Пользователь уже существует — ищем его ID и ставим пароль
+      let userId = null
 
-      if (prof?.id) {
-        await sb.auth.admin.updateUser(prof.id, { password: tempPass })
-      } else {
-        // Профиль не найден — ищем напрямую в auth.users через GoTrue REST
-        const res = await fetch(SUPABASE_URL + '/auth/v1/admin/users', {
-          headers: { 'Authorization': 'Bearer ' + SERVICE_KEY, 'apikey': ANON_KEY }
-        })
-        const body = await res.json()
-        const allUsers = body.users || body || []
-        const found = allUsers.find(u => u.email?.toLowerCase() === yEmail)
+      // Способ 1: через profiles
+      try {
+        const { data: prof } = await sb.from('profiles').select('id').eq('email', yEmail).maybeSingle()
+        if (prof?.id) userId = prof.id
+      } catch (e) { /* игнорируем */ }
 
-        if (!found) {
-          console.error('Yandex auth: user not found anywhere for', yEmail, 'REST keys:', Object.keys(body), 'count:', allUsers.length)
-          return NextResponse.redirect(origin + '/?error=user_not_found&create_err=' + encodeURIComponent(createErr?.message || 'unknown') + '&rest_keys=' + encodeURIComponent(Object.keys(body).join(',')) + '&rest_count=' + allUsers.length)
-        }
+      // Способ 2: через admin listUsers по страницам
+      if (!userId) {
+        try {
+          for (let page = 1; page <= 20 && !userId; page++) {
+            const { data: pageData } = await sb.auth.admin.listUsers({ page, perPage: 500 })
+            const users = pageData?.users || []
+            if (users.length === 0) break
+            const found = users.find(u => u.email?.toLowerCase() === yEmail)
+            if (found) userId = found.id
+          }
+        } catch (e) { /* игнорируем */ }
+      }
 
-        await sb.auth.admin.updateUser(found.id, { password: tempPass })
+      if (!userId) {
+        return NextResponse.redirect(origin + '/?error=user_not_found&email=' + encodeURIComponent(yEmail))
+      }
+
+      const { error: upErr } = await sb.auth.admin.updateUser(userId, { password: tempPass })
+      if (upErr) {
+        return NextResponse.redirect(origin + '/?error=update_failed&detail=' + encodeURIComponent(upErr.message))
       }
     }
 
@@ -97,8 +102,7 @@ export async function GET(request) {
     const session = await signInRes.json()
 
     if (!session?.access_token || !session?.refresh_token) {
-      console.error('Yandex auth signIn error:', JSON.stringify(session))
-      return NextResponse.redirect(origin + '/?error=signin_failed')
+      return NextResponse.redirect(origin + '/?error=signin_failed&detail=' + encodeURIComponent(session?.error_description || session?.msg || 'unknown'))
     }
 
     // 6. Редиректим с токенами — Supabase JS подхватит сессию
@@ -106,6 +110,6 @@ export async function GET(request) {
 
   } catch (e) {
     console.error('Yandex auth error:', e)
-    return NextResponse.redirect(origin + '/?error=yandex_error')
+    return NextResponse.redirect(origin + '/?error=yandex_error&detail=' + encodeURIComponent(e.message || 'unknown'))
   }
 }
