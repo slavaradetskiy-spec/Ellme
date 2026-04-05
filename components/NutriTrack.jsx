@@ -1588,43 +1588,24 @@ export default function App(){
   // ── Chat: subscribe to realtime messages ──
   useEffect(()=>{
     if(!supabase||!user?.id)return;
-    const filter=isDoc?'doc_id=eq.'+user.id:'client_id=eq.'+user.id;
-    const ch=supabase.channel('chat_'+user.id)
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_comments',filter},()=>{
-        if(isDoc&&selClient)loadComments(selClient.id);
-        else if(!isDoc)loadComments(user.id);
-      })
-      .subscribe();
-    // Initial load
-    if(isDoc&&selClient)loadComments(selClient.id);
-    else if(!isDoc)loadComments(user.id);
-    return()=>{supabase.removeChannel(ch)};
+    try{
+      const filter=isDoc?'doc_id=eq.'+user.id:'client_id=eq.'+user.id;
+      const chName='chat_'+user.id+'_'+(selClient?.id||'self');
+      const ch=supabase.channel(chName)
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_comments',filter},()=>{
+          if(isDoc&&selClient)loadComments(selClient.id);
+          else if(!isDoc)loadComments(user.id);
+        })
+        .subscribe();
+      // Initial load
+      if(isDoc&&selClient)loadComments(selClient.id);
+      else if(!isDoc)loadComments(user.id);
+      return()=>{try{supabase.removeChannel(ch)}catch(e){}};
+    }catch(e){console.error('Chat subscribe error:',e)}
   },[user?.id,selClient?.id]);
 
-  // ── Typing indicator ──
-  const[typing,setTyping]=useState(null);
-  const typingRef=useRef(null);
-  const typingChRef=useRef(null);
-  const sendTyping=()=>{
-    if(typingChRef.current){
-      typingChRef.current.send({type:'broadcast',event:'typing',payload:{name:user.name,id:user.id}}).catch(()=>{});
-    }
-  };
-  useEffect(()=>{
-    if(!supabase||!user?.id)return;
-    const cid=isDoc&&selClient?selClient.id:user.id;
-    const ch=supabase.channel('typing_'+cid+Date.now())
-      .on('broadcast',{event:'typing'},(payload)=>{
-        if(payload.payload?.id!==user.id){
-          setTyping(payload.payload?.name||'...');
-          clearTimeout(typingRef.current);
-          typingRef.current=setTimeout(()=>setTyping(null),3000);
-        }
-      })
-      .subscribe();
-    typingChRef.current=ch;
-    return()=>{supabase.removeChannel(ch);typingChRef.current=null};
-  },[user?.id,selClient?.id]);
+  const typing=null;
+  const sendTyping=()=>{};
 
   const goHome = () => { setScreen('home'); setSelMeal(null); setSelClient(null); };
   const openSupport = () => { window.open('https://t.me/ellme_support','_blank'); };
