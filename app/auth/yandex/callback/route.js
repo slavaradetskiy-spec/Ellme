@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 export async function GET(request) {
   const url = new URL(request.url)
   const code = url.searchParams.get('code')
+  const state = url.searchParams.get('state') || 'client' // 'doc' or 'client'
   const origin = url.origin
 
   if (!code) {
@@ -19,6 +20,9 @@ export async function GET(request) {
   if (!YANDEX_CLIENT_ID || !YANDEX_CLIENT_SECRET || !SERVICE_KEY) {
     return NextResponse.redirect(origin + '/?error=config_missing')
   }
+
+  // Validate role
+  const role = state === 'doc' ? 'doc' : 'client'
 
   try {
     // 1. Обмениваем code на access_token Яндекса
@@ -57,12 +61,13 @@ export async function GET(request) {
       email: yEmail,
       password: tempPass,
       email_confirm: true,
-      user_metadata: { name: yName, role: 'client', provider: 'yandex' },
+      user_metadata: { name: yName, role, provider: 'yandex' },
     })
 
-    if (!created?.user) {
-      let userId = null
+    let userId = created?.user?.id || null
 
+    if (!userId) {
+      // Пользователь уже существует — находим его
       try {
         const { data: prof } = await sb.from('profiles').select('id').eq('email', yEmail).maybeSingle()
         if (prof?.id) userId = prof.id
@@ -88,6 +93,11 @@ export async function GET(request) {
       if (upErr) {
         return NextResponse.redirect(origin + '/?error=auth_failed')
       }
+    }
+
+    // 4b. Обновляем роль в profiles (если регистрация как doc)
+    if (role === 'doc' && userId) {
+      await sb.from('profiles').update({ role: 'doc' }).eq('id', userId).eq('role', 'client')
     }
 
     // 5. Логинимся с временным паролем
