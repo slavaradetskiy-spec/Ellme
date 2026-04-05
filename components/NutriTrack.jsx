@@ -1069,14 +1069,6 @@ function Login({onLogin}){
 export default function App(){
   const[user,setUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(!!supabase);
-  const[showLoader,setShowLoader]=useState(false);
-
-  // Only show loading screen if auth takes > 1.5 seconds
-  useEffect(()=>{
-    if(!authLoading){setShowLoader(false);return;}
-    const timer=setTimeout(()=>{if(authLoading)setShowLoader(true)},1500);
-    return()=>clearTimeout(timer);
-  },[authLoading]);
   const[diaries,setDiaries]=useState({});
   const[comments,setComments]=useState({});
   const[clients,setClients]=useState([]);
@@ -1111,19 +1103,22 @@ export default function App(){
   // Load doc's clients from DB
   const loadClients=async()=>{
     if(!supabase||!user?.id||user.role!=='doc')return;
-    const{data:links}=await supabase.from('doc_clients').select('*,profiles!doc_clients_client_id_fkey(id,name,email,age,request,created_at)').eq('doc_id',user.id);
+    const{data:links}=await supabase.from('doc_clients').select('*,profiles!doc_clients_client_id_fkey(id,name,email,age,request,photo_url,created_at)').eq('doc_id',user.id);
     if(links&&links.length>0){
       const cls=links.map(l=>({
         id:l.client_id,
         name:l.profiles?.name||l.profiles?.email||'Клиент',
         email:l.profiles?.email,
         age:l.profiles?.age,
+        photo:l.profiles?.photo_url||null,
         request:l.profiles?.request||'',
         nick:l.nick||'',
         status:l.status||'active',
         joined:new Date(l.profiles?.created_at||l.created_at),
       }));
       setClients(cls);
+    } else {
+      setClients([]);
     }
   };
 
@@ -1674,11 +1669,11 @@ export default function App(){
         </div>
       </button>
 
-      {list.map((c,i)=><div key={c.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,animation:`enter .35s ease ${i*0.04}s both`}}>
+      {list.map((c,i)=><div key={c.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,position:'relative',animation:`enter .35s ease ${i*0.04}s both`}}>
         <button onClick={()=>{setSelClient(c);setScreen('clientView');setDate(new Date())}} className="card-hover" style={{flex:1,display:'flex',alignItems:'center',gap:12,padding:'16px',borderRadius:18,border:'none',background:C.surface,cursor:'pointer',textAlign:'left',fontFamily:'inherit',boxShadow:C.shadowCard,transition:'all .2s',transform:'perspective(400px) rotateX(0)'}}
           onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-2px)';e.currentTarget.style.boxShadow=C.shadowHover}}
           onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow=C.shadowCard}}>
-          <div style={{width:42,height:42,borderRadius:14,background:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(c.nick||c.name).charAt(0)}</div>
+          {c.photo?<img src={c.photo} style={{width:42,height:42,borderRadius:14,objectFit:'cover'}} alt=""/>:<div style={{width:42,height:42,borderRadius:14,background:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(c.nick||c.name).charAt(0)}</div>}
           <div style={{flex:1}}>
             <div style={{fontSize:15,fontWeight:600}}>{c.nick||c.name}</div>
             {c.nick&&<div style={{fontSize:11,color:C.muted}}>{c.name}</div>}
@@ -1689,7 +1684,7 @@ export default function App(){
         </button>
         <div style={{position:'relative'}}>
           <button onClick={e=>{e.stopPropagation();setClientMenu(clientMenu===c.id?null:c.id)}} style={{background:C.surface,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.muted,display:'flex',boxShadow:C.shadowCard,fontSize:18,lineHeight:1}}>⋮</button>
-          {clientMenu===c.id&&<div style={{position:'absolute',right:0,top:44,background:C.surface,borderRadius:14,boxShadow:'0 4px 24px rgba(0,0,0,.15)',padding:6,zIndex:999,width:200,animation:'scaleIn .15s ease'}}>
+          {clientMenu===c.id&&<div onClick={e=>e.stopPropagation()} style={{position:'fixed',right:'auto',marginLeft:-160,marginTop:4,background:C.surface,borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:6,zIndex:9999,width:200,animation:'scaleIn .15s ease'}}>
             <button onClick={()=>{setRenaming(c);setRenameVal(c.nick||'');setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
               onMouseOver={e=>e.currentTarget.style.background=C.surfaceAlt} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{I.edit} Переименовать</button>
             <button onClick={()=>{toggleArchive(c.id);setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
@@ -1715,9 +1710,8 @@ export default function App(){
           <p style={{fontSize:13,color:C.soft,lineHeight:1.6,margin:'0 0 14px'}}>Отправьте ссылку — клиент зарегистрируется и появится в вашем списке.</p>
           <div style={{display:'flex',gap:8}}>
             <input readOnly value={invLink} style={{flex:1,padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:12,fontFamily:'monospace',background:C.surfaceAlt,outline:'none'}}/>
-            <button onClick={()=>{navigator.clipboard?.writeText(invLink);setCopied(true);setTimeout(()=>setCopied(false),2000)}} style={{padding:'10px 18px',borderRadius:12,border:'none',background:C.accent,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>{copied?'Готово':'Копировать'}</button>
+            <button onClick={()=>{navigator.clipboard?.writeText(invLink);setCopied(true);setTimeout(()=>{setCopied(false);setInv(false);loadClients()},1200)}} style={{padding:'10px 18px',borderRadius:12,border:'none',background:C.accent,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>{copied?'Скопировано ✓':'Копировать'}</button>
           </div>
-          <button onClick={()=>{setInv(false);loadClients()}} style={{width:'100%',marginTop:14,padding:'10px',borderRadius:12,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Закрыть</button>
         </div>
       </div>}
     </>);
