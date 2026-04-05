@@ -705,6 +705,10 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       </button>
       {showSupport&&<div style={{padding:'0 20px 20px',borderTop:`1px solid ${C.surfaceAlt}`,animation:'enter .2s'}}>
         <p style={{fontSize:12,color:C.muted,marginBottom:12,marginTop:12}}>Опишите проблему — мы ответим на вашу почту</p>
+        {supportSent&&<div style={{padding:'14px 16px',borderRadius:12,background:C.accentSoft,marginBottom:12,display:'flex',alignItems:'center',gap:10,animation:'enter .3s'}}>
+          <span style={{fontSize:20}}>✅</span>
+          <div><div style={{fontSize:14,fontWeight:600,color:C.accent}}>Сообщение отправлено!</div><div style={{fontSize:12,color:C.soft,marginTop:2}}>Мы ответим на вашу почту</div></div>
+        </div>}
         <textarea value={supportText} onChange={e=>setSupportText(e.target.value)} placeholder="Опишите проблему или задайте вопрос..." rows={3}
           style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,marginBottom:10}}
           onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
@@ -1071,7 +1075,8 @@ export default function App(){
   useEffect(()=>{if(user?.role==='doc')loadClients()},[user?.id,user?.role]);
   const[renaming,setRenaming]=useState(null);
   const[renameVal,setRenameVal]=useState('');
-  const[profilePhoto,setProfilePhoto]=useState(null);
+  const[profilePhoto,setProfilePhoto]=useState(()=>{try{return typeof window!=='undefined'?localStorage.getItem('ellme_photo'):null}catch(e){return null}});
+  const updatePhoto=(url)=>{setProfilePhoto(url);try{if(url)localStorage.setItem('ellme_photo',url);else localStorage.removeItem('ellme_photo')}catch(e){}};
   const[waterNorm,setWaterNorm]=useState(2200);
   const[celebration,setCelebration]=useState(null);
   const[clientMenu,setClientMenu]=useState(null);
@@ -1116,7 +1121,7 @@ export default function App(){
 
       setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200 });
       setWaterNorm(profile.water_norm || 2200);
-      if (profile.photo_url) setProfilePhoto(profile.photo_url);
+      if (profile.photo_url) updatePhoto(profile.photo_url);
 
       // Handle invite linking — if client registered via invite link
       if (typeof window !== 'undefined') {
@@ -1236,6 +1241,7 @@ export default function App(){
   const login = (r,n,c) => { setUser({role:r,name:n,cid:c}); setScreen('home'); };
   const logout = async () => {
     try { if (supabase) await supabase.auth.signOut(); } catch(e) {}
+    try { localStorage.removeItem('ellme_photo'); } catch(e) {}
     setUser(null); setScreen('home'); setSelClient(null); setSelMeal(null);
     setDiaries({}); setComments({}); setClients([]);
     window.location.href = '/';
@@ -1371,7 +1377,7 @@ export default function App(){
   </div>;
 
   // ═══ PROFILE ═══
-  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={setProfilePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb}/>);
+  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb}/>);
 
   // ═══ CLIENT — MEAL DETAIL ═══
   if(!isDoc&&selMeal)return shell(<>
