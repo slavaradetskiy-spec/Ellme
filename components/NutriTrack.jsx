@@ -1083,9 +1083,14 @@ export default function App(){
   const[clientMenu,setClientMenu]=useState(null);
   const[clientProfileData,setClientProfileData]=useState(null); // client id for open menu
 
-  // Detect password recovery redirect and send to /reset-password
+  // Persist invite code from URL early — before any OAuth redirect loses it
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      const inv = p.get('invite');
+      if (inv) localStorage.setItem('_pendingInvite', inv);
+
+      // Detect password recovery redirect and send to /reset-password
       const hash = window.location.hash;
       if (hash && hash.includes('type=recovery')) {
         window.location.replace('/reset-password' + hash);
@@ -1159,13 +1164,21 @@ export default function App(){
       if (accessToken && refreshToken) {
         supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data: { session } }) => {
           window.history.replaceState({}, '', '/');
-          loadProfile(session);
+          if (session) loadProfile(session);
+          else { setUser(null); setAuthLoading(false); }
+        }).catch(() => { setUser(null); setAuthLoading(false); });
+        // Skip onAuthStateChange initial call — we handle session manually above
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          if (event !== 'INITIAL_SESSION') loadProfile(session);
         });
+        return () => subscription.unsubscribe();
       }
     } else {
       supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
     }
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => loadProfile(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event !== 'INITIAL_SESSION') loadProfile(session);
+    });
     return () => subscription.unsubscribe();
   }, []);
 
