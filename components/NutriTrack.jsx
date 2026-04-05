@@ -1573,24 +1573,27 @@ export default function App(){
     }
   };
 
-  // Load comments from DB
+  // Load comments from DB (called manually, not in useEffect to avoid loops)
+  const commentsLoadedRef=useRef({});
   const loadCommentsFor = async (clientId) => {
-    if(!supabase||!clientId)return;
+    if(!supabase||!clientId||commentsLoadedRef.current[clientId])return;
+    commentsLoadedRef.current[clientId]=true;
     try{
-      const{data}=await supabase.from('doc_comments').select('*').eq('client_id',clientId).order('created_at',{ascending:true});
-      if(data){
+      const col=isDoc?'client_id':'client_id';
+      const{data}=await supabase.from('doc_comments').select('*').eq(col,clientId).order('created_at',{ascending:true});
+      if(data&&data.length>0){
         const list=data.map(c=>({id:c.id,date:c.date,text:c.text,ts:new Date(c.created_at).getTime(),read:!!c.read,senderId:c.sender_id,senderName:c.sender_name||''}));
         setComments(p=>Object.assign({},p,{[clientId]:list}));
       }
     }catch(e){console.error('loadComments error:',e)}
   };
 
-  // Load client's comments on first render (for client users)
-  const commentsInitRef=useRef(false);
-  if(!isDoc&&user?.id&&supabase&&!commentsInitRef.current){
-    commentsInitRef.current=true;
-    setTimeout(()=>loadCommentsFor(user.id),500);
-  }
+  // Load comments once when entering a client view (doc) or on mount (client)
+  useEffect(()=>{
+    if(!supabase||!user?.id)return;
+    if(isDoc&&selClient?.id) loadCommentsFor(selClient.id);
+    else if(!isDoc) loadCommentsFor(user.id);
+  },[selClient?.id]);// eslint-disable-line
 
   const typing=null;
   const sendTyping=()=>{};
@@ -1772,7 +1775,7 @@ export default function App(){
       </button>
 
       {list.map((c,i)=><div key={c.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,position:'relative',animation:`enter .35s ease ${i*0.04}s both`}}>
-        <button onClick={()=>{setSelClient(c);setScreen('clientView');setDate(new Date());loadCommentsFor(c.id)}} className="card-hover" style={{flex:1,display:'flex',alignItems:'center',gap:12,padding:'16px',borderRadius:18,border:'none',background:C.surface,cursor:'pointer',textAlign:'left',fontFamily:'inherit',boxShadow:C.shadowCard,transition:'all .2s',transform:'perspective(400px) rotateX(0)'}}
+        <button onClick={()=>{setSelClient(c);setScreen('clientView');setDate(new Date())}} className="card-hover" style={{flex:1,display:'flex',alignItems:'center',gap:12,padding:'16px',borderRadius:18,border:'none',background:C.surface,cursor:'pointer',textAlign:'left',fontFamily:'inherit',boxShadow:C.shadowCard,transition:'all .2s',transform:'perspective(400px) rotateX(0)'}}
           onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-2px)';e.currentTarget.style.boxShadow=C.shadowHover}}
           onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow=C.shadowCard}}>
           <div style={{position:'relative',flexShrink:0}}>
