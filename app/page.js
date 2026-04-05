@@ -1,6 +1,6 @@
-'use client'
+import dynamic from 'next/dynamic'
 
-import NutriTrack from '../components/NutriTrack'
+const NutriTrack = dynamic(() => import('../components/NutriTrack'), { ssr: false })
 
 export default function Home() {
   return <NutriTrack />
