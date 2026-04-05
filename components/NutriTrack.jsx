@@ -113,9 +113,9 @@ function formatLastSeen(d){
   const now=new Date(),dt=new Date(d),diff=Math.floor((now-dt)/1000);
   if(diff<60)return 'только что';
   if(diff<3600)return Math.floor(diff/60)+' мин назад';
-  if(diff<86400)return Math.floor(diff/3600)+' ч назад';
-  if(diff<604800)return Math.floor(diff/86400)+' дн назад';
-  return dt.toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+  if(diff<86400)return 'сегодня в '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  if(diff<172800)return 'вчера в '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  return dt.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})+' в '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
 }
 
 function mkDemo(){
@@ -795,6 +795,47 @@ function Celebration({type,onClose}){
 }
 
 // ═══ LOGIN ═══
+const EMOJIS=['👍','❤️','🔥','👏','😊','🥗','💪','✅','⭐','🙏','😄','🎉'];
+
+function ChatSection({comments,dateKey,docComment,setDocComment,onSend,userId,typing,onTyping}){
+  const[showEmoji,setShowEmoji]=useState(false);
+  const msgs=(comments||[]).filter(c=>c.date===dateKey);
+  const chatEnd=useRef(null);
+  useEffect(()=>{chatEnd.current?.scrollIntoView({behavior:'smooth'})},[msgs.length]);
+  return <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden'}}>
+    <div style={{padding:'14px 18px 8px',fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>Чат</div>
+    <div style={{maxHeight:300,overflowY:'auto',padding:'0 18px 8px'}}>
+      {msgs.length===0&&<div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'16px 0'}}>Нет сообщений за этот день</div>}
+      {msgs.map(c=>{
+        const isMine=c.senderId===userId;
+        return <div key={c.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',marginBottom:6}}>
+          <div style={{maxWidth:'80%',padding:'10px 14px',borderRadius:isMine?'14px 14px 4px 14px':'14px 14px 14px 4px',background:isMine?C.accentSoft:C.surfaceAlt,fontSize:13,lineHeight:1.6}}>
+            <div style={{fontSize:10,fontWeight:600,color:isMine?C.accent:C.warm,marginBottom:2}}>{c.senderName||'—'}</div>
+            <div>{c.text}</div>
+            <div style={{fontSize:10,color:C.muted,textAlign:'right',marginTop:2}}>{new Date(c.ts).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
+          </div>
+        </div>;
+      })}
+      {typing&&<div style={{fontSize:12,color:C.accent,fontStyle:'italic',padding:'4px 0',animation:'pulse 1.5s infinite'}}>{typing} печатает...</div>}
+      <div ref={chatEnd}/>
+    </div>
+    {showEmoji&&<div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
+      {EMOJIS.map(e=><button key={e} onClick={()=>{setDocComment(docComment+e);setShowEmoji(false)}} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
+        onMouseOver={ev=>ev.currentTarget.style.background=C.surfaceAlt} onMouseOut={ev=>ev.currentTarget.style.background='none'}>{e}</button>)}
+    </div>}
+    <div style={{display:'flex',gap:6,padding:'8px 12px 12px',alignItems:'flex-end'}}>
+      <button onClick={()=>setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
+      <textarea value={docComment} onChange={e=>{setDocComment(e.target.value);onTyping&&onTyping()}} placeholder="Сообщение..." rows={1}
+        onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();onSend()}}}
+        style={{flex:1,padding:'10px 14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.5,maxHeight:100}}
+        onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
+      <button disabled={!docComment.trim()} onClick={onSend} style={{width:38,height:38,borderRadius:'50%',border:'none',background:docComment.trim()?C.accent:'#ddd',color:'#fff',fontSize:16,cursor:docComment.trim()?'pointer':'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </button>
+    </div>
+  </div>;
+}
+
 function Login({onLogin}){
   const[mode,setMode]=useState('auth'); // auth | register | doc | reset | docReg
   const[email,setEmail]=useState('');
@@ -1510,14 +1551,76 @@ export default function App(){
     setClientMenu(null);
   };
 
-  const sendComment = (clientId, dateKey, text) => {
-    const cm = {id:'cm'+Date.now(), date:dateKey, text, ts:Date.now(), read:false};
-    setComments(p => {
-      const list = [...(p[clientId]||[]), cm];
-      return Object.assign({}, p, {[clientId]: list});
-    });
+  // ── Chat: send message (doc or client) ──
+  const sendComment = async (clientId, dateKey, text) => {
+    if(!text.trim()||!supabase||!user?.id)return;
+    const docId = isDoc ? user.id : null;
+    // For client: find their doc
+    let actualDocId = docId;
+    if(!isDoc){
+      const{data:link}=await supabase.from('doc_clients').select('doc_id').eq('client_id',user.id).limit(1).maybeSingle();
+      if(link) actualDocId=link.doc_id;
+      else return;
+    }
+    const msg={doc_id:actualDocId,client_id:isDoc?clientId:user.id,sender_id:user.id,sender_name:user.name||'',date:dateKey,text:text.trim(),read:false};
+    await supabase.from('doc_comments').insert(msg);
     setDocComment('');
   };
+
+  // ── Chat: load messages for a client ──
+  const loadComments = async (clientId) => {
+    if(!supabase)return;
+    const{data}=await supabase.from('doc_comments').select('*').or(isDoc?`client_id.eq.${clientId}`:`client_id.eq.${user.id}`).order('created_at',{ascending:true});
+    if(data){
+      const grouped={};
+      data.forEach(c=>{
+        const cid=c.client_id;
+        if(!grouped[cid])grouped[cid]=[];
+        grouped[cid].push({id:c.id,date:c.date,text:c.text,ts:new Date(c.created_at).getTime(),read:c.read,senderId:c.sender_id,senderName:c.sender_name});
+      });
+      setComments(p=>Object.assign({},p,grouped));
+    }
+  };
+
+  // ── Chat: subscribe to realtime messages ──
+  useEffect(()=>{
+    if(!supabase||!user?.id)return;
+    const filter=isDoc?'doc_id=eq.'+user.id:'client_id=eq.'+user.id;
+    const ch=supabase.channel('chat_'+user.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_comments',filter},()=>{
+        if(isDoc&&selClient)loadComments(selClient.id);
+        else if(!isDoc)loadComments(user.id);
+      })
+      .subscribe();
+    // Initial load
+    if(isDoc&&selClient)loadComments(selClient.id);
+    else if(!isDoc)loadComments(user.id);
+    return()=>{supabase.removeChannel(ch)};
+  },[user?.id,selClient?.id]);
+
+  // ── Typing indicator ──
+  const[typing,setTyping]=useState(null);
+  const typingRef=useRef(null);
+  const sendTyping=()=>{
+    if(!supabase||!user?.id)return;
+    const channelName=isDoc&&selClient?'typing_'+selClient.id:'typing_'+user.id;
+    const ch=supabase.channel(channelName);
+    ch.send({type:'broadcast',event:'typing',payload:{name:user.name,id:user.id}});
+  };
+  useEffect(()=>{
+    if(!supabase||!user?.id)return;
+    const cid=isDoc&&selClient?selClient.id:user.id;
+    const ch=supabase.channel('typing_'+cid)
+      .on('broadcast',{event:'typing'},(payload)=>{
+        if(payload.payload?.id!==user.id){
+          setTyping(payload.payload?.name||'...');
+          clearTimeout(typingRef.current);
+          typingRef.current=setTimeout(()=>setTyping(null),3000);
+        }
+      })
+      .subscribe();
+    return()=>{supabase.removeChannel(ch)};
+  },[user?.id,selClient?.id]);
 
   const goHome = () => { setScreen('home'); setSelMeal(null); setSelClient(null); };
   const openSupport = () => { window.open('https://t.me/ellme_support','_blank'); };
@@ -1548,9 +1651,10 @@ export default function App(){
           <span style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>Уведомления</span>
           <IcoBtn icon={I.x} onClick={()=>setShowNotif(false)}/>
         </div>
-        {(comments[user.cid]||[]).length===0?<p style={{color:C.muted,textAlign:'center',padding:40}}>Нет уведомлений</p>
-        :[...(comments[user.cid]||[])].reverse().map(c=><div key={c.id} onClick={()=>{markRead(user.cid,c.id);const ps=c.date.split('-');setDate(new Date(+ps[0],+ps[1]-1,+ps[2]));setShowNotif(false);setScreen('home');setSelMeal(null)}} style={{padding:16,borderRadius:16,background:c.read?C.surface:C.accentSoft,boxShadow:c.read?'none':C.shadowCard,marginBottom:10,cursor:'pointer',border:`1px solid ${c.read?C.surfaceAlt:'transparent'}`}}>
-          <div style={{fontSize:12,color:C.muted,marginBottom:4}}>{c.date}</div>
+        {(comments[user.cid]||[]).length===0?<p style={{color:C.muted,textAlign:'center',padding:40}}>Нет сообщений</p>
+        :[...(comments[user.cid]||[])].filter(c=>c.senderId!==user.id).reverse().map(c=><div key={c.id} onClick={()=>{markRead(user.cid,c.id);const ps=c.date.split('-');setDate(new Date(+ps[0],+ps[1]-1,+ps[2]));setShowNotif(false);setScreen('home');setSelMeal(null)}} style={{padding:16,borderRadius:16,background:c.read?C.surface:C.accentSoft,boxShadow:c.read?'none':C.shadowCard,marginBottom:10,cursor:'pointer',border:`1px solid ${c.read?C.surfaceAlt:'transparent'}`}}>
+          <div style={{fontSize:11,fontWeight:600,color:C.accent,marginBottom:2}}>{c.senderName||'Нутрициолог'}</div>
+          <div style={{fontSize:12,color:C.muted,marginBottom:4}}>{c.date} · {new Date(c.ts).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
           <p style={{fontSize:13,lineHeight:1.6,margin:0}}>{c.text}</p>
           <span style={{fontSize:12,color:C.accent,fontWeight:600,marginTop:6,display:'inline-block'}}>Перейти →</span>
         </div>)}
@@ -1588,6 +1692,7 @@ export default function App(){
     </SecCard>
 
     <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
+    {!isDoc&&<ChatSection comments={comments[user.id]||[]} dateKey={key} docComment={docComment} setDocComment={setDocComment} onSend={()=>sendComment(user.id,key,docComment.trim())} userId={user.id} typing={typing} onTyping={sendTyping}/>}
   </>);
 
   // ═══ DOCTOR ═══
@@ -1648,16 +1753,7 @@ export default function App(){
       </SecCard>
       <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm}/>
 
-      <div style={{background:C.surface,borderRadius:20,padding:18,boxShadow:C.shadowCard,marginTop:16}}>
-        <Lbl>Комментарий за день</Lbl>
-        <textarea value={docComment} onChange={e=>setDocComment(e.target.value)} placeholder="Напишите клиенту..." rows={3}
-          style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,marginBottom:10}}
-          onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
-        <button disabled={!docComment.trim()} onClick={()=>sendComment(selClient.id,key,docComment.trim())} style={{width:'100%',padding:'12px',borderRadius:14,border:'none',background:docComment.trim()?C.accent:'#ddd',color:docComment.trim()?'#fff':'#aaa',fontSize:14,fontWeight:600,cursor:docComment.trim()?'pointer':'default',fontFamily:'inherit'}}>Отправить</button>
-        {(comments[selClient.id]||[]).filter(c=>c.date===key).map(c=><div key={c.id} style={{marginTop:10,padding:'12px 14px',borderRadius:12,background:C.surfaceAlt,fontSize:13,lineHeight:1.6}}>
-          <div style={{fontSize:11,color:C.muted,marginBottom:3}}>{new Date(c.ts).toLocaleString('ru')}</div>{c.text}
-        </div>)}
-      </div>
+      <ChatSection comments={comments[selClient.id]||[]} dateKey={key} docComment={docComment} setDocComment={setDocComment} onSend={()=>sendComment(selClient.id,key,docComment.trim())} userId={user.id} typing={typing} onTyping={sendTyping}/>
     </>);
   }
 
