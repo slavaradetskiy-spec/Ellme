@@ -1188,7 +1188,7 @@ export default function App(){
     const channel=supabase.channel('doc_updates_'+user.id)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'profiles'},()=>loadClients())
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
       .subscribe();
     // Poll client list every 30s to refresh online status
     const poll=setInterval(loadClients,30000);
@@ -1585,24 +1585,12 @@ export default function App(){
     }catch(e){console.error('loadComments error:',e)}
   };
 
-  // ── Chat: subscribe to realtime messages ──
+  // ── Chat: load messages on screen change ──
   useEffect(()=>{
     if(!supabase||!user?.id)return;
-    try{
-      const filter=isDoc?'doc_id=eq.'+user.id:'client_id=eq.'+user.id;
-      const chName='chat_'+user.id+'_'+(selClient?.id||'self');
-      const ch=supabase.channel(chName)
-        .on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_comments',filter},()=>{
-          if(isDoc&&selClient)loadComments(selClient.id);
-          else if(!isDoc)loadComments(user.id);
-        })
-        .subscribe();
-      // Initial load
-      if(isDoc&&selClient)loadComments(selClient.id);
-      else if(!isDoc)loadComments(user.id);
-      return()=>{try{supabase.removeChannel(ch)}catch(e){}};
-    }catch(e){console.error('Chat subscribe error:',e)}
-  },[user?.id,selClient?.id]);
+    if(isDoc&&selClient)loadComments(selClient.id);
+    else if(!isDoc)loadComments(user.id);
+  },[user?.id,selClient?.id,date]);
 
   const typing=null;
   const sendTyping=()=>{};
