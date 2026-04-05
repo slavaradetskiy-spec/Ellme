@@ -1153,6 +1153,9 @@ export default function App(){
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
 
+    // Capture oauth_role from URL NOW, before replaceState cleans it
+    const _oauthRole = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oauth_role') : null;
+
     const loadProfile = async (session) => {
       if (!session?.user) { setUser(null); setAuthLoading(false); return; }
       const u = session.user;
@@ -1177,21 +1180,9 @@ export default function App(){
       }
 
       // Check if OAuth login was intended as doc registration (Google passes via URL, Yandex via server)
-      if (typeof window !== 'undefined') {
-        try {
-          const params = new URLSearchParams(window.location.search);
-          const oauthRole = params.get('oauth_role');
-          if (oauthRole === 'doc' && profile.role === 'client') {
-            await supabase.from('profiles').update({ role: 'doc' }).eq('id', u.id);
-            profile.role = 'doc';
-          }
-          // Clean oauth_role from URL
-          if (oauthRole) {
-            params.delete('oauth_role');
-            const cleanUrl = params.toString() ? '?' + params.toString() : '/';
-            window.history.replaceState({}, '', cleanUrl);
-          }
-        } catch(e) {}
+      if (_oauthRole === 'doc' && profile.role === 'client') {
+        await supabase.from('profiles').update({ role: 'doc' }).eq('id', u.id);
+        profile.role = 'doc';
       }
 
       setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200 });
