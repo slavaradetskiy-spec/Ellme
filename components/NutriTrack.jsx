@@ -1553,33 +1553,36 @@ export default function App(){
 
   // ── Chat: send message (doc or client) ──
   const sendComment = async (clientId, dateKey, text) => {
-    if(!text.trim()||!supabase||!user?.id)return;
-    const docId = isDoc ? user.id : null;
-    // For client: find their doc
-    let actualDocId = docId;
-    if(!isDoc){
-      const{data:link}=await supabase.from('doc_clients').select('doc_id').eq('client_id',user.id).limit(1).maybeSingle();
-      if(link) actualDocId=link.doc_id;
-      else return;
-    }
-    const msg={doc_id:actualDocId,client_id:isDoc?clientId:user.id,sender_id:user.id,sender_name:user.name||'',date:dateKey,text:text.trim(),read:false};
-    await supabase.from('doc_comments').insert(msg);
-    setDocComment('');
+    if(!text||!text.trim()||!supabase||!user?.id)return;
+    try{
+      const docId = isDoc ? user.id : null;
+      let actualDocId = docId;
+      if(!isDoc){
+        const{data:link}=await supabase.from('doc_clients').select('doc_id').eq('client_id',user.id).limit(1).maybeSingle();
+        if(link) actualDocId=link.doc_id;
+        else return;
+      }
+      const msg={doc_id:actualDocId,client_id:isDoc?clientId:user.id,sender_id:user.id,sender_name:user.name||'',date:dateKey,text:text.trim(),read:false};
+      await supabase.from('doc_comments').insert(msg);
+      setDocComment('');
+    }catch(e){console.error('sendComment error:',e)}
   };
 
   // ── Chat: load messages for a client ──
   const loadComments = async (clientId) => {
     if(!supabase)return;
-    const{data}=await supabase.from('doc_comments').select('*').or(isDoc?`client_id.eq.${clientId}`:`client_id.eq.${user.id}`).order('created_at',{ascending:true});
-    if(data){
-      const grouped={};
-      data.forEach(c=>{
-        const cid=c.client_id;
-        if(!grouped[cid])grouped[cid]=[];
-        grouped[cid].push({id:c.id,date:c.date,text:c.text,ts:new Date(c.created_at).getTime(),read:c.read,senderId:c.sender_id,senderName:c.sender_name});
-      });
-      setComments(p=>Object.assign({},p,grouped));
-    }
+    try{
+      const{data}=await supabase.from('doc_comments').select('*').or(isDoc?`client_id.eq.${clientId}`:`client_id.eq.${user.id}`).order('created_at',{ascending:true});
+      if(data){
+        const grouped={};
+        data.forEach(c=>{
+          const cid=c.client_id;
+          if(!grouped[cid])grouped[cid]=[];
+          grouped[cid].push({id:c.id,date:c.date,text:c.text,ts:new Date(c.created_at).getTime(),read:c.read,senderId:c.sender_id,senderName:c.sender_name});
+        });
+        setComments(p=>Object.assign({},p,grouped));
+      }
+    }catch(e){console.error('loadComments error:',e)}
   };
 
   // ── Chat: subscribe to realtime messages ──
@@ -1601,16 +1604,16 @@ export default function App(){
   // ── Typing indicator ──
   const[typing,setTyping]=useState(null);
   const typingRef=useRef(null);
+  const typingChRef=useRef(null);
   const sendTyping=()=>{
-    if(!supabase||!user?.id)return;
-    const channelName=isDoc&&selClient?'typing_'+selClient.id:'typing_'+user.id;
-    const ch=supabase.channel(channelName);
-    ch.send({type:'broadcast',event:'typing',payload:{name:user.name,id:user.id}});
+    if(typingChRef.current){
+      typingChRef.current.send({type:'broadcast',event:'typing',payload:{name:user.name,id:user.id}}).catch(()=>{});
+    }
   };
   useEffect(()=>{
     if(!supabase||!user?.id)return;
     const cid=isDoc&&selClient?selClient.id:user.id;
-    const ch=supabase.channel('typing_'+cid)
+    const ch=supabase.channel('typing_'+cid+Date.now())
       .on('broadcast',{event:'typing'},(payload)=>{
         if(payload.payload?.id!==user.id){
           setTyping(payload.payload?.name||'...');
@@ -1619,7 +1622,8 @@ export default function App(){
         }
       })
       .subscribe();
-    return()=>{supabase.removeChannel(ch)};
+    typingChRef.current=ch;
+    return()=>{supabase.removeChannel(ch);typingChRef.current=null};
   },[user?.id,selClient?.id]);
 
   const goHome = () => { setScreen('home'); setSelMeal(null); setSelClient(null); };
