@@ -603,25 +603,27 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       let fileUrl=null;
       if(supportFile&&supabase){
         const path=user.id+'/support/'+Date.now()+'_'+supportFile.name;
-        await supabase.storage.from('photos').upload(path,supportFile,{upsert:true}).catch(()=>{});
+        const{error:upErr}=await supabase.storage.from('photos').upload(path,supportFile,{upsert:true});
+        if(upErr)console.error('Support file upload error:',upErr);
         const{data}=supabase.storage.from('photos').getPublicUrl(path);
         fileUrl=data?.publicUrl||null;
       }
       // Save to DB
       if(supabase){
-        await supabase.from('support_messages').insert({
+        const{error:insErr}=await supabase.from('support_messages').insert({
           user_id:user.id,
           email:email||user.email||'',
           text:supportText.trim(),
           file_url:fileUrl
-        }).catch(()=>{});
+        });
+        if(insErr)console.error('Support insert error:',insErr);
       }
       // Send email notification
       await fetch('/api/support',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({email:email||user.email||'',text:supportText.trim(),fileUrl})
-      }).catch(()=>{});
+      }).then(r=>{if(!r.ok)console.error('Support email error:',r.status)}).catch(e=>console.error('Support fetch error:',e));
       setSupportSent(true);setSupportText('');setSupportFile(null);
       setTimeout(()=>setSupportSent(false),3000);
     }catch(e){console.error(e);}
@@ -1071,7 +1073,8 @@ export default function App(){
     setInvCode(code);
     setInv(true);
     if(supabase&&user?.id){
-      await supabase.from('invites').insert({doc_id:user.id,code,used:false}).catch(()=>{});
+      const{error:invErr}=await supabase.from('invites').insert({doc_id:user.id,code,used:false});
+      if(invErr)console.error('Invite insert error:',invErr);
     }
   };
 
