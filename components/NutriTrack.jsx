@@ -119,8 +119,8 @@ function mkDemo(){
 function mkComments(){return{c1:[{id:"cm1",date:dk(ago(1)),text:"Анна, хороший день! После борща тяжесть — уменьшите порцию хлеба. Калораж ~1650 — в норме.",ts:Date.now()-86400000,read:false}],c2:[{id:"cm3",date:dk(new Date()),text:"Калораж ~2800 — отлично. Добавьте овощи к завтраку.",ts:Date.now()-3600000,read:false}],c3:[]};}
 
 // ═══ PRIMITIVES ═══
-function TopBar({left,title,subtitle,right,onHome}){
-  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:`1px solid ${C.surfaceAlt}`}}>
+function TopBar({left,title,subtitle,right,onHome,noBorder}){
+  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:noBorder?'none':`1px solid ${C.surfaceAlt}`}}>
     <div style={{width:48,display:'flex',justifyContent:'flex-start'}}>{left}</div>
     <div style={{textAlign:'center',cursor:onHome?'pointer':'default'}} onClick={onHome||undefined}>
       <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text}}>{title}</div>
@@ -148,6 +148,7 @@ function AvatarCropper({src,onSave,onCancel}){
   const[dragging,setDragging]=useState(false);
   const[dragStart,setDragStart]=useState({x:0,y:0});
   const[img,setImg]=useState(null);
+  const lastPinch=useRef(null);
   const cropSize=260;
 
   useEffect(()=>{const i=new Image();i.onload=()=>setImg(i);i.src=src;},[src]);
@@ -166,9 +167,28 @@ function AvatarCropper({src,onSave,onCancel}){
     ctx.restore();
   },[img,zoom,pos]);
 
-  const handleMove=(cx,cy)=>{if(!dragging)return;setPos({x:cx-dragStart.x,y:cy-dragStart.y})};
   const startDrag=(cx,cy)=>{setDragging(true);setDragStart({x:cx-pos.x,y:cy-pos.y})};
-  const endDrag=()=>setDragging(false);
+  const handleMove=(cx,cy)=>{if(!dragging)return;setPos({x:cx-dragStart.x,y:cy-dragStart.y})};
+  const endDrag=()=>{setDragging(false);lastPinch.current=null};
+
+  const handleTouchStart=(e)=>{
+    if(e.touches.length===2){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      lastPinch.current={dist:d,zoom};
+    }else if(e.touches.length===1){
+      startDrag(e.touches[0].clientX,e.touches[0].clientY);
+    }
+  };
+  const handleTouchMove=(e)=>{
+    e.preventDefault();
+    if(e.touches.length===2&&lastPinch.current){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      const newZoom=Math.max(0.5,Math.min(4,lastPinch.current.zoom*(d/lastPinch.current.dist)));
+      setZoom(newZoom);
+    }else if(e.touches.length===1){
+      handleMove(e.touches[0].clientX,e.touches[0].clientY);
+    }
+  };
 
   const doCrop=()=>{
     if(!img)return;
@@ -193,18 +213,12 @@ function AvatarCropper({src,onSave,onCancel}){
         onMouseDown={e=>{e.preventDefault();startDrag(e.clientX,e.clientY)}}
         onMouseMove={e=>handleMove(e.clientX,e.clientY)}
         onMouseUp={endDrag} onMouseLeave={endDrag}
-        onTouchStart={e=>{const t=e.touches[0];startDrag(t.clientX,t.clientY)}}
-        onTouchMove={e=>{const t=e.touches[0];handleMove(t.clientX,t.clientY)}}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={endDrag}>
         <canvas ref={canvasRef} width={cropSize} height={cropSize} style={{width:cropSize,height:cropSize}}/>
       </div>
-      <div style={{display:'flex',alignItems:'center',gap:10,marginTop:16,padding:'0 8px'}}>
-        <span style={{fontSize:12,color:C.muted}}>−</span>
-        <input type="range" min="1" max="3" step="0.05" value={zoom} onChange={e=>setZoom(parseFloat(e.target.value))}
-          style={{flex:1,accentColor:C.accent,height:4}}/>
-        <span style={{fontSize:12,color:C.muted}}>+</span>
-      </div>
-      <p style={{fontSize:11,color:C.muted,textAlign:'center',marginTop:8}}>Перетаскивайте фото и масштабируйте</p>
+      <p style={{fontSize:11,color:C.muted,textAlign:'center',marginTop:12}}>Двигайте и масштабируйте двумя пальцами</p>
       <div style={{display:'flex',gap:8,marginTop:14}}>
         <button onClick={onCancel} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
         <button onClick={doCrop} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Сохранить</button>
@@ -624,23 +638,22 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
 
   return <div style={{animation:'slideRight .3s ease'}}>
     {cropSrc&&<AvatarCropper src={cropSrc} onSave={handleCropSave} onCancel={()=>setCropSrc(null)}/>}
-    <TopBar left={<BackBtn onClick={onBack}/>} title="Профиль" right={null}/>
+    <TopBar left={<BackBtn onClick={onBack}/>} title="Профиль" right={null} noBorder/>
     <div style={{textAlign:'center',marginBottom:24}}>
       <input ref={avatarRef} type="file" accept="image/*" onChange={handleAvatar} style={{display:'none'}}/>
       <div style={{position:'relative',width:110,height:110,margin:'0 auto 12px'}}>
-        <div onClick={()=>photo?onZoom(photo):avatarRef.current?.click()} style={{width:110,height:110,borderRadius:30,background:photo?'transparent':C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,boxShadow:'0 6px 24px rgba(45,95,63,.15)',cursor:'pointer',overflow:'hidden',transition:'transform .3s,box-shadow .3s'}}
-        onMouseOver={e=>{e.currentTarget.style.transform='scale(1.05)'}}
-        onMouseOut={e=>{e.currentTarget.style.transform='scale(1)'}}>
+        <div onClick={()=>photo?onZoom(photo):avatarRef.current?.click()} style={{width:110,height:110,borderRadius:'50%',background:photo?'transparent':C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,boxShadow:'0 4px 16px rgba(45,95,63,.1)',cursor:'pointer',overflow:'hidden'}}>
         {photo
           ? <img src={photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-          : isDoc?I.steth:I.user
+          : <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.2" opacity=".5"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0112 0v1"/></svg>
         }
         </div>
-        <button onClick={()=>avatarRef.current?.click()} style={{position:'absolute',bottom:0,right:0,width:32,height:32,borderRadius:10,background:C.accent,border:'3px solid '+C.bg,color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>{I.cam}</button>
+        <button onClick={()=>avatarRef.current?.click()} style={{position:'absolute',bottom:4,right:4,width:28,height:28,borderRadius:'50%',background:C.accent,border:'2px solid '+C.bg,color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
       </div>
       <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>{name}</div>
       <div style={{fontSize:13,color:C.muted}}>{isDoc?'Специалист':'Клиент'}</div>
-      <div style={{fontSize:11,color:C.accent,marginTop:4,cursor:'pointer'}} onClick={()=>avatarRef.current?.click()}>Изменить фото</div>
     </div>
 
     <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard}}>
@@ -993,6 +1006,14 @@ function Login({onLogin}){
 export default function App(){
   const[user,setUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(!!supabase);
+  const[showLoader,setShowLoader]=useState(false);
+
+  // Only show loading screen if auth takes > 1.5 seconds
+  useEffect(()=>{
+    if(!authLoading){setShowLoader(false);return;}
+    const timer=setTimeout(()=>{if(authLoading)setShowLoader(true)},1500);
+    return()=>clearTimeout(timer);
+  },[authLoading]);
   const[diaries,setDiaries]=useState({});
   const[comments,setComments]=useState({});
   const[clients,setClients]=useState([]);
@@ -1214,9 +1235,13 @@ export default function App(){
   };
 
   // ── Loading state ──
-  if (authLoading) return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
-    <ProgressBar duration={3} label="Загрузка..."/>
-  </div></>;
+  // Loading: show nothing for first 1.5s, then show progress bar
+  if (authLoading) {
+    if (!showLoader) return <><style>{CSS}</style><div style={{minHeight:'100vh',background:C.bg}}/></>;
+    return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
+      <ProgressBar duration={5} label="Загрузка..."/>
+    </div></>;
+  }
 
   if(!user) return <><style>{CSS}</style><Login onLogin={login}/></>;
 
