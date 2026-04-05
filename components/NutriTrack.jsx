@@ -895,12 +895,11 @@ function Login({onLogin}){
   // ── OAuth: Google (via Supabase built-in) ──
   const handleGoogle = async () => {
     if (!supabase) return;
-    // Save intended role for OAuth (doc pages set mode='doc'/'docReg')
-    try { localStorage.setItem('ellme_oauth_role', mode === 'doc' || mode === 'docReg' ? 'doc' : 'client'); } catch(e) {}
+    const isDocMode = mode === 'doc' || mode === 'docReg';
     setOauthLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin + '/' }
+      options: { redirectTo: window.location.origin + (isDocMode ? '/?oauth_role=doc' : '/') }
     });
   };
 
@@ -908,11 +907,10 @@ function Login({onLogin}){
   const handleYandex = () => {
     const clientId = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_YANDEX_CLIENT_ID : null;
     if (!clientId) { setError('Яндекс ID не настроен'); return; }
-    // Save intended role for OAuth
-    try { localStorage.setItem('ellme_oauth_role', mode === 'doc' || mode === 'docReg' ? 'doc' : 'client'); } catch(e) {}
+    const isDocMode = mode === 'doc' || mode === 'docReg';
     setOauthLoading(true);
     const redir = encodeURIComponent(window.location.origin + '/auth/yandex/callback');
-    window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir;
+    window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir + '&state=' + (isDocMode ? 'doc' : 'client');
   };
 
   // ── OAuth Buttons (compact icon style like Everfit) ──
@@ -1172,15 +1170,21 @@ export default function App(){
         if (authName) profile.name = authName;
       }
 
-      // Check if OAuth login was intended as doc registration
+      // Check if OAuth login was intended as doc registration (Google passes via URL, Yandex via server)
       if (typeof window !== 'undefined') {
         try {
-          const intendedRole = localStorage.getItem('ellme_oauth_role');
-          if (intendedRole === 'doc' && profile.role === 'client') {
+          const params = new URLSearchParams(window.location.search);
+          const oauthRole = params.get('oauth_role');
+          if (oauthRole === 'doc' && profile.role === 'client') {
             await supabase.from('profiles').update({ role: 'doc' }).eq('id', u.id);
             profile.role = 'doc';
           }
-          localStorage.removeItem('ellme_oauth_role');
+          // Clean oauth_role from URL
+          if (oauthRole) {
+            params.delete('oauth_role');
+            const cleanUrl = params.toString() ? '?' + params.toString() : '/';
+            window.history.replaceState({}, '', cleanUrl);
+          }
         } catch(e) {}
       }
 
