@@ -1260,7 +1260,7 @@ export default function App(){
   const loadDayFromDb = async (pid, dateStr) => {
     if (!supabase || !pid) return null;
     try {
-      const { data: day } = await supabase.from('diary_days').select('*').eq('user_id', pid).eq('date', dateStr).single();
+      const { data: day } = await supabase.from('diary_days').select('*').eq('user_id', pid).eq('date', dateStr).maybeSingle();
       if (!day) return {};
       // Load meals for this day
       const { data: mealRows } = await supabase.from('meals').select('*').eq('diary_day_id', day.id);
