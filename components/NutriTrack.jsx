@@ -896,6 +896,9 @@ function Login({onLogin}){
   const handleGoogle = async () => {
     if (!supabase) return;
     const isDocMode = mode === 'doc' || mode === 'docReg';
+    const params = new URLSearchParams(window.location.search);
+    const inv = params.get('invite');
+    if (inv) localStorage.setItem('ellme_invite', inv);
     setOauthLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -908,6 +911,9 @@ function Login({onLogin}){
     const clientId = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_YANDEX_CLIENT_ID : null;
     if (!clientId) { setError('Яндекс ID не настроен'); return; }
     const isDocMode = mode === 'doc' || mode === 'docReg';
+    const params = new URLSearchParams(window.location.search);
+    const inv = params.get('invite');
+    if (inv) localStorage.setItem('ellme_invite', inv);
     setOauthLoading(true);
     const redir = encodeURIComponent(window.location.origin + '/auth/yandex/callback');
     window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir + '&state=' + (isDocMode ? 'doc' : 'client');
@@ -1133,18 +1139,17 @@ export default function App(){
   const[clientMenu,setClientMenu]=useState(null);
   const[clientProfileData,setClientProfileData]=useState(null); // client id for open menu
 
-  // Detect password recovery redirect and send to /reset-password
+  // Persist invite code + detect recovery redirect
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      if (hash && hash.includes('type=recovery')) {
-        window.location.replace('/reset-password' + hash);
-      }
-      // Save invite code to localStorage before OAuth redirect might lose it
       const params = new URLSearchParams(window.location.search);
       const invite = params.get('invite');
       if (invite) {
         try { localStorage.setItem('ellme_invite', invite); } catch(e) {}
+      }
+      const hash = window.location.hash;
+      if (hash && hash.includes('type=recovery')) {
+        window.location.replace('/reset-password' + hash);
       }
     }
   }, []);
@@ -1225,7 +1230,6 @@ export default function App(){
         supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data, error }) => {
           window.history.replaceState({}, '', '/');
           if (error || !data?.session) {
-            // Token expired or invalid — show login screen
             setUser(null);
             setAuthLoading(false);
             return;
@@ -1242,7 +1246,9 @@ export default function App(){
     } else {
       supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
     }
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => loadProfile(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event !== 'INITIAL_SESSION') loadProfile(session);
+    });
     return () => subscription.unsubscribe();
   }, []);
 

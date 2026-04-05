@@ -61,7 +61,7 @@ export async function GET(request) {
       email: yEmail,
       password: tempPass,
       email_confirm: true,
-      user_metadata: { name: yName, role, provider: 'yandex' },
+      user_metadata: { name: yName, email: yEmail, role, provider: 'yandex' },
     })
 
     let userId = created?.user?.id || null
