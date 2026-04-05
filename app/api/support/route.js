@@ -82,6 +82,7 @@ export async function POST(request) {
       body: JSON.stringify({
         from: 'ELLME Поддержка <support@ellme.ru>',
         to: [NOTIFY_EMAIL],
+        reply_to: email ? email.trim() : undefined,
         subject: 'Обращение в поддержку — ' + (safeEmail || 'без email'),
         html: `
           <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
