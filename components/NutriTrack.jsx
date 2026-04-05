@@ -1163,6 +1163,7 @@ export default function App(){
 
     const loadProfile = async (session) => {
       if (!session?.user) { setUser(null); setAuthLoading(false); return; }
+      try {
       const u = session.user;
       const authEmail = u.email || u.user_metadata?.email || '';
       const authName = u.user_metadata?.name || u.user_metadata?.full_name || authEmail.split('@')[0] || '';
@@ -1218,6 +1219,7 @@ export default function App(){
       }
 
       setAuthLoading(false);
+      } catch(e) { console.error('loadProfile error:', e); setUser(null); setAuthLoading(false); }
     };
 
     // Проверяем hash — если в URL есть access_token (после Яндекс OAuth), устанавливаем сессию
@@ -1244,7 +1246,7 @@ export default function App(){
         setAuthLoading(false);
       }
     } else {
-      supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
+      supabase.auth.getSession().then(({ data }) => loadProfile(data?.session)).catch(() => { setUser(null); setAuthLoading(false); });
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event !== 'INITIAL_SESSION') loadProfile(session);
