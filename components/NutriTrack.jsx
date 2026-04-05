@@ -141,6 +141,78 @@ function IcoBtn({icon,onClick,badge,style:st}){
   </button>;
 }
 
+function AvatarCropper({src,onSave,onCancel}){
+  const canvasRef=useRef(null);
+  const[zoom,setZoom]=useState(1);
+  const[pos,setPos]=useState({x:0,y:0});
+  const[dragging,setDragging]=useState(false);
+  const[dragStart,setDragStart]=useState({x:0,y:0});
+  const[img,setImg]=useState(null);
+  const cropSize=260;
+
+  useEffect(()=>{const i=new Image();i.onload=()=>setImg(i);i.src=src;},[src]);
+
+  useEffect(()=>{
+    if(!img||!canvasRef.current)return;
+    const ctx=canvasRef.current.getContext('2d');
+    const s=Math.min(img.width,img.height);
+    ctx.clearRect(0,0,cropSize,cropSize);
+    ctx.save();
+    ctx.beginPath();ctx.arc(cropSize/2,cropSize/2,cropSize/2,0,Math.PI*2);ctx.clip();
+    const scale=cropSize/s*zoom;
+    const dx=(cropSize-img.width*scale)/2+pos.x;
+    const dy=(cropSize-img.height*scale)/2+pos.y;
+    ctx.drawImage(img,dx,dy,img.width*scale,img.height*scale);
+    ctx.restore();
+  },[img,zoom,pos]);
+
+  const handleMove=(cx,cy)=>{if(!dragging)return;setPos({x:cx-dragStart.x,y:cy-dragStart.y})};
+  const startDrag=(cx,cy)=>{setDragging(true);setDragStart({x:cx-pos.x,y:cy-pos.y})};
+  const endDrag=()=>setDragging(false);
+
+  const doCrop=()=>{
+    if(!img)return;
+    const out=document.createElement('canvas');
+    out.width=512;out.height=512;
+    const ctx=out.getContext('2d');
+    const s=Math.min(img.width,img.height);
+    const scale=cropSize/s*zoom;
+    const dx=(cropSize-img.width*scale)/2+pos.x;
+    const dy=(cropSize-img.height*scale)/2+pos.y;
+    const ratio=512/cropSize;
+    ctx.beginPath();ctx.arc(256,256,256,0,Math.PI*2);ctx.clip();
+    ctx.drawImage(img,dx*ratio,dy*ratio,img.width*scale*ratio,img.height*scale*ratio);
+    onSave(out.toDataURL('image/jpeg',0.9));
+  };
+
+  return <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
+    <div onClick={onCancel} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.7)',backdropFilter:'blur(8px)'}}/>
+    <div style={{position:'relative',background:C.surface,borderRadius:24,padding:24,width:'min(340px,92vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
+      <div style={{fontSize:18,fontWeight:700,fontFamily:'var(--fd)',marginBottom:16,textAlign:'center'}}>Выберите область</div>
+      <div style={{position:'relative',width:cropSize,height:cropSize,margin:'0 auto',borderRadius:'50%',overflow:'hidden',border:`3px solid ${C.accent}`,cursor:'grab',touchAction:'none',background:'#000'}}
+        onMouseDown={e=>{e.preventDefault();startDrag(e.clientX,e.clientY)}}
+        onMouseMove={e=>handleMove(e.clientX,e.clientY)}
+        onMouseUp={endDrag} onMouseLeave={endDrag}
+        onTouchStart={e=>{const t=e.touches[0];startDrag(t.clientX,t.clientY)}}
+        onTouchMove={e=>{const t=e.touches[0];handleMove(t.clientX,t.clientY)}}
+        onTouchEnd={endDrag}>
+        <canvas ref={canvasRef} width={cropSize} height={cropSize} style={{width:cropSize,height:cropSize}}/>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginTop:16,padding:'0 8px'}}>
+        <span style={{fontSize:12,color:C.muted}}>−</span>
+        <input type="range" min="1" max="3" step="0.05" value={zoom} onChange={e=>setZoom(parseFloat(e.target.value))}
+          style={{flex:1,accentColor:C.accent,height:4}}/>
+        <span style={{fontSize:12,color:C.muted}}>+</span>
+      </div>
+      <p style={{fontSize:11,color:C.muted,textAlign:'center',marginTop:8}}>Перетаскивайте фото и масштабируйте</p>
+      <div style={{display:'flex',gap:8,marginTop:14}}>
+        <button onClick={onCancel} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
+        <button onClick={doCrop} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Сохранить</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function ProgressBar({duration=3,label="Загрузка...",onDone}){
   const[pct,setPct]=useState(0);
   useEffect(()=>{
@@ -463,6 +535,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   const[showPw1,setShowPw1]=useState(false);const[showPw2,setShowPw2]=useState(false);const[showPw3,setShowPw3]=useState(false);
   const[pwMsg,setPwMsg]=useState('');const[pwErr,setPwErr]=useState('');const[pwLoading,setPwLoading]=useState(false);
   const[supportText,setSupportText]=useState('');const[supportFile,setSupportFile]=useState(null);const[supportSent,setSupportSent]=useState(false);const[supportLoading,setSupportLoading]=useState(false);const[showSupport,setShowSupport]=useState(false);
+  const[cropSrc,setCropSrc]=useState(null);
   const supportFileRef=useRef(null);
   const isDoc=user.role==='doc';
   const avatarRef=useRef(null);
@@ -520,14 +593,20 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   const eyeBtnStyle={position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex',padding:2};
   const handleAvatar=async(e)=>{
     const f=e.target.files?.[0];if(!f)return;
-    // Show preview immediately
-    const r=new FileReader();r.onload=ev=>onPhotoChange(ev.target.result);r.readAsDataURL(f);
+    const r=new FileReader();
+    r.onload=ev=>setCropSrc(ev.target.result);
+    r.readAsDataURL(f);
     e.target.value='';
-    // Upload to Supabase Storage
+  };
+  const handleCropSave=async(croppedDataUrl)=>{
+    setCropSrc(null);
+    onPhotoChange(croppedDataUrl);
     if(supabase&&user?.id){
-      const ext=f.name.split('.').pop()||'jpg';
-      const path=user.id+'/avatar.'+ext;
-      await supabase.storage.from('photos').upload(path,f,{upsert:true});
+      // Convert data URL to blob for upload
+      const res=await fetch(croppedDataUrl);
+      const blob=await res.blob();
+      const path=user.id+'/avatar.jpg';
+      await supabase.storage.from('photos').upload(path,blob,{upsert:true,contentType:'image/jpeg'});
       const{data:urlData}=supabase.storage.from('photos').getPublicUrl(path);
       if(urlData?.publicUrl){
         const photoUrl=urlData.publicUrl+'?t='+Date.now();
@@ -544,6 +623,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
   </div>;
 
   return <div style={{animation:'slideRight .3s ease'}}>
+    {cropSrc&&<AvatarCropper src={cropSrc} onSave={handleCropSave} onCancel={()=>setCropSrc(null)}/>}
     <TopBar left={<BackBtn onClick={onBack}/>} title="Профиль" right={null}/>
     <div style={{textAlign:'center',marginBottom:24}}>
       <input ref={avatarRef} type="file" accept="image/*" onChange={handleAvatar} style={{display:'none'}}/>
