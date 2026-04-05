@@ -1551,49 +1551,22 @@ export default function App(){
     setClientMenu(null);
   };
 
-  const sendComment = async (clientId, dateKey, text) => {
+  const sendComment = (clientId, dateKey, text) => {
     if(!text||!text.trim())return;
-    const trimmed=text.trim();
-    // Optimistic update
-    const cm = {id:'cm'+Date.now(), date:dateKey, text:trimmed, ts:Date.now(), read:false, senderId:user?.id, senderName:user?.name||''};
-    setComments(p => Object.assign({}, p, {[clientId]: [...(p[clientId]||[]), cm]}));
+    const cm = {id:'cm'+Date.now(), date:dateKey, text:text.trim(), ts:Date.now(), read:false, senderId:user?.id, senderName:user?.name||''};
+    setComments(p => {
+      const list = [...(p[clientId]||[]), cm];
+      return Object.assign({}, p, {[clientId]: list});
+    });
     setDocComment('');
-    // Persist to DB
+    // Persist to DB (fire-and-forget)
     if(supabase&&user?.id){
-      try{
-        let docId=isDoc?user.id:null;
-        if(!isDoc){
-          const{data:link}=await supabase.from('doc_clients').select('doc_id').eq('client_id',user.id).limit(1).maybeSingle();
-          if(link)docId=link.doc_id;
-        }
-        if(docId){
-          await supabase.from('doc_comments').insert({doc_id:docId,client_id:isDoc?clientId:user.id,sender_id:user.id,sender_name:user.name||'',date:dateKey,text:trimmed,read:false});
-        }
-      }catch(e){console.error('sendComment DB error:',e)}
+      const docId = isDoc ? user.id : null;
+      if(isDoc){
+        supabase.from('doc_comments').insert({doc_id:user.id,client_id:clientId,sender_id:user.id,sender_name:user.name||'',date:dateKey,text:text.trim(),read:false}).then(()=>{});
+      }
     }
   };
-
-  // Load comments from DB (called manually, not in useEffect to avoid loops)
-  const commentsLoadedRef=useRef({});
-  const loadCommentsFor = async (clientId) => {
-    if(!supabase||!clientId||commentsLoadedRef.current[clientId])return;
-    commentsLoadedRef.current[clientId]=true;
-    try{
-      const col=isDoc?'client_id':'client_id';
-      const{data}=await supabase.from('doc_comments').select('*').eq(col,clientId).order('created_at',{ascending:true});
-      if(data&&data.length>0){
-        const list=data.map(c=>({id:c.id,date:c.date,text:c.text,ts:new Date(c.created_at).getTime(),read:!!c.read,senderId:c.sender_id,senderName:c.sender_name||''}));
-        setComments(p=>Object.assign({},p,{[clientId]:list}));
-      }
-    }catch(e){console.error('loadComments error:',e)}
-  };
-
-  // Load comments once when entering a client view (doc) or on mount (client)
-  useEffect(()=>{
-    if(!supabase||!user?.id)return;
-    if(isDoc&&selClient?.id) loadCommentsFor(selClient.id);
-    else if(!isDoc) loadCommentsFor(user.id);
-  },[selClient?.id]);// eslint-disable-line
 
   const typing=null;
   const sendTyping=()=>{};
