@@ -1140,6 +1140,12 @@ export default function App(){
       if (hash && hash.includes('type=recovery')) {
         window.location.replace('/reset-password' + hash);
       }
+      // Save invite code to localStorage before OAuth redirect might lose it
+      const params = new URLSearchParams(window.location.search);
+      const invite = params.get('invite');
+      if (invite) {
+        try { localStorage.setItem('ellme_invite', invite); } catch(e) {}
+      }
     }
   }, []);
 
@@ -1193,9 +1199,13 @@ export default function App(){
       if (profile.photo_url) updatePhoto(profile.photo_url);
 
       // Handle invite linking — if client registered via invite link
+      // Check both URL params and localStorage (OAuth redirect loses URL params)
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
-        const inviteCode = params.get('invite');
+        let inviteCode = params.get('invite');
+        if (!inviteCode) {
+          try { inviteCode = localStorage.getItem('ellme_invite'); } catch(e) {}
+        }
         if (inviteCode && (profile.role || authRole) === 'client') {
           const { data: inv } = await supabase.from('invites').select('*').eq('code', inviteCode).eq('used', false).single();
           if (inv) {
@@ -1205,9 +1215,9 @@ export default function App(){
               await supabase.from('doc_clients').insert({ doc_id: inv.doc_id, client_id: u.id, status: 'active' });
             }
             await supabase.from('invites').update({ used: true, used_by: u.id }).eq('id', inv.id);
-            // Clean URL
-            window.history.replaceState({}, '', '/');
           }
+          try { localStorage.removeItem('ellme_invite'); } catch(e) {}
+          window.history.replaceState({}, '', '/');
         }
       }
 
@@ -1221,10 +1231,22 @@ export default function App(){
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
       if (accessToken && refreshToken) {
-        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data: { session } }) => {
+        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data, error }) => {
           window.history.replaceState({}, '', '/');
-          loadProfile(session);
+          if (error || !data?.session) {
+            // Token expired or invalid — show login screen
+            setUser(null);
+            setAuthLoading(false);
+            return;
+          }
+          loadProfile(data.session);
+        }).catch(() => {
+          window.history.replaceState({}, '', '/');
+          setUser(null);
+          setAuthLoading(false);
         });
+      } else {
+        setAuthLoading(false);
       }
     } else {
       supabase.auth.getSession().then(({ data: { session } }) => loadProfile(session));
