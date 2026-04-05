@@ -52,6 +52,7 @@ body{font-family:var(--fb);background:${C.bg};color:${C.text};-webkit-font-smoot
 input,textarea,select,button{font-family:var(--fb)}
 @keyframes enter{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes slideRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
 @keyframes slideLeft{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:translateX(0)}}
@@ -106,6 +107,16 @@ const CL_INIT=[
   {id:"c3",name:"Елена Сидорова",age:45,request:"Контроль диабета",status:"active",nick:"",joined:new Date(2026,2,20)},
   {id:"c4",name:"Ольга Кравцова",age:52,request:"Здоровое старение",status:"archive",nick:"",joined:new Date(2025,8,1)},
 ];
+
+function formatLastSeen(d){
+  if(!d)return '';
+  const now=new Date(),dt=new Date(d),diff=Math.floor((now-dt)/1000);
+  if(diff<60)return 'только что';
+  if(diff<3600)return Math.floor(diff/60)+' мин назад';
+  if(diff<86400)return Math.floor(diff/3600)+' ч назад';
+  if(diff<604800)return Math.floor(diff/86400)+' дн назад';
+  return dt.toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+}
 
 function mkDemo(){
   const t=dk(new Date()),y=dk(ago(1));
@@ -1103,19 +1114,26 @@ export default function App(){
   // Load doc's clients from DB
   const loadClients=async()=>{
     if(!supabase||!user?.id||user.role!=='doc')return;
-    const{data:links}=await supabase.from('doc_clients').select('*,profiles!doc_clients_client_id_fkey(id,name,email,age,request,photo_url,created_at)').eq('doc_id',user.id);
+    const{data:links}=await supabase.from('doc_clients').select('*,profiles!doc_clients_client_id_fkey(id,name,email,age,request,photo_url,last_seen,created_at)').eq('doc_id',user.id);
     if(links&&links.length>0){
-      const cls=links.map(l=>({
-        id:l.client_id,
-        name:l.profiles?.name||l.profiles?.email||'Клиент',
-        email:l.profiles?.email,
-        age:l.profiles?.age,
-        photo:l.profiles?.photo_url||null,
-        request:l.profiles?.request||'',
-        nick:l.nick||'',
-        status:l.status||'active',
-        joined:new Date(l.profiles?.created_at||l.created_at),
-      }));
+      const now=Date.now();
+      const cls=links.map(l=>{
+        const ls=l.profiles?.last_seen;
+        const isOnline=ls&&(now-new Date(ls).getTime())<300000; // 5 min
+        return {
+          id:l.client_id,
+          name:l.profiles?.name||l.profiles?.email||'Клиент',
+          email:l.profiles?.email,
+          age:l.profiles?.age,
+          photo:l.profiles?.photo_url||null,
+          request:l.profiles?.request||'',
+          nick:l.nick||'',
+          status:l.status||'active',
+          joined:new Date(l.profiles?.created_at||l.created_at),
+          lastSeen:ls||null,
+          isOnline:!!isOnline,
+        };
+      });
       setClients(cls);
     } else {
       setClients([]);
@@ -1131,8 +1149,20 @@ export default function App(){
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'profiles'},()=>loadClients())
       .subscribe();
-    return()=>{supabase.removeChannel(channel)};
+    // Poll client list every 30s to refresh online status
+    const poll=setInterval(loadClients,30000);
+    return()=>{supabase.removeChannel(channel);clearInterval(poll)};
   },[user?.id,user?.role]);
+
+  // Heartbeat: update last_seen every 2 min
+  useEffect(()=>{
+    if(!supabase||!user?.id)return;
+    const ping=()=>supabase.from('profiles').update({last_seen:new Date().toISOString()}).eq('id',user.id).then(()=>{});
+    ping();
+    const iv=setInterval(ping,120000);
+    return()=>clearInterval(iv);
+  },[user?.id]);
+
   const[renaming,setRenaming]=useState(null);
   const[renameVal,setRenameVal]=useState('');
   const[profilePhoto,setProfilePhoto]=useState(null);
@@ -1528,8 +1558,8 @@ export default function App(){
     </div>}
     <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>
       {ch}
-      <footer style={{marginTop:40,padding:'20px 0',borderTop:`1px solid ${C.surfaceAlt}`,textAlign:'center',fontSize:12,color:C.muted,lineHeight:2}}>
-        <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.accent,textDecoration:'none',fontWeight:500}}>radema.ru</a></div>
+      <footer style={{marginTop:60,padding:'16px 0',textAlign:'center',fontSize:11,color:C.muted,opacity:.5,lineHeight:2}}>
+        <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.muted,textDecoration:'none'}}>radema.ru</a></div>
         <div style={{display:'flex',justifyContent:'center',gap:16,marginTop:4}}>
           <a href="/privacy" style={{color:C.muted,textDecoration:'none'}}>Политика конфиденциальности</a>
           <a href="/terms" style={{color:C.muted,textDecoration:'none'}}>Оферта</a>
@@ -1673,26 +1703,30 @@ export default function App(){
         <button onClick={()=>{setSelClient(c);setScreen('clientView');setDate(new Date())}} className="card-hover" style={{flex:1,display:'flex',alignItems:'center',gap:12,padding:'16px',borderRadius:18,border:'none',background:C.surface,cursor:'pointer',textAlign:'left',fontFamily:'inherit',boxShadow:C.shadowCard,transition:'all .2s',transform:'perspective(400px) rotateX(0)'}}
           onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-2px)';e.currentTarget.style.boxShadow=C.shadowHover}}
           onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow=C.shadowCard}}>
-          {c.photo?<img src={c.photo} style={{width:42,height:42,borderRadius:14,objectFit:'cover'}} alt=""/>:<div style={{width:42,height:42,borderRadius:14,background:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(c.nick||c.name).charAt(0)}</div>}
+          <div style={{position:'relative',flexShrink:0}}>
+            {c.photo?<img src={c.photo} style={{width:42,height:42,borderRadius:14,objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:42,height:42,borderRadius:14,background:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(c.nick||c.name).charAt(0)}</div>}
+            <div style={{position:'absolute',bottom:-1,right:-1,width:12,height:12,borderRadius:'50%',border:'2px solid '+C.surface,background:c.isOnline?'#34C759':'#ccc',...(c.isOnline?{animation:'pulse 2s infinite'}:{})}}/>
+          </div>
           <div style={{flex:1}}>
             <div style={{fontSize:15,fontWeight:600}}>{c.nick||c.name}</div>
             {c.nick&&<div style={{fontSize:11,color:C.muted}}>{c.name}</div>}
             <div style={{fontSize:12,color:C.soft,marginTop:1}}>{c.request} · {c.age}</div>
-            <div style={{fontSize:11,color:C.muted,marginTop:1}}>{daysBetween(c.joined,new Date())} дней</div>
+            <div style={{fontSize:11,color:c.isOnline?'#34C759':C.muted,marginTop:1}}>{c.isOnline?'онлайн':c.lastSeen?formatLastSeen(c.lastSeen):daysBetween(c.joined,new Date())+' дней'}</div>
           </div>
           <span style={{color:C.muted,display:'flex'}}>{I.chev}</span>
         </button>
-        <div style={{position:'relative'}}>
-          <button onClick={e=>{e.stopPropagation();setClientMenu(clientMenu===c.id?null:c.id)}} style={{background:C.surface,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.muted,display:'flex',boxShadow:C.shadowCard,fontSize:18,lineHeight:1}}>⋮</button>
-          {clientMenu===c.id&&<div onClick={e=>e.stopPropagation()} style={{position:'fixed',right:'auto',marginLeft:-160,marginTop:4,background:C.surface,borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:6,zIndex:9999,width:200,animation:'scaleIn .15s ease'}}>
+        <button onClick={e=>{e.stopPropagation();setClientMenu(clientMenu===c.id?null:c.id)}} style={{background:C.surface,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.muted,display:'flex',boxShadow:C.shadowCard,fontSize:18,lineHeight:1}}>⋮</button>
+        {clientMenu===c.id&&<>
+          <div onClick={()=>setClientMenu(null)} style={{position:'fixed',inset:0,zIndex:9998}}/>
+          <div style={{position:'absolute',right:0,top:'100%',marginTop:4,background:C.surface,borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.18)',padding:6,zIndex:9999,width:200,animation:'scaleIn .15s ease'}}>
             <button onClick={()=>{setRenaming(c);setRenameVal(c.nick||'');setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
               onMouseOver={e=>e.currentTarget.style.background=C.surfaceAlt} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{I.edit} Переименовать</button>
             <button onClick={()=>{toggleArchive(c.id);setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
               onMouseOver={e=>e.currentTarget.style.background=C.surfaceAlt} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{c.status==='active'?I.archive:I.restore} {c.status==='active'?'В архив':'В активные'}</button>
             <button onClick={()=>deleteClient(c.id)} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.danger,display:'flex',alignItems:'center',gap:8}}
               onMouseOver={e=>e.currentTarget.style.background=C.dangerSoft} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{I.x} Удалить</button>
-          </div>}
-        </div>
+          </div>
+        </>}
       </div>)}
 
       <button onClick={createInvite} style={{width:'100%',marginTop:10,padding:'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:14,fontWeight:500,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
