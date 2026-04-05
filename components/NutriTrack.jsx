@@ -67,6 +67,7 @@ input,textarea,select,button{font-family:var(--fb)}
 @keyframes celebrate{0%{transform:scale(0);opacity:0}50%{transform:scale(1.1);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes sparkle{0%,100%{opacity:0;transform:scale(0)}50%{opacity:1;transform:scale(1)}}
 @keyframes bounceIn{0%{transform:scale(0.3);opacity:0}50%{transform:scale(1.05)}70%{transform:scale(.9)}100%{transform:scale(1);opacity:1}}
+@keyframes progressFill{0%{width:0}15%{width:20%}40%{width:45%}60%{width:65%}80%{width:82%}95%{width:94%}100%{width:100%}}
 `;
 
 // ═══ SVG ICONS ═══
@@ -138,6 +139,26 @@ function IcoBtn({icon,onClick,badge,style:st}){
     {icon}
     {badge>0&&<div style={{position:'absolute',top:-2,right:-4,width:16,height:16,borderRadius:'50%',background:C.danger,color:'#fff',fontSize:9,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>{badge}</div>}
   </button>;
+}
+
+function ProgressBar({duration=3,label="Загрузка...",onDone}){
+  const[pct,setPct]=useState(0);
+  useEffect(()=>{
+    const start=Date.now(),ms=duration*1000;
+    const tick=()=>{const el=Date.now()-start;const raw=Math.min(100,Math.round((el/ms)*100));setPct(Math.min(100,raw));if(el<ms)requestAnimationFrame(tick);else{setPct(100);if(onDone)setTimeout(onDone,200);}};
+    requestAnimationFrame(tick);
+  },[]);
+  return <div style={{width:'min(280px,80vw)',textAlign:'center'}}>
+    <div style={{fontSize:32,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'.06em',color:C.text,marginBottom:4}}>ELLME</div>
+    <div style={{fontSize:10,color:C.muted,letterSpacing:'.15em',textTransform:'uppercase',marginBottom:32}}>Eat Live Love ME</div>
+    <div style={{height:4,borderRadius:2,background:C.surfaceAlt,overflow:'hidden',marginBottom:8}}>
+      <div style={{height:'100%',borderRadius:2,background:C.accent,width:pct+'%',transition:'width .15s ease'}}/>
+    </div>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <span style={{fontSize:13,color:C.muted}}>{label}</span>
+      <span style={{fontSize:13,color:C.accent,fontWeight:600}}>{pct}%</span>
+    </div>
+  </div>;
 }
 
 function TimePick({value,onChange,placeholder}){
@@ -645,6 +666,7 @@ function Login({onLogin}){
   const[regName,setRegName]=useState('');
   const[regEmail,setRegEmail]=useState('');
   const[loading,setLoading]=useState(false);
+  const[oauthLoading,setOauthLoading]=useState(false);
   const[error,setError]=useState('');
   const[success,setSuccess]=useState('');
   const[consent,setConsent]=useState(false);
@@ -724,7 +746,7 @@ function Login({onLogin}){
   // ── OAuth: Google (via Supabase built-in) ──
   const handleGoogle = async () => {
     if (!supabase) return;
-    setLoading(true);
+    setOauthLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin + '/' }
@@ -735,6 +757,7 @@ function Login({onLogin}){
   const handleYandex = () => {
     const clientId = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_YANDEX_CLIENT_ID : null;
     if (!clientId) { setError('Яндекс ID не настроен'); return; }
+    setOauthLoading(true);
     const redir = encodeURIComponent(window.location.origin + '/auth/yandex/callback');
     window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir;
   };
@@ -766,6 +789,10 @@ function Login({onLogin}){
   </div>;
 
   return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'40px 24px'}}>
+    {/* OAuth loading overlay */}
+    {oauthLoading&&<div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:C.bg,animation:'fadeIn .2s'}}>
+      <ProgressBar duration={4} label="Подключаемся..."/>
+    </div>}
     <div style={{width:'100%',maxWidth:400,margin:'0 auto',opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all .7s cubic-bezier(.16,1,.3,1)'}}>
 
       {mode==='auth'&&<>
@@ -1108,10 +1135,7 @@ export default function App(){
 
   // ── Loading state ──
   if (authLoading) return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
-    <div style={{textAlign:'center',animation:'enter .5s'}}>
-      <div style={{width:48,height:48,borderRadius:14,background:C.accent,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',color:'#fff'}}>{I.fork}</div>
-      <div style={{fontSize:14,color:C.muted}}>Загрузка...</div>
-    </div>
+    <ProgressBar duration={3} label="Загрузка..."/>
   </div></>;
 
   if(!user) return <><style>{CSS}</style><Login onLogin={login}/></>;
