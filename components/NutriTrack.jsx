@@ -1551,46 +1551,22 @@ export default function App(){
     setClientMenu(null);
   };
 
-  // ── Chat: send message (doc or client) ──
-  const sendComment = async (clientId, dateKey, text) => {
-    if(!text||!text.trim()||!supabase||!user?.id)return;
-    try{
+  const sendComment = (clientId, dateKey, text) => {
+    if(!text||!text.trim())return;
+    const cm = {id:'cm'+Date.now(), date:dateKey, text:text.trim(), ts:Date.now(), read:false, senderId:user?.id, senderName:user?.name||''};
+    setComments(p => {
+      const list = [...(p[clientId]||[]), cm];
+      return Object.assign({}, p, {[clientId]: list});
+    });
+    setDocComment('');
+    // Persist to DB (fire-and-forget)
+    if(supabase&&user?.id){
       const docId = isDoc ? user.id : null;
-      let actualDocId = docId;
-      if(!isDoc){
-        const{data:link}=await supabase.from('doc_clients').select('doc_id').eq('client_id',user.id).limit(1).maybeSingle();
-        if(link) actualDocId=link.doc_id;
-        else return;
+      if(isDoc){
+        supabase.from('doc_comments').insert({doc_id:user.id,client_id:clientId,sender_id:user.id,sender_name:user.name||'',date:dateKey,text:text.trim(),read:false}).then(()=>{});
       }
-      const msg={doc_id:actualDocId,client_id:isDoc?clientId:user.id,sender_id:user.id,sender_name:user.name||'',date:dateKey,text:text.trim(),read:false};
-      await supabase.from('doc_comments').insert(msg);
-      setDocComment('');
-    }catch(e){console.error('sendComment error:',e)}
+    }
   };
-
-  // ── Chat: load messages for a client ──
-  const loadComments = async (clientId) => {
-    if(!supabase)return;
-    try{
-      const{data}=await supabase.from('doc_comments').select('*').or(isDoc?`client_id.eq.${clientId}`:`client_id.eq.${user.id}`).order('created_at',{ascending:true});
-      if(data){
-        const grouped={};
-        data.forEach(c=>{
-          const cid=c.client_id;
-          if(!grouped[cid])grouped[cid]=[];
-          grouped[cid].push({id:c.id,date:c.date,text:c.text,ts:new Date(c.created_at).getTime(),read:c.read,senderId:c.sender_id,senderName:c.sender_name});
-        });
-        setComments(p=>Object.assign({},p,grouped));
-      }
-    }catch(e){console.error('loadComments error:',e)}
-  };
-
-  // ── Chat: load messages on screen change ──
-  useEffect(()=>{
-    if(!supabase||!user?.id)return;
-    if(isDoc&&selClient)loadComments(selClient.id);
-    else if(!isDoc)loadComments(user.id);
-  },[user?.id,selClient?.id,date]);
 
   const typing=null;
   const sendTyping=()=>{};
