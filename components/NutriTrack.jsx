@@ -1630,10 +1630,13 @@ export default function App(){
     return shell(<>
       <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('')}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>setScreen('clientProfile')}/>}/>
       <div style={{background:C.surface,borderRadius:16,padding:'12px 16px',marginBottom:12,boxShadow:C.shadowCard,display:'flex',alignItems:'center',gap:12}}>
-        <div style={{width:40,height:40,borderRadius:12,background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>
+        <div style={{position:'relative',flexShrink:0}}>
+          {selClient.photo?<img src={selClient.photo} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>}
+          <div style={{position:'absolute',bottom:-1,right:-1,width:10,height:10,borderRadius:'50%',border:'2px solid '+C.surface,background:selClient.isOnline?'#34C759':'#ccc',...(selClient.isOnline?{animation:'pulse 2s infinite'}:{})}}/>
+        </div>
         <div style={{flex:1}}>
-          <div style={{fontSize:13,color:C.soft}}>{selClient.request} · {selClient.age} лет</div>
-          <div style={{fontSize:11,color:C.muted}}>Работает {daysBetween(selClient.joined,new Date())} дн.</div>
+          <div style={{fontSize:13,color:C.soft}}>{selClient.request}{selClient.request&&selClient.age?' · ':''}{selClient.age?selClient.age+' лет':''}</div>
+          <div style={{fontSize:11,color:selClient.isOnline?'#34C759':C.muted}}>{selClient.isOnline?'онлайн':selClient.lastSeen?formatLastSeen(selClient.lastSeen):daysBetween(selClient.joined,new Date())+' дн.'}</div>
         </div>
         <button onClick={()=>setScreen('clientProfile')} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',padding:'6px 12px',borderRadius:8,fontSize:12,color:C.accent,fontFamily:'inherit',fontWeight:500}}>Профиль</button>
       </div>
@@ -1704,13 +1707,13 @@ export default function App(){
           onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-2px)';e.currentTarget.style.boxShadow=C.shadowHover}}
           onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow=C.shadowCard}}>
           <div style={{position:'relative',flexShrink:0}}>
-            {c.photo?<img src={c.photo} style={{width:42,height:42,borderRadius:14,objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:42,height:42,borderRadius:14,background:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(c.nick||c.name).charAt(0)}</div>}
+            {c.photo?<img src={c.photo} style={{width:42,height:42,borderRadius:'50%',objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:42,height:42,borderRadius:'50%',background:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(c.nick||c.name).charAt(0)}</div>}
             <div style={{position:'absolute',bottom:-1,right:-1,width:12,height:12,borderRadius:'50%',border:'2px solid '+C.surface,background:c.isOnline?'#34C759':'#ccc',...(c.isOnline?{animation:'pulse 2s infinite'}:{})}}/>
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:15,fontWeight:600}}>{c.nick||c.name}</div>
             {c.nick&&<div style={{fontSize:11,color:C.muted}}>{c.name}</div>}
-            <div style={{fontSize:12,color:C.soft,marginTop:1}}>{c.request} · {c.age}</div>
+            <div style={{fontSize:12,color:C.soft,marginTop:1}}>{[c.request,c.age?c.age+' лет':null].filter(Boolean).join(' · ')||''}</div>
             <div style={{fontSize:11,color:c.isOnline?'#34C759':C.muted,marginTop:1}}>{c.isOnline?'онлайн':c.lastSeen?formatLastSeen(c.lastSeen):daysBetween(c.joined,new Date())+' дней'}</div>
           </div>
           <span style={{color:C.muted,display:'flex'}}>{I.chev}</span>
