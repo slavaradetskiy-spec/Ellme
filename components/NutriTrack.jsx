@@ -1585,17 +1585,15 @@ export default function App(){
     }catch(e){console.error('loadComments error:',e)}
   };
 
-  // Load comments when doc opens client or client mounts, refresh every 15s
-  const lastLoadRef=useRef(null);
+  // Load comments when doc opens client or client logs in, refresh every 15s
   useEffect(()=>{
     if(!supabase||!user?.id)return;
     const cid=isDoc?selClient?.id:user.id;
     if(!cid)return;
-    lastLoadRef.current=cid;
     loadCommentsFor(cid);
     const iv=setInterval(()=>loadCommentsFor(cid),15000);
     return()=>clearInterval(iv);
-  },[selClient?.id]);// eslint-disable-line
+  },[user?.id,selClient?.id]);// eslint-disable-line
 
   const typing=null;
   const sendTyping=()=>{};
