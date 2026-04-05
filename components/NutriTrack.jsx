@@ -806,13 +806,36 @@ function Login({onLogin}){
   const sucBox = success ? <div style={{padding:'12px 16px',borderRadius:12,background:C.accentSoft,color:C.accent,fontSize:13,marginBottom:12,animation:'enter .2s'}}>{success}</div> : null;
 
 
+  // ── Russian error translations ──
+  const ruError = (msg) => {
+    if (!msg) return 'Неизвестная ошибка';
+    const map = {
+      'Invalid login credentials': 'Неверный email или пароль',
+      'User already registered': 'Этот email уже зарегистрирован',
+      'Unable to validate email address: invalid format': 'Некорректный формат email',
+      'Signup requires a valid password': 'Введите пароль',
+      'Password should be at least 6 characters': 'Пароль должен быть минимум 6 символов',
+      'Email rate limit exceeded': 'Слишком много попыток. Подождите несколько минут',
+      'For security purposes, you can only request this once every 60 seconds': 'Подождите 60 секунд перед повторной попыткой',
+      'New password should be different from the old password.': 'Новый пароль должен отличаться от текущего',
+      'User not found': 'Пользователь не найден',
+      'Email not confirmed': 'Email не подтверждён. Проверьте почту',
+    };
+    for (const [en, ru] of Object.entries(map)) {
+      if (msg.includes(en)) return ru;
+    }
+    // Fallback: if message is in English, show generic
+    if (/^[a-zA-Z\s:.,!?]+$/.test(msg)) return 'Ошибка: ' + msg;
+    return msg;
+  };
+
   // ── Email Sign In ──
   const handleSignIn = async () => {
     if (!supabase) { onLogin('client', email, 'c1'); return; }
     setLoading(true); setError('');
     try {
       const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
-      if (err) setError(err.message === 'Invalid login credentials' ? 'Неверный email или пароль' : err.message);
+      if (err) setError(ruError(err.message));
     } catch(e) { setError('Ошибка подключения'); }
     setLoading(false);
   };
@@ -829,7 +852,7 @@ function Login({onLogin}){
         email: signUpEmail, password: pass,
         options: { data: { name: regName || signUpEmail, role } }
       });
-      if (err) { setError(err.message === 'User already registered' ? 'Этот email уже зарегистрирован' : err.message); }
+      if (err) { setError(ruError(err.message)); }
       else { setSuccess('Регистрация прошла успешно! Войдите с вашим email и паролем.'); }
     } catch(e) { setError('Ошибка подключения'); }
     setLoading(false);
@@ -841,7 +864,7 @@ function Login({onLogin}){
     setLoading(true); setError('');
     try {
       const { data, error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
-      if (err) { setError(err.message === 'Invalid login credentials' ? 'Неверный email или пароль' : err.message); setLoading(false); return; }
+      if (err) { setError(ruError(err.message)); setLoading(false); return; }
       // Check if user is actually a doc
       if (data?.user) {
         const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
@@ -863,7 +886,7 @@ function Login({onLogin}){
       const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: window.location.origin + '/reset-password'
       });
-      if (err) { setError(err.message); }
+      if (err) { setError(ruError(err.message)); }
       else { setSuccess('Ссылка для сброса пароля отправлена на ' + email.trim()); }
     } catch(e) { setError('Ошибка подключения'); }
     setLoading(false);
@@ -872,6 +895,8 @@ function Login({onLogin}){
   // ── OAuth: Google (via Supabase built-in) ──
   const handleGoogle = async () => {
     if (!supabase) return;
+    // Save intended role for OAuth (doc pages set mode='doc'/'docReg')
+    try { localStorage.setItem('ellme_oauth_role', mode === 'doc' || mode === 'docReg' ? 'doc' : 'client'); } catch(e) {}
     setOauthLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -883,6 +908,8 @@ function Login({onLogin}){
   const handleYandex = () => {
     const clientId = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_YANDEX_CLIENT_ID : null;
     if (!clientId) { setError('Яндекс ID не настроен'); return; }
+    // Save intended role for OAuth
+    try { localStorage.setItem('ellme_oauth_role', mode === 'doc' || mode === 'docReg' ? 'doc' : 'client'); } catch(e) {}
     setOauthLoading(true);
     const redir = encodeURIComponent(window.location.origin + '/auth/yandex/callback');
     window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir;
@@ -1143,6 +1170,18 @@ export default function App(){
         await supabase.from('profiles').update({ email: authEmail, name: authName || profile.name }).eq('id', u.id);
         profile.email = authEmail;
         if (authName) profile.name = authName;
+      }
+
+      // Check if OAuth login was intended as doc registration
+      if (typeof window !== 'undefined') {
+        try {
+          const intendedRole = localStorage.getItem('ellme_oauth_role');
+          if (intendedRole === 'doc' && profile.role === 'client') {
+            await supabase.from('profiles').update({ role: 'doc' }).eq('id', u.id);
+            profile.role = 'doc';
+          }
+          localStorage.removeItem('ellme_oauth_role');
+        } catch(e) {}
       }
 
       setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200 });
