@@ -1132,7 +1132,8 @@ export default function App(){
   useEffect(()=>{if(user?.role==='doc')loadClients()},[user?.id,user?.role]);
   const[renaming,setRenaming]=useState(null);
   const[renameVal,setRenameVal]=useState('');
-  const[profilePhoto,setProfilePhoto]=useState(()=>{try{return typeof window!=='undefined'?localStorage.getItem('ellme_photo'):null}catch(e){return null}});
+  const[profilePhoto,setProfilePhoto]=useState(null);
+  useEffect(()=>{try{const p=localStorage.getItem('ellme_photo');if(p)setProfilePhoto(p)}catch(e){}},[]);
   const updatePhoto=(url)=>{setProfilePhoto(url);try{if(url)localStorage.setItem('ellme_photo',url);else localStorage.removeItem('ellme_photo')}catch(e){}};
   const[waterNorm,setWaterNorm]=useState(2200);
   const[celebration,setCelebration]=useState(null);
@@ -1204,15 +1205,16 @@ export default function App(){
           try { inviteCode = localStorage.getItem('ellme_invite'); } catch(e) {}
         }
         if (inviteCode && (profile.role || authRole) === 'client') {
-          const { data: inv } = await supabase.from('invites').select('*').eq('code', inviteCode).eq('used', false).single();
-          if (inv) {
-            // Check if link already exists
-            const { data: existing } = await supabase.from('doc_clients').select('id').eq('doc_id', inv.doc_id).eq('client_id', u.id).single();
-            if (!existing) {
-              await supabase.from('doc_clients').insert({ doc_id: inv.doc_id, client_id: u.id, status: 'active' });
+          try {
+            const { data: inv } = await supabase.from('invites').select('*').eq('code', inviteCode).eq('used', false).maybeSingle();
+            if (inv) {
+              const { data: existing } = await supabase.from('doc_clients').select('id').eq('doc_id', inv.doc_id).eq('client_id', u.id).maybeSingle();
+              if (!existing) {
+                await supabase.from('doc_clients').insert({ doc_id: inv.doc_id, client_id: u.id, status: 'active' });
+              }
+              await supabase.from('invites').update({ used: true, used_by: u.id }).eq('id', inv.id);
             }
-            await supabase.from('invites').update({ used: true, used_by: u.id }).eq('id', inv.id);
-          }
+          } catch(e) { console.error('Invite linking error:', e); }
           try { localStorage.removeItem('ellme_invite'); } catch(e) {}
           window.history.replaceState({}, '', '/');
         }
