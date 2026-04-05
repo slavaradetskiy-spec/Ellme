@@ -331,10 +331,25 @@ function MealTile({meal,data,onClick,delay=0}){
 }
 
 // ═══ MEAL DETAIL ═══
-function MealDetail({meal,data,onChange,onZoom,onBack,dis}){
+function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
   const d=data||{},upd=(k,v)=>onChange({...d,[k]:v});
   const fRef=useRef(null),cRef=useRef(null);
-  const hFile=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>upd('photo',ev.target.result);r.readAsDataURL(f);e.target.value='';};
+  const[uploading,setUploading]=useState(false);
+  const hFile=async(e)=>{
+    const f=e.target.files?.[0];if(!f)return;
+    e.target.value='';
+    if(onUploadPhoto){
+      setUploading(true);
+      try{
+        const url=await onUploadPhoto(f);
+        if(url)upd('photo',url);
+      }catch(err){console.error('Photo upload error:',err)}
+      setUploading(false);
+    }else{
+      // Fallback: data URL (dev mode without Supabase)
+      const r=new FileReader();r.onload=ev=>upd('photo',ev.target.result);r.readAsDataURL(f);
+    }
+  };
 
   return <div style={{animation:'slideRight .3s ease'}}>
     <TopBar left={<BackBtn onClick={onBack}/>} title={meal.label} right={null}/>
@@ -351,11 +366,16 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis}){
       <input ref={fRef} type="file" accept="image/*" onChange={hFile} style={{display:'none'}}/>
       <input ref={cRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:'none'}}/>
       {!d.photo&&<div style={{display:'flex',gap:8,marginBottom:16}}>
-        {[{r:fRef,i:I.img,t:'Галерея'},{r:cRef,i:I.cam,t:'Камера'}].map((b,i)=>
-          <button key={i} onClick={()=>b.r.current?.click()} style={{flex:1,padding:'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:13,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
-            onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}} onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.muted}}>
-            {b.i}{b.t}
-          </button>)}
+        {uploading
+          ?<div style={{flex:1,padding:'14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,background:C.accentSoft,fontSize:13,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+            <span style={{animation:'pulseGlow 1.5s infinite'}}>⏳</span> Загрузка фото...
+          </div>
+          :[{r:fRef,i:I.img,t:'Галерея'},{r:cRef,i:I.cam,t:'Камера'}].map((b,i)=>
+            <button key={i} onClick={()=>b.r.current?.click()} style={{flex:1,padding:'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:13,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
+              onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}} onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.muted}}>
+              {b.i}{b.t}
+            </button>)
+        }
       </div>}
     </>}
 
@@ -582,7 +602,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     try{
       let fileUrl=null;
       if(supportFile&&supabase){
-        const path='support/'+user.id+'/'+Date.now()+'_'+supportFile.name;
+        const path=user.id+'/support/'+Date.now()+'_'+supportFile.name;
         await supabase.storage.from('photos').upload(path,supportFile,{upsert:true}).catch(()=>{});
         const{data}=supabase.storage.from('photos').getPublicUrl(path);
         fileUrl=data?.publicUrl||null;
@@ -1042,6 +1062,9 @@ export default function App(){
   const[invCode,setInvCode]=useState('');
   const[copied,setCopied]=useState(false);
 
+  // ═══ SAVE TIMERS (per-pid to avoid cross-client data loss) ═══
+  const saveTimers=useRef({});
+
   // Create invite and save to DB
   const createInvite=async()=>{
     const code=Math.random().toString(36).slice(2,8);
@@ -1223,7 +1246,7 @@ export default function App(){
   // ── Load day data on date change ──
   useEffect(() => {
     if (!user?.id || !supabase) return;
-    const pid = isDoc ? (screen === 'myDiary' ? user.id : selClient?.id) : user.id;
+    const pid = isDoc ? (screen === 'myDiary' || screen === 'myMealDetail' ? user.id : selClient?.id) : user.id;
     if (!pid) return;
     const dateStr = dk(date);
     loadDayFromDb(pid, dateStr).then(data => {
@@ -1237,6 +1260,68 @@ export default function App(){
       }
     });
   }, [date, user?.id, screen, selClient?.id]);
+
+  // ═══ PHOTO UPLOAD TO STORAGE ═══
+  const uploadMealPhoto = async (pid, dateStr, mealId, file) => {
+    if (!supabase || !pid) {
+      // Fallback: return data URL for dev mode
+      return new Promise((resolve) => {
+        const r = new FileReader();
+        r.onload = ev => resolve(ev.target.result);
+        r.readAsDataURL(file);
+      });
+    }
+    // Compress image before upload (max 1200px, quality 0.82)
+    const compressed = await compressImage(file, 1200, 0.82);
+    const ext = file.type === 'image/png' ? 'png' : 'jpg';
+    const path = `${pid}/meals/${dateStr}/${mealId}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('photos').upload(path, compressed, {
+      upsert: true,
+      contentType: compressed.type || 'image/jpeg',
+    });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path);
+    return urlData?.publicUrl ? urlData.publicUrl + '?t=' + Date.now() : null;
+  };
+
+  // ═══ BEFOREUNLOAD — flush pending saves ═══
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Flush all pending save timers immediately
+      Object.keys(saveTimers.current).forEach(timerKey => {
+        clearTimeout(saveTimers.current[timerKey]);
+        delete saveTimers.current[timerKey];
+      });
+      // Force-save current diary state
+      if (!supabase || !user?.id) return;
+      const pid = isDoc ? (screen === 'myDiary' || screen === 'myMealDetail' ? user.id : selClient?.id) : user.id;
+      if (!pid) return;
+      const dateStr = dk(date);
+      const dayData = (diaries[pid] || {})[dateStr];
+      if (dayData) {
+        // Use sendBeacon for reliable save on tab close
+        const payload = {
+          user_id: pid, date: dateStr,
+          water_ml: dayData.water || 0, supplements: dayData.supplements || '',
+          sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
+          movement: dayData.movement || '',
+          stress_level: dayData.stress?.level || null, stress_practices: dayData.stress?.practices || '',
+          stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
+          energy: dayData.well?.energy || null, mood: dayData.well?.mood != null ? dayData.well.mood : null,
+          day_comment: dayData.well?.comment || '',
+          updated_at: new Date().toISOString(),
+        };
+        // sendBeacon with Supabase REST API
+        const url = sbUrl + '/rest/v1/diary_days?on_conflict=user_id,date';
+        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        try {
+          navigator.sendBeacon(url + '&apikey=' + sbKey, blob);
+        } catch(e) {}
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [user?.id, date, diaries, screen, selClient?.id]);
 
   const login = (r,n,c) => { setUser({role:r,name:n,cid:c}); setScreen('home'); };
   const logout = async () => {
@@ -1269,23 +1354,29 @@ export default function App(){
       updated[pid][key] = val;
       return updated;
     });
-    // Auto-save to database (debounced)
-    if (supabase && pid && pid !== 'doc') {
-      clearTimeout(window._saveTimer);
-      window._saveTimer = setTimeout(() => saveDayToDb(pid, key, val), 1500);
-    }
-    if (supabase && pid === 'doc' && user?.id) {
-      clearTimeout(window._saveTimer);
-      window._saveTimer = setTimeout(() => saveDayToDb(user.id, key, val), 1500);
+    // Auto-save to database with per-pid timer
+    if (supabase && pid) {
+      const timerKey = pid + ':' + key;
+      if (saveTimers.current[timerKey]) clearTimeout(saveTimers.current[timerKey]);
+      saveTimers.current[timerKey] = setTimeout(() => {
+        saveDayToDb(pid, key, val);
+        delete saveTimers.current[timerKey];
+      }, 1500);
     }
   };
 
-  const activePid=isDoc?(screen==='myDiary'?user?.id:selClient?.id||null):(user?.id||user?.cid||'c1');
+  const activePid=isDoc?(screen==='myDiary'||screen==='myMealDetail'?user.id:selClient?.id||null):(user?.id||user?.cid||'c1');
   const dis=isDoc&&screen==='clientView';
   const unread=!isDoc?(comments[user.cid]||[]).filter(c=>!c.read).length:0;
 
   const dayData=activePid?getDay(activePid):{};
   const meals=dayData.meals||{};
+
+  // ═══ PHOTO UPLOAD CALLBACK for MealDetail ═══
+  const handleUploadMealPhoto = async (file) => {
+    if (!activePid) return null;
+    return uploadMealPhoto(activePid, key, selMeal, file);
+  };
 
   const doRename = () => {
     if (!renaming) return;
@@ -1381,7 +1472,7 @@ export default function App(){
 
   // ═══ CLIENT — MEAL DETAIL ═══
   if(!isDoc&&selMeal)return shell(<>
-    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={meals[selMeal]} onChange={v=>updateMeal(activePid,selMeal,v)} onZoom={setLb} onBack={()=>setSelMeal(null)} dis={false}/>
+    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={meals[selMeal]} onChange={v=>updateMeal(activePid,selMeal,v)} onZoom={setLb} onBack={()=>setSelMeal(null)} dis={false} onUploadPhoto={handleUploadMealPhoto}/>
   </>);
 
   // ═══ CLIENT — HOME ═══
@@ -1429,7 +1520,7 @@ export default function App(){
 
   // My diary meal detail
   if(isDoc&&screen==='myMealDetail'&&selMeal)return shell(<>
-    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay('doc').meals||{})[selMeal]} onChange={v=>updateMeal('doc',selMeal,v)} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('myDiary')}} dis={false}/>
+    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay(user.id).meals||{})[selMeal]} onChange={v=>updateMeal(user.id,selMeal,v)} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('myDiary')}} dis={false} onUploadPhoto={handleUploadMealPhoto}/>
   </>);
 
   // Client diary view
@@ -1468,7 +1559,7 @@ export default function App(){
 
   // My diary
   if(isDoc&&screen==='myDiary'){
-    const md=getDay('doc'),mm=md.meals||{};
+    const md=getDay(user.id),mm=md.meals||{};
     return shell(<>
       <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
       <Cal sel={date} onSelect={setDate}/>
@@ -1477,7 +1568,7 @@ export default function App(){
           {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={mm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('myMealDetail')}} delay={i*0.05}/>)}
         </div>
       </SecCard>
-      <DayExtras data={md} setData={v=>setDay('doc',v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
+      <DayExtras data={md} setData={v=>setDay(user.id,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
     </>);
   }
 
@@ -1557,4 +1648,33 @@ export default function App(){
   }
 
   return shell(<div/>);
+}
+
+// ═══ IMAGE COMPRESSION UTILITY ═══
+function compressImage(file, maxDim = 1200, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(
+          (blob) => blob ? resolve(blob) : reject(new Error('Compression failed')),
+          'image/jpeg', quality
+        );
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
