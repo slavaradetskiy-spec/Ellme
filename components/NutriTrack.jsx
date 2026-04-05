@@ -1312,6 +1312,9 @@ export default function App(){
     } catch(e) { console.error('Save error:', e); }
   };
 
+  // Derived state — must be declared before useEffects that reference it
+  const isDoc=user?.role==='doc';
+
   // ── Load day data on date change ──
   useEffect(() => {
     if (!user?.id || !supabase) return;
@@ -1411,8 +1414,6 @@ export default function App(){
   }
 
   if(!user) return <><style>{CSS}</style><Login onLogin={login}/></>;
-
-  const isDoc=user.role==='doc';
   const key=dk(date);
   const getDay=pid=>(diaries[pid]||{})[key]||{};
   const setDay=(pid,val)=>{
