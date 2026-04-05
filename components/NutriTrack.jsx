@@ -1128,8 +1128,16 @@ export default function App(){
     }
   };
 
-  // Load clients when doc logs in
-  useEffect(()=>{if(user?.role==='doc')loadClients()},[user?.id,user?.role]);
+  // Load clients when doc logs in + realtime subscription
+  useEffect(()=>{
+    if(user?.role!=='doc'||!supabase)return;
+    loadClients();
+    const channel=supabase.channel('doc_clients_'+user.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
+      .subscribe();
+    return()=>{supabase.removeChannel(channel)};
+  },[user?.id,user?.role]);
   const[renaming,setRenaming]=useState(null);
   const[renameVal,setRenameVal]=useState('');
   const[profilePhoto,setProfilePhoto]=useState(null);
