@@ -1573,26 +1573,28 @@ export default function App(){
     }
   };
 
-  // Load comments from DB (called manually, not in useEffect to avoid loops)
-  const commentsLoadedRef=useRef({});
+  // Load comments from DB
   const loadCommentsFor = async (clientId) => {
-    if(!supabase||!clientId||commentsLoadedRef.current[clientId])return;
-    commentsLoadedRef.current[clientId]=true;
+    if(!supabase||!clientId)return;
     try{
-      const col=isDoc?'client_id':'client_id';
-      const{data}=await supabase.from('doc_comments').select('*').eq(col,clientId).order('created_at',{ascending:true});
-      if(data&&data.length>0){
+      const{data}=await supabase.from('doc_comments').select('*').eq('client_id',clientId).order('created_at',{ascending:true});
+      if(data){
         const list=data.map(c=>({id:c.id,date:c.date,text:c.text,ts:new Date(c.created_at).getTime(),read:!!c.read,senderId:c.sender_id,senderName:c.sender_name||''}));
         setComments(p=>Object.assign({},p,{[clientId]:list}));
       }
     }catch(e){console.error('loadComments error:',e)}
   };
 
-  // Load comments once when entering a client view (doc) or on mount (client)
+  // Load comments when doc opens client or client mounts, refresh every 15s
+  const lastLoadRef=useRef(null);
   useEffect(()=>{
     if(!supabase||!user?.id)return;
-    if(isDoc&&selClient?.id) loadCommentsFor(selClient.id);
-    else if(!isDoc) loadCommentsFor(user.id);
+    const cid=isDoc?selClient?.id:user.id;
+    if(!cid)return;
+    lastLoadRef.current=cid;
+    loadCommentsFor(cid);
+    const iv=setInterval(()=>loadCommentsFor(cid),15000);
+    return()=>clearInterval(iv);
   },[selClient?.id]);// eslint-disable-line
 
   const typing=null;
