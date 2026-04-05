@@ -846,6 +846,9 @@ function Login({onLogin}){
   // ── OAuth: Google (via Supabase built-in) ──
   const handleGoogle = async () => {
     if (!supabase) return;
+    const params = new URLSearchParams(window.location.search);
+    const inv = params.get('invite');
+    if (inv) localStorage.setItem('_pendingInvite', inv);
     setOauthLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -857,6 +860,9 @@ function Login({onLogin}){
   const handleYandex = () => {
     const clientId = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_YANDEX_CLIENT_ID : null;
     if (!clientId) { setError('Яндекс ID не настроен'); return; }
+    const params = new URLSearchParams(window.location.search);
+    const inv = params.get('invite');
+    if (inv) localStorage.setItem('_pendingInvite', inv);
     setOauthLoading(true);
     const redir = encodeURIComponent(window.location.origin + '/auth/yandex/callback');
     window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir;
@@ -1121,7 +1127,11 @@ export default function App(){
       // Handle invite linking — if client registered via invite link
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
-        const inviteCode = params.get('invite');
+        let inviteCode = params.get('invite');
+        if (!inviteCode) {
+          inviteCode = localStorage.getItem('_pendingInvite');
+          if (inviteCode) localStorage.removeItem('_pendingInvite');
+        }
         if (inviteCode && (profile.role || authRole) === 'client') {
           const { data: inv } = await supabase.from('invites').select('*').eq('code', inviteCode).eq('used', false).single();
           if (inv) {

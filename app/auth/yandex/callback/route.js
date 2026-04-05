@@ -57,7 +57,7 @@ export async function GET(request) {
       email: yEmail,
       password: tempPass,
       email_confirm: true,
-      user_metadata: { name: yName, role: 'client', provider: 'yandex' },
+      user_metadata: { name: yName, email: yEmail, role: 'client', provider: 'yandex' },
     })
 
     if (!created?.user) {
