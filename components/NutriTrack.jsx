@@ -657,7 +657,6 @@ function Login({onLogin}){
   const errBox = error ? <div style={{padding:'12px 16px',borderRadius:12,background:C.dangerSoft,color:C.danger,fontSize:13,marginBottom:12,animation:'enter .2s'}}>{error}</div> : null;
   const sucBox = success ? <div style={{padding:'12px 16px',borderRadius:12,background:C.accentSoft,color:C.accent,fontSize:13,marginBottom:12,animation:'enter .2s'}}>{success}</div> : null;
 
-  const oauthBtnStyle = (bg, color) => ({width:'100%',padding:'14px 16px',borderRadius:16,border:'none',background:bg,color,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:10,transition:'all .2s',marginBottom:10});
 
   // ── Email Sign In ──
   const handleSignIn = async () => {
@@ -740,74 +739,88 @@ function Login({onLogin}){
     window.location.href = 'https://oauth.yandex.ru/authorize?response_type=code&client_id=' + clientId + '&redirect_uri=' + redir;
   };
 
-  // ── OAuth Buttons ──
-  const OAuthButtons = () => <div style={{marginBottom:20}}>
-    <button onClick={handleYandex} style={oauthBtnStyle('#FC3F1D','#fff')}
-      onMouseOver={e=>e.currentTarget.style.opacity='0.9'} onMouseOut={e=>e.currentTarget.style.opacity='1'}>
-      <svg width="20" height="20" viewBox="0 0 24 24"><path d="M13.32 7.67h-.84c-1.14 0-1.75.55-1.75 1.42 0 .99.45 1.47 1.4 2.08l.78.5-2.3 4.33h-2.3l2.02-3.72C9.3 11.4 8.6 10.42 8.6 9.02c0-1.86 1.3-3.14 3.87-3.14h2.54V16h-1.7V7.67z" fill="white"/></svg>
-      Войти через Яндекс
+  // ── OAuth Buttons (compact icon style like Everfit) ──
+  const OAuthIcons = () => <div style={{display:'flex',justifyContent:'center',gap:12}}>
+    <button onClick={handleYandex} style={{width:48,height:48,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}
+      onMouseOver={e=>{e.currentTarget.style.borderColor='#FC3F1D';e.currentTarget.style.transform='scale(1.08)'}}
+      onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.transform='none'}}>
+      <svg width="22" height="22" viewBox="0 0 24 24"><text x="12" y="18" textAnchor="middle" fontFamily="Arial,sans-serif" fontSize="20" fontWeight="600" fill="#FC3F1D">Я</text></svg>
     </button>
-    <button onClick={handleGoogle} style={oauthBtnStyle(C.surface,C.text)}
-      onMouseOver={e=>{e.currentTarget.style.boxShadow=C.shadowCard}} onMouseOut={e=>{e.currentTarget.style.boxShadow='none'}}>
+    <button onClick={handleGoogle} style={{width:48,height:48,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}
+      onMouseOver={e=>{e.currentTarget.style.borderColor='#4285F4';e.currentTarget.style.transform='scale(1.08)'}}
+      onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.transform='none'}}>
       <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-      Войти через Google
     </button>
   </div>;
 
   // ── Divider ──
-  const Divider = ({text}) => <div style={{position:'relative',textAlign:'center',marginBottom:16,marginTop:4}}>
+  const Divider = ({text}) => <div style={{position:'relative',textAlign:'center',margin:'20px 0'}}>
     <div style={{position:'absolute',top:'50%',left:0,right:0,height:1,background:C.tileBorder}}/>
-    <span style={{position:'relative',background:C.bg,padding:'0 14px',fontSize:12,color:C.muted}}>{text}</span>
+    <span style={{position:'relative',background:C.bg,padding:'0 16px',fontSize:12,color:C.muted,letterSpacing:'.02em'}}>{text}</span>
+  </div>;
+
+  // ── Logo ──
+  const Logo = () => <div style={{textAlign:'center',marginBottom:36}}>
+    <div style={{fontSize:40,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'.08em',color:C.text}}>ELLME</div>
+    <div style={{fontSize:10,color:C.muted,letterSpacing:'.18em',textTransform:'uppercase',marginTop:6}}>Eat Live Love ME</div>
   </div>;
 
   return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'40px 24px'}}>
     <div style={{width:'100%',maxWidth:400,margin:'0 auto',opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all .7s cubic-bezier(.16,1,.3,1)'}}>
 
       {mode==='auth'&&<>
-        <h1 style={{fontFamily:'var(--fd)',fontSize:32,fontWeight:400,textAlign:'center',marginBottom:32,letterSpacing:'-.02em'}}>Авторизация</h1>
+        <Logo/>
         {errBox}{sucBox}
-
-        <OAuthButtons/>
-        <Divider text="или по email"/>
 
         <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
         <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}
           onKeyDown={e=>{if(e.key==='Enter')handleSignIn()}}/>
-        <div style={{textAlign:'right',marginTop:-6,marginBottom:12}}>
-          <button onClick={()=>{setMode('reset');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.accent,fontFamily:'inherit',padding:0}}>Забыли пароль?</button>
+        <div style={{textAlign:'right',marginTop:-6,marginBottom:16}}>
+          <button onClick={()=>{setMode('reset');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.accent,fontFamily:'inherit',padding:0,fontWeight:500}}>Забыли пароль?</button>
         </div>
-        <button disabled={loading} onClick={handleSignIn} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:email.trim()&&pass?C.text:'#ccc',color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:16,transition:'all .2s',boxShadow:'0 2px 12px rgba(0,0,0,.12)',opacity:loading?.7:1}}>
+        <button disabled={loading} onClick={handleSignIn} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:4,transition:'all .2s',boxShadow:'0 4px 16px rgba(45,95,63,.2)',opacity:loading?.7:1}}>
           {loading?'Вхожу...':'Войти'}
         </button>
-        <button onClick={()=>{setMode('register');setError('');setSuccess('')}} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.surfaceAlt,color:C.text,fontSize:16,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:16}}>
-          Зарегистрироваться
-        </button>
-        <div style={{textAlign:'center',paddingTop:8,borderTop:`1px solid ${C.tileBorder}`}}>
-          <button onClick={()=>{setMode('doc');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.accent,fontFamily:'inherit',padding:'12px 0',fontWeight:500}}>Вход для нутрициолога →</button>
+
+        <Divider text="или войти через"/>
+        <OAuthIcons/>
+
+        <div style={{textAlign:'center',marginTop:28}}>
+          <button onClick={()=>{setMode('register');setError('');setSuccess('')}} style={{width:'100%',padding:'14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,background:'transparent',color:C.text,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',transition:'all .2s'}}
+            onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}}
+            onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.text}}>
+            Зарегистрироваться
+          </button>
+        </div>
+        <div style={{textAlign:'center',marginTop:16}}>
+          <button onClick={()=>{setMode('doc');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.muted,fontFamily:'inherit'}}>Вход для нутрициолога →</button>
         </div>
       </>}
 
       {mode==='register'&&<div style={{animation:'enter .3s'}}>
-        <h1 style={{fontFamily:'var(--fd)',fontSize:32,fontWeight:400,textAlign:'center',marginBottom:24}}>Регистрация</h1>
+        <Logo/>
+        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:6,marginTop:-16}}>Создайте аккаунт</h2>
+        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Введите данные для регистрации</p>
         {errBox}{sucBox}
-        <OAuthButtons/>
-        <Divider text="или по email"/>
         {!success&&<>
           <input value={regName} onChange={e=>setRegName(e.target.value)} placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
           <input value={regEmail} onChange={e=>setRegEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
           <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль (мин. 6 символов)" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
           <input value={pass2} onChange={e=>setPass2(e.target.value)} placeholder="Повторите пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-          <label style={{display:'flex',gap:10,alignItems:'flex-start',marginBottom:14,cursor:'pointer',fontSize:13,color:C.soft,lineHeight:1.5}}>
-            <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} style={{marginTop:3,accentColor:C.accent,width:18,height:18,flexShrink:0}}/>
-            <span>Я даю согласие на обработку персональных данных и принимаю <a href="/privacy" target="_blank" style={{color:C.accent}}>политику конфиденциальности</a></span>
-          </label>
-          <button disabled={loading||!consent} onClick={()=>handleSignUp('client')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:consent?C.text:'#ccc',color:'#fff',fontSize:16,fontWeight:600,cursor:(loading||!consent)?'default':'pointer',fontFamily:'inherit',marginBottom:12,opacity:loading?.7:1}}>
-            {loading?'Создаю аккаунт...':'Создать аккаунт'}
+          <button disabled={loading} onClick={()=>{if(!consent){setError('Подтвердите согласие');return;}handleSignUp('client')}} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:10,opacity:loading?.7:1,boxShadow:'0 4px 16px rgba(45,95,63,.2)'}}>
+            {loading?'Создаю аккаунт...':'Зарегистрироваться'}
           </button>
+          <label style={{display:'flex',gap:10,alignItems:'flex-start',cursor:'pointer',fontSize:11,color:C.muted,lineHeight:1.5}}>
+            <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} style={{marginTop:2,accentColor:C.accent,width:16,height:16,flexShrink:0}}/>
+            <span>Продолжая, вы соглашаетесь с <a href="/privacy" target="_blank" style={{color:C.accent}}>Политикой конфиденциальности</a> и <a href="/terms" target="_blank" style={{color:C.accent}}>Условиями использования</a></span>
+          </label>
+          <Divider text="или"/>
+          <OAuthIcons/>
         </>}
-        <button onClick={()=>{setMode('auth');setError('');setSuccess('')}} style={{width:'100%',padding:'12px',border:'none',background:'transparent',color:C.accent,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>
-          {success?'Перейти ко входу':'Уже есть аккаунт? Войти'}
-        </button>
+        <div style={{textAlign:'center',marginTop:20}}>
+          <span style={{fontSize:14,color:C.muted}}>Уже есть аккаунт? </span>
+          <button onClick={()=>{setMode('auth');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.accent,fontFamily:'inherit',fontWeight:600}}>Войти</button>
+        </div>
       </div>}
 
       {mode==='reset'&&<div style={{animation:'enter .3s'}}>
@@ -825,24 +838,27 @@ function Login({onLogin}){
       </div>}
 
       {mode==='doc'&&<div style={{animation:'enter .3s'}}>
-        <h1 style={{fontFamily:'var(--fd)',fontSize:28,fontWeight:400,textAlign:'center',marginBottom:8}}>Кабинет специалиста</h1>
+        <Logo/>
+        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:4,marginTop:-16}}>Кабинет специалиста</h2>
         <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Вход для нутрициолога</p>
         {errBox}{sucBox}
-        <OAuthButtons/>
-        <Divider text="или по email"/>
         <input placeholder="Email" type="email" style={inputStyle} value={email} onChange={e=>setEmail(e.target.value)} onFocus={onFB} onBlur={offFB}/>
         <input placeholder="Пароль" type="password" style={inputStyle} value={pass} onChange={e=>setPass(e.target.value)} onFocus={onFB} onBlur={offFB}
           onKeyDown={e=>{if(e.key==='Enter')handleDocSignIn()}}/>
-        <div style={{textAlign:'right',marginTop:-6,marginBottom:12}}>
-          <button onClick={()=>{setMode('reset');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.accent,fontFamily:'inherit',padding:0}}>Забыли пароль?</button>
+        <div style={{textAlign:'right',marginTop:-6,marginBottom:16}}>
+          <button onClick={()=>{setMode('reset');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.accent,fontFamily:'inherit',padding:0,fontWeight:500}}>Забыли пароль?</button>
         </div>
-        <button disabled={loading} onClick={handleDocSignIn} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:8,boxShadow:'0 2px 12px rgba(45,95,63,.2)',opacity:loading?.7:1}}>
+        <button disabled={loading} onClick={handleDocSignIn} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:12,boxShadow:'0 4px 16px rgba(45,95,63,.2)',opacity:loading?.7:1}}>
           {loading?'Вхожу...':'Войти'}
         </button>
-        <button onClick={()=>{setMode('docReg');setError('');setSuccess('')}} style={{width:'100%',padding:'12px',border:'none',background:C.surfaceAlt,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',borderRadius:12,marginBottom:8}}>
-          Регистрация специалиста
-        </button>
-        <button onClick={()=>{setMode('auth');setError('');setSuccess('')}} style={{width:'100%',padding:'12px',border:'none',background:'transparent',color:C.accent,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}>Назад</button>
+        <Divider text="или"/>
+        <OAuthIcons/>
+        <div style={{textAlign:'center',marginTop:20}}>
+          <button onClick={()=>{setMode('docReg');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.accent,fontFamily:'inherit',fontWeight:600}}>Регистрация специалиста</button>
+        </div>
+        <div style={{textAlign:'center',marginTop:10}}>
+          <button onClick={()=>{setMode('auth');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.muted,fontFamily:'inherit'}}>← Назад</button>
+        </div>
       </div>}
 
       {mode==='docReg'&&<div style={{animation:'enter .3s'}}>
@@ -990,14 +1006,13 @@ export default function App(){
     };
 
     // Проверяем hash — если в URL есть access_token (после Яндекс OAuth), устанавливаем сессию
-    const hash = typeof window !== 'undefined' ? window.location.hash : '';
-    if (hash.includes('access_token=')) {
-      const params = new URLSearchParams(hash.substring(1));
+    const hash2 = typeof window !== 'undefined' ? window.location.hash : '';
+    if (hash2.includes('access_token=')) {
+      const params = new URLSearchParams(hash2.substring(1));
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
       if (accessToken && refreshToken) {
         supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ data: { session } }) => {
-          // Убираем токены из URL
           window.history.replaceState({}, '', '/');
           loadProfile(session);
         });
