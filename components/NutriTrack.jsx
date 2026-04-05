@@ -587,14 +587,21 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
         const{data}=supabase.storage.from('photos').getPublicUrl(path);
         fileUrl=data?.publicUrl||null;
       }
+      // Save to DB
       if(supabase){
         await supabase.from('support_messages').insert({
           user_id:user.id,
           email:email||user.email||'',
           text:supportText.trim(),
           file_url:fileUrl
-        });
+        }).catch(()=>{});
       }
+      // Send email notification
+      await fetch('/api/support',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email:email||user.email||'',text:supportText.trim(),fileUrl})
+      }).catch(()=>{});
       setSupportSent(true);setSupportText('');setSupportFile(null);
       setTimeout(()=>setSupportSent(false),3000);
     }catch(e){console.error(e);}
