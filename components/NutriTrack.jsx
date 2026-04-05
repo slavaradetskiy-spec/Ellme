@@ -835,9 +835,8 @@ function Login({onLogin}){
     setLoading(true); setError('');
     try {
       const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
-      if (err) setError(ruError(err.message));
-    } catch(e) { setError('Ошибка подключения'); }
-    setLoading(false);
+      if (err) { setError(ruError(err.message)); setLoading(false); }
+    } catch(e) { setError('Ошибка подключения'); setLoading(false); }
   };
 
   // ── Email Sign Up ──
@@ -871,10 +870,10 @@ function Login({onLogin}){
         if (profile && profile.role !== 'doc') {
           setError('Этот аккаунт зарегистрирован как клиент. Используйте форму входа для клиентов.');
           await supabase.auth.signOut();
+          setLoading(false);
         }
       }
-    } catch(e) { setError('Ошибка подключения'); }
-    setLoading(false);
+    } catch(e) { setError('Ошибка подключения'); setLoading(false); }
   };
 
   // ── Reset Password ──
@@ -1132,9 +1131,10 @@ export default function App(){
   useEffect(()=>{
     if(user?.role!=='doc'||!supabase)return;
     loadClients();
-    const channel=supabase.channel('doc_clients_'+user.id)
+    const channel=supabase.channel('doc_updates_'+user.id)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'doc_clients',filter:'doc_id=eq.'+user.id},()=>loadClients())
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'profiles'},()=>loadClients())
       .subscribe();
     return()=>{supabase.removeChannel(channel)};
   },[user?.id,user?.role]);
@@ -1413,11 +1413,9 @@ export default function App(){
   };
 
   // ── Loading state ──
-  // Loading: show nothing for first 1.5s, then show progress bar
   if (authLoading) {
-    if (!showLoader) return <><style>{CSS}</style><div style={{minHeight:'100vh',background:C.bg}}/></>;
     return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
-      <ProgressBar duration={5} label="Загрузка..."/>
+      <ProgressBar duration={4} label="Загрузка..."/>
     </div></>;
   }
 
@@ -1691,7 +1689,7 @@ export default function App(){
         </button>
         <div style={{position:'relative'}}>
           <button onClick={e=>{e.stopPropagation();setClientMenu(clientMenu===c.id?null:c.id)}} style={{background:C.surface,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.muted,display:'flex',boxShadow:C.shadowCard,fontSize:18,lineHeight:1}}>⋮</button>
-          {clientMenu===c.id&&<div style={{position:'absolute',right:0,top:44,background:C.surface,borderRadius:14,boxShadow:C.shadowHover,padding:6,zIndex:50,width:180,animation:'scaleIn .15s ease'}}>
+          {clientMenu===c.id&&<div style={{position:'absolute',right:0,top:44,background:C.surface,borderRadius:14,boxShadow:'0 4px 24px rgba(0,0,0,.15)',padding:6,zIndex:999,width:200,animation:'scaleIn .15s ease'}}>
             <button onClick={()=>{setRenaming(c);setRenameVal(c.nick||'');setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
               onMouseOver={e=>e.currentTarget.style.background=C.surfaceAlt} onMouseOut={e=>e.currentTarget.style.background='transparent'}>{I.edit} Переименовать</button>
             <button onClick={()=>{toggleArchive(c.id);setClientMenu(null)}} style={{width:'100%',padding:'10px 14px',border:'none',background:'transparent',cursor:'pointer',fontSize:13,fontFamily:'inherit',textAlign:'left',borderRadius:8,color:C.text,display:'flex',alignItems:'center',gap:8}}
@@ -1708,7 +1706,7 @@ export default function App(){
       </button>
 
       {inv&&<div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
-        <div onClick={()=>setInv(false)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
+        <div onClick={()=>{setInv(false);loadClients()}} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
         <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(420px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
             <span style={{color:C.accent,display:'flex'}}>{I.link}</span>
@@ -1719,7 +1717,7 @@ export default function App(){
             <input readOnly value={invLink} style={{flex:1,padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:12,fontFamily:'monospace',background:C.surfaceAlt,outline:'none'}}/>
             <button onClick={()=>{navigator.clipboard?.writeText(invLink);setCopied(true);setTimeout(()=>setCopied(false),2000)}} style={{padding:'10px 18px',borderRadius:12,border:'none',background:C.accent,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>{copied?'Готово':'Копировать'}</button>
           </div>
-          <button onClick={()=>setInv(false)} style={{width:'100%',marginTop:14,padding:'10px',borderRadius:12,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Закрыть</button>
+          <button onClick={()=>{setInv(false);loadClients()}} style={{width:'100%',marginTop:14,padding:'10px',borderRadius:12,border:'none',background:C.surfaceAlt,color:C.soft,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>Закрыть</button>
         </div>
       </div>}
     </>);
