@@ -1608,15 +1608,14 @@ export default function App(){
     setDay(pid, Object.assign({}, day, { meals: updatedMeals }));
   };
 
-  // Toggle like on meal (for doc) — saves directly to meals table
-  // Bypasses setDay to avoid triggering auto-save of diary_days (which is blocked by RLS for doc)
+  // Toggle like on meal (for doc) — persists to meals table via upsert
+  // Bypasses setDay to avoid triggering auto-save of diary_days
   const toggleMealLike = async (pid, mealId) => {
     if (!supabase || !pid) return;
     const dateStr = dk(date);
-    // Get current state to compute new liked value
     const cur = ((diaries[pid] || {})[dateStr] || {}).meals?.[mealId] || {};
     const newLiked = !cur.liked;
-    // Update local state directly via setDiaries (no auto-save side effect)
+    // Optimistic local update
     setDiaries(p => {
       const next = Object.assign({}, p);
       const pidData = Object.assign({}, next[pid] || {});
@@ -1628,12 +1627,25 @@ export default function App(){
       next[pid] = pidData;
       return next;
     });
-    // Persist only the meals row (not diary_days)
+    // Persist: find or create diary_day row, then upsert meals row
     try {
-      const { data: dayRow } = await supabase.from('diary_days').select('id').eq('user_id', pid).eq('date', dateStr).maybeSingle();
-      if (!dayRow) { console.error('toggleMealLike: no diary_days row for client — client has not saved this day yet'); return; }
-      const { error } = await supabase.from('meals').update({ liked: newLiked }).eq('diary_day_id', dayRow.id).eq('meal_type', mealId);
-      if (error) console.error('toggleMealLike meals update error:', error);
+      let dayId = null;
+      const { data: dayRow, error: selErr } = await supabase.from('diary_days').select('id').eq('user_id', pid).eq('date', dateStr).maybeSingle();
+      if (selErr) { console.error('select diary_days error:', selErr); }
+      if (dayRow) {
+        dayId = dayRow.id;
+      } else {
+        // Create an empty diary_day row for the client so we can attach the like
+        const { data: newDay, error: insErr } = await supabase.from('diary_days').insert({ user_id: pid, date: dateStr }).select('id').maybeSingle();
+        if (insErr) { console.error('insert diary_days error:', insErr); return; }
+        dayId = newDay?.id;
+      }
+      if (!dayId) return;
+      // Upsert meals row with just the liked flag (preserves existing fields via on_conflict)
+      const { error: upErr } = await supabase.from('meals').upsert({
+        diary_day_id: dayId, meal_type: mealId, liked: newLiked,
+      }, { onConflict: 'diary_day_id,meal_type' });
+      if (upErr) console.error('upsert meals error:', upErr);
     } catch (e) { console.error('toggleMealLike error:', e); }
   };
 
