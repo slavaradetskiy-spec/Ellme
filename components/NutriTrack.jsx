@@ -118,6 +118,34 @@ function formatLastSeen(d){
   return dt.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})+' в '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
 }
 
+// Activity types for Movement block
+const ACTIVITIES = [
+  {id:'walk',label:'Ходьба'},
+  {id:'run',label:'Бег'},
+  {id:'bike',label:'Велосипед'},
+  {id:'swim',label:'Плавание'},
+  {id:'yoga',label:'Йога'},
+  {id:'strength',label:'Силовая'},
+  {id:'pilates',label:'Пилатес'},
+  {id:'dance',label:'Танцы'},
+  {id:'other',label:'Другое'},
+];
+
+// Parse movement field — handles both old text format and new JSON
+function parseMovement(raw){
+  if(!raw)return {type:null,duration:10,note:''};
+  if(typeof raw==='object')return {type:raw.type||null,duration:raw.duration||10,note:raw.note||''};
+  // Try JSON
+  if(typeof raw==='string'&&raw.startsWith('{')){
+    try{
+      const p=JSON.parse(raw);
+      return {type:p.type||null,duration:p.duration||10,note:p.note||''};
+    }catch(e){}
+  }
+  // Fallback: old text format → put into note
+  return {type:null,duration:10,note:String(raw)};
+}
+
 function mkDemo(){
   const t=dk(new Date()),y=dk(ago(1));
   return{
@@ -516,7 +544,38 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
     </SecCard>
 
     <SecCard icon={I.run} title="Движение">
-      <div style={{padding:'12px 0'}}><Area value={d.movement} onChange={v=>upd('movement',v)} placeholder="Активность, продолжительность..." dis={dis} rows={2}/></div>
+      {(()=>{
+        const mv=parseMovement(d.movement);
+        const setMv=(next)=>upd('movement',JSON.stringify(next));
+        return <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
+          <div>
+            <Lbl>Тип активности</Lbl>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {ACTIVITIES.map(a=>
+                <Chip key={a.id} sel={mv.type===a.id} dis={dis}
+                  onClick={()=>setMv({...mv,type:mv.type===a.id?null:a.id})}>{a.label}</Chip>
+              )}
+            </div>
+          </div>
+          <div>
+            <Lbl>Продолжительность</Lbl>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,padding:'4px 0'}}>
+              <button onClick={dis?undefined:()=>setMv({...mv,duration:Math.max(10,(mv.duration||10)-10)})}
+                style={{width:40,height:40,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:dis?'default':'pointer',fontSize:20,fontWeight:600,color:dis?C.muted:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+              <div style={{minWidth:90,textAlign:'center'}}>
+                <span style={{fontSize:22,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{mv.duration||10}</span>
+                <span style={{fontSize:13,color:C.muted,marginLeft:6}}>мин</span>
+              </div>
+              <button onClick={dis?undefined:()=>setMv({...mv,duration:(mv.duration||10)+10})}
+                style={{width:40,height:40,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:dis?'default':'pointer',fontSize:20,fontWeight:600,color:dis?C.muted:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+            </div>
+          </div>
+          <div>
+            <Lbl>Заметка</Lbl>
+            <Area value={mv.note} onChange={v=>setMv({...mv,note:v})} placeholder="Детали тренировки..." dis={dis} rows={2}/>
+          </div>
+        </div>;
+      })()}
     </SecCard>
 
     <SecCard icon={I.brain} title="Стресс">
