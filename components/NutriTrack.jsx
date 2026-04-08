@@ -361,6 +361,9 @@ function MealTile({meal,data,onClick,delay=0}){
   >
     {d.photo&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
     {!d.photo&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none'}}/>}
+    {d.liked&&<div style={{position:'absolute',top:10,right:10,width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,.92)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(0,0,0,.15)',zIndex:2}}>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="#E74C3C" stroke="#E74C3C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+    </div>}
     <div style={{position:'relative',zIndex:1}}>
       {!has&&<div style={{fontSize:13,color:C.muted,marginBottom:2}}>Добавить</div>}
       <div style={{fontSize:15,fontWeight:700,color:d.photo?'#fff':C.text}}>{meal.label}</div>
@@ -390,8 +393,15 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
     }
   };
 
+  const toggleLike=()=>upd('liked',!d.liked);
+  const heartBtn=<button onClick={dis?toggleLike:undefined} disabled={!dis&&!d.liked} style={{background:'none',border:'none',cursor:dis?'pointer':(d.liked?'default':'default'),padding:8,display:'flex',alignItems:'center',justifyContent:'center',opacity:(dis||d.liked)?1:0,transition:'all .2s'}}>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill={d.liked?'#E74C3C':'none'} stroke={d.liked?'#E74C3C':C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+    </svg>
+  </button>;
+
   return <div style={{animation:'slideRight .3s ease'}}>
-    <TopBar left={<BackBtn onClick={onBack}/>} title={meal.label} right={null}/>
+    <TopBar left={<BackBtn onClick={onBack}/>} title={meal.label} right={(dis||d.liked)?heartBtn:null}/>
 
     {/* Photo */}
     {d.photo&&<div style={{position:'relative',borderRadius:20,overflow:'hidden',marginBottom:16,boxShadow:C.shadow3d}}>
@@ -1404,7 +1414,7 @@ export default function App(){
       const { data: mealRows } = await supabase.from('meals').select('*').eq('diary_day_id', day.id);
       const meals = {};
       (mealRows || []).forEach(m => {
-        meals[m.meal_type] = { time: m.time, hunger: m.hunger, text: m.description, feeling: m.feeling, feelingNote: m.feeling_note, photo: m.photo_url };
+        meals[m.meal_type] = { time: m.time, hunger: m.hunger, text: m.description, feeling: m.feeling, feelingNote: m.feeling_note, photo: m.photo_url, liked: !!m.liked };
       });
       return {
         meals, water: day.water_ml || 0, supplements: day.supplements || '',
@@ -1445,6 +1455,7 @@ export default function App(){
           time: m.time || null, hunger: m.hunger || null,
           description: m.text || '', feeling: m.feeling || null,
           feeling_note: m.feelingNote || '', photo_url: m.photo || null,
+          liked: !!m.liked,
         }, { onConflict: 'diary_day_id,meal_type' });
       }
     } catch(e) { console.error('Save error:', e); }
@@ -1597,6 +1608,25 @@ export default function App(){
     setDay(pid, Object.assign({}, day, { meals: updatedMeals }));
   };
 
+  // Toggle like on meal (for doc) — saves directly to DB without going through setDay
+  const toggleMealLike = async (pid, mealId) => {
+    const day = getDay(pid);
+    const meals = Object.assign({}, day.meals || {});
+    const cur = meals[mealId] || {};
+    const newLiked = !cur.liked;
+    meals[mealId] = Object.assign({}, cur, { liked: newLiked });
+    // Update local state immediately
+    setDay(pid, Object.assign({}, day, { meals }));
+    // Persist to DB
+    if (!supabase || !pid) return;
+    try {
+      const dateStr = dk(date);
+      const { data: dayRow } = await supabase.from('diary_days').select('id').eq('user_id', pid).eq('date', dateStr).maybeSingle();
+      if (!dayRow) return;
+      await supabase.from('meals').update({ liked: newLiked }).eq('diary_day_id', dayRow.id).eq('meal_type', mealId);
+    } catch (e) { console.error('toggleMealLike error:', e); }
+  };
+
   const markRead = (cid, cmId) => {
     setComments(p => {
       const list = (p[cid]||[]).map(x => x.id === cmId ? Object.assign({}, x, {read: true}) : x);
@@ -1711,7 +1741,11 @@ export default function App(){
   // ═══ DOCTOR ═══
   // Client meal detail
   if(isDoc&&screen==='clientMealDetail'&&selMeal&&selClient)return shell(<>
-    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay(selClient.id).meals||{})[selMeal]} onChange={()=>{}} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('clientView')}} dis={true}/>
+    <MealDetail meal={MEALS.find(m=>m.id===selMeal)} data={(getDay(selClient.id).meals||{})[selMeal]} onChange={v=>{
+      // Doc can only toggle 'liked' field in read-only mode
+      const cur=(getDay(selClient.id).meals||{})[selMeal]||{};
+      if(v.liked!==cur.liked)toggleMealLike(selClient.id,selMeal);
+    }} onZoom={setLb} onBack={()=>{setSelMeal(null);setScreen('clientView')}} dis={true}/>
   </>);
 
   // Client profile (read-only)
