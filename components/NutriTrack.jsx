@@ -1690,7 +1690,7 @@ export default function App(){
   if(isDoc&&screen==='clientView'&&selClient){
     const cd=getDay(selClient.id),cm=cd.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('clientProfile');window.scrollTo(0,0)}}/>}/>
+      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('profile');window.scrollTo(0,0)}}/>}/>
       <div style={{background:C.surface,borderRadius:16,padding:'12px 16px',marginBottom:12,boxShadow:C.shadowCard,display:'flex',alignItems:'center',gap:12}}>
         <div style={{position:'relative',flexShrink:0}}>
           {selClient.photo?<img src={selClient.photo} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>}
