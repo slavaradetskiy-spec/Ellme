@@ -1129,6 +1129,8 @@ export default function App(){
 
   // Navigation stack
   const[screen,setScreen]=useState('home');
+  // Scroll to top on screen change
+  useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
   const[selMeal,setSelMeal]=useState(null);
   const[selClient,setSelClient]=useState(null);
   const[docTab,setDocTab]=useState('active');
@@ -1611,7 +1613,7 @@ export default function App(){
     </div>}
     <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>
       {ch}
-      <footer style={{marginTop:60,padding:'16px 0',textAlign:'center',fontSize:11,color:C.muted,opacity:.5,lineHeight:2}}>
+      <footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:11,color:C.muted,opacity:.5,lineHeight:2}}>
         <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.muted,textDecoration:'none'}}>radema.ru</a></div>
         <div style={{display:'flex',justifyContent:'center',gap:16,marginTop:4}}>
           <a href="/privacy" style={{color:C.muted,textDecoration:'none'}}>Политика конфиденциальности</a>
@@ -1657,7 +1659,10 @@ export default function App(){
     return shell(<div style={{animation:'slideRight .3s ease'}}>
       <TopBar left={<BackBtn onClick={()=>{setScreen('clientView');setClientProfileData(null)}}/>} title="Профиль клиента" right={null}/>
       <div style={{textAlign:'center',marginBottom:20}}>
-        <div style={{width:72,height:72,borderRadius:22,background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:28,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>
+        {cp?.photo_url||selClient.photo
+          ? <img src={cp?.photo_url||selClient.photo} alt="" style={{width:96,height:96,borderRadius:'50%',objectFit:'cover',margin:'0 auto 10px',display:'block',background:C.surfaceAlt,boxShadow:'0 4px 16px rgba(0,0,0,.08)'}}/>
+          : <div style={{width:96,height:96,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:36,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>
+        }
         <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>{selClient.nick||selClient.name}</div>
         {selClient.nick&&<div style={{fontSize:13,color:C.muted}}>{selClient.name}</div>}
       </div>
@@ -1682,7 +1687,7 @@ export default function App(){
   if(isDoc&&screen==='clientView'&&selClient){
     const cd=getDay(selClient.id),cm=cd.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('')}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>setScreen('clientProfile')}/>}/>
+      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('clientProfile');window.scrollTo(0,0)}}/>}/>
       <div style={{background:C.surface,borderRadius:16,padding:'12px 16px',marginBottom:12,boxShadow:C.shadowCard,display:'flex',alignItems:'center',gap:12}}>
         <div style={{position:'relative',flexShrink:0}}>
           {selClient.photo?<img src={selClient.photo} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>}
@@ -1692,7 +1697,7 @@ export default function App(){
           <div style={{fontSize:13,color:C.soft}}>{selClient.request}{selClient.request&&selClient.age?' · ':''}{selClient.age?selClient.age+' лет':''}</div>
           <div style={{fontSize:11,color:selClient.isOnline?'#34C759':C.muted}}>{selClient.isOnline?'онлайн':selClient.lastSeen?formatLastSeen(selClient.lastSeen):daysBetween(selClient.joined,new Date())+' дн.'}</div>
         </div>
-        <button onClick={()=>setScreen('clientProfile')} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',padding:'6px 12px',borderRadius:8,fontSize:12,color:C.accent,fontFamily:'inherit',fontWeight:500}}>Профиль</button>
+        <button onClick={()=>{setScreen('clientProfile');window.scrollTo(0,0)}} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',padding:'6px 12px',borderRadius:8,fontSize:12,color:C.accent,fontFamily:'inherit',fontWeight:500}}>Профиль</button>
       </div>
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
