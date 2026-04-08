@@ -800,11 +800,15 @@ const EMOJIS=['👍','❤️','🔥','👏','😊','🥗','💪','✅','⭐','�
 function ChatSection({comments,dateKey,docComment,setDocComment,onSend,userId,typing,onTyping}){
   const[showEmoji,setShowEmoji]=useState(false);
   const msgs=(comments||[]).filter(c=>c.date===dateKey);
-  const chatEnd=useRef(null);
-  useEffect(()=>{chatEnd.current?.scrollIntoView({behavior:'smooth'})},[msgs.length]);
+  const scrollRef=useRef(null);
+  // Auto-scroll only inside the chat container, not the whole page
+  useEffect(()=>{
+    const el=scrollRef.current;
+    if(el)el.scrollTop=el.scrollHeight;
+  },[msgs.length]);
   return <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden'}}>
-    <div style={{padding:'14px 18px 8px',fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>Чат</div>
-    <div style={{maxHeight:300,overflowY:'auto',padding:'0 18px 8px'}}>
+    <div style={{padding:'14px 18px 8px',fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>Комментарий нутрициолога</div>
+    <div ref={scrollRef} style={{maxHeight:300,overflowY:'auto',padding:'0 18px 8px'}}>
       {msgs.length===0&&<div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'16px 0'}}>Нет сообщений за этот день</div>}
       {msgs.map(c=>{
         const isMine=c.senderId===userId;
@@ -817,7 +821,6 @@ function ChatSection({comments,dateKey,docComment,setDocComment,onSend,userId,ty
         </div>;
       })}
       {typing&&<div style={{fontSize:12,color:C.accent,fontStyle:'italic',padding:'4px 0',animation:'pulse 1.5s infinite'}}>{typing} печатает...</div>}
-      <div ref={chatEnd}/>
     </div>
     {showEmoji&&<div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
       {EMOJIS.map(e=><button key={e} onClick={()=>{setDocComment(docComment+e);setShowEmoji(false)}} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
