@@ -1608,22 +1608,32 @@ export default function App(){
     setDay(pid, Object.assign({}, day, { meals: updatedMeals }));
   };
 
-  // Toggle like on meal (for doc) — saves directly to DB without going through setDay
+  // Toggle like on meal (for doc) — saves directly to meals table
+  // Bypasses setDay to avoid triggering auto-save of diary_days (which is blocked by RLS for doc)
   const toggleMealLike = async (pid, mealId) => {
-    const day = getDay(pid);
-    const meals = Object.assign({}, day.meals || {});
-    const cur = meals[mealId] || {};
-    const newLiked = !cur.liked;
-    meals[mealId] = Object.assign({}, cur, { liked: newLiked });
-    // Update local state immediately
-    setDay(pid, Object.assign({}, day, { meals }));
-    // Persist to DB
     if (!supabase || !pid) return;
+    const dateStr = dk(date);
+    // Get current state to compute new liked value
+    const cur = ((diaries[pid] || {})[dateStr] || {}).meals?.[mealId] || {};
+    const newLiked = !cur.liked;
+    // Update local state directly via setDiaries (no auto-save side effect)
+    setDiaries(p => {
+      const next = Object.assign({}, p);
+      const pidData = Object.assign({}, next[pid] || {});
+      const day = Object.assign({}, pidData[dateStr] || {});
+      const meals = Object.assign({}, day.meals || {});
+      meals[mealId] = Object.assign({}, meals[mealId] || {}, { liked: newLiked });
+      day.meals = meals;
+      pidData[dateStr] = day;
+      next[pid] = pidData;
+      return next;
+    });
+    // Persist only the meals row (not diary_days)
     try {
-      const dateStr = dk(date);
       const { data: dayRow } = await supabase.from('diary_days').select('id').eq('user_id', pid).eq('date', dateStr).maybeSingle();
-      if (!dayRow) return;
-      await supabase.from('meals').update({ liked: newLiked }).eq('diary_day_id', dayRow.id).eq('meal_type', mealId);
+      if (!dayRow) { console.error('toggleMealLike: no diary_days row for client — client has not saved this day yet'); return; }
+      const { error } = await supabase.from('meals').update({ liked: newLiked }).eq('diary_day_id', dayRow.id).eq('meal_type', mealId);
+      if (error) console.error('toggleMealLike meals update error:', error);
     } catch (e) { console.error('toggleMealLike error:', e); }
   };
 
