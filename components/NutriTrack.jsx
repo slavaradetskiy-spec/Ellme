@@ -113,9 +113,14 @@ function formatLastSeen(d){
   const now=new Date(),dt=new Date(d),diff=Math.floor((now-dt)/1000);
   if(diff<60)return 'только что';
   if(diff<3600)return Math.floor(diff/60)+' мин назад';
-  if(diff<86400)return 'сегодня в '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  if(diff<172800)return 'вчера в '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  return dt.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})+' в '+dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  // Compare by calendar day, not by diff
+  const sameDay=now.getFullYear()===dt.getFullYear()&&now.getMonth()===dt.getMonth()&&now.getDate()===dt.getDate();
+  const yest=new Date(now);yest.setDate(yest.getDate()-1);
+  const isYesterday=yest.getFullYear()===dt.getFullYear()&&yest.getMonth()===dt.getMonth()&&yest.getDate()===dt.getDate();
+  const time=dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  if(sameDay)return 'сегодня в '+time;
+  if(isYesterday)return 'вчера в '+time;
+  return dt.toLocaleDateString('ru-RU',{day:'numeric',month:'short'})+' в '+time;
 }
 
 // Activity types for Movement block
@@ -1727,13 +1732,13 @@ export default function App(){
     </div>}
     <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>
       {ch}
-      <footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:11,color:C.muted,opacity:.5,lineHeight:2}}>
-        <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.muted,textDecoration:'none'}}>radema.ru</a></div>
+      {screen==='profile'&&<footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:12,color:C.soft,lineHeight:2}}>
+        <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.soft,textDecoration:'none',fontWeight:700}}>radema.ru</a></div>
         <div style={{display:'flex',justifyContent:'center',gap:16,marginTop:4}}>
-          <a href="/privacy" style={{color:C.muted,textDecoration:'none'}}>Политика конфиденциальности</a>
-          <a href="/terms" style={{color:C.muted,textDecoration:'none'}}>Оферта</a>
+          <a href="/privacy" style={{color:C.soft,textDecoration:'none'}}>Политика конфиденциальности</a>
+          <a href="/terms" style={{color:C.soft,textDecoration:'none'}}>Оферта</a>
         </div>
-      </footer>
+      </footer>}
     </div>
   </div>;
 
