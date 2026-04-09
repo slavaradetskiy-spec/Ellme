@@ -53,6 +53,7 @@ input,textarea,select,button{font-family:var(--fb)}
 @keyframes enter{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes slideRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
 @keyframes slideLeft{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:translateX(0)}}
@@ -998,42 +999,131 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
   </div>;
 }
 
-function ChatSection({comments,dateKey,docComment,setDocComment,onSend,userId,typing,onTyping}){
-  const[showEmoji,setShowEmoji]=useState(false);
-  const msgs=(comments||[]).filter(c=>c.date===dateKey);
-  const scrollRef=useRef(null);
-  // Auto-scroll only inside the chat container, not the whole page
-  useEffect(()=>{
-    const el=scrollRef.current;
-    if(el)el.scrollTop=el.scrollHeight;
-  },[msgs.length]);
-  return <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden'}}>
+// Self-contained chat component with its own DB lifecycle.
+// Props: clientId (whose day it is), docId (nutritionist id), currentUserId, currentUserName, dateKey
+function ChatSection({ clientId, docId, currentUserId, currentUserName, dateKey }) {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState('');
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+
+  // Load messages for this specific day + subscribe to realtime.
+  // Uses empty deps — lifecycle tied to mount/unmount, not to any state.
+  useEffect(() => {
+    if (!supabase || !clientId || !dateKey) return;
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { data } = await supabase.from('doc_comments')
+          .select('*')
+          .eq('client_id', clientId)
+          .eq('date', dateKey)
+          .eq('kind', 'comment')
+          .order('created_at', { ascending: true });
+        if (mounted && data) setMessages(data);
+      } catch (e) { console.error('load chat:', e); }
+    })();
+
+    const channel = supabase.channel('chat_' + clientId + '_' + dateKey + '_' + Date.now())
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `client_id=eq.${clientId}` },
+        (payload) => {
+          if (!mounted) return;
+          const m = payload.new;
+          if (m.date !== dateKey || m.kind !== 'comment') return;
+          setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m]);
+        })
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      try { supabase.removeChannel(channel); } catch (e) {}
+    };
+  }, [clientId, dateKey]); // eslint-disable-line
+
+  // Auto-scroll chat container on new messages
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+
+  const send = async () => {
+    const t = text.trim();
+    if (!t || !supabase || !currentUserId || sending) return;
+    setSending(true);
+    // Resolve docId if not passed (e.g. client opens chat, needs to find their doc)
+    let actualDocId = docId;
+    if (!actualDocId) {
+      try {
+        const { data: link } = await supabase.from('doc_clients')
+          .select('doc_id').eq('client_id', clientId).limit(1).maybeSingle();
+        if (link) actualDocId = link.doc_id;
+      } catch (e) {}
+    }
+    if (!actualDocId) { setSending(false); return; }
+    // Optimistic UI
+    const tempId = 'tmp-' + Date.now();
+    const tempMsg = {
+      id: tempId, doc_id: actualDocId, client_id: clientId,
+      sender_id: currentUserId, sender_name: currentUserName || '',
+      date: dateKey, text: t, kind: 'comment', read: false,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempMsg]);
+    setText('');
+    try {
+      const { data, error } = await supabase.from('doc_comments').insert({
+        doc_id: actualDocId, client_id: clientId,
+        sender_id: currentUserId, sender_name: currentUserName || '',
+        date: dateKey, text: t, kind: 'comment', read: false,
+      }).select().maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+      }
+    } catch (e) {
+      console.error('send chat:', e);
+      // Roll back optimistic message
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setText(t);
+    }
+    setSending(false);
+  };
+
+  const fmtTime = (iso) => {
+    try {
+      return new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ''; }
+  };
+
+  return <div id="chat-section" style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden',scrollMarginTop:16}}>
     <div style={{padding:'14px 18px 8px',fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>Комментарий нутрициолога</div>
     <div ref={scrollRef} style={{maxHeight:300,overflowY:'auto',padding:'0 18px 8px'}}>
-      {msgs.length===0&&<div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'16px 0'}}>Нет сообщений за этот день</div>}
-      {msgs.map(c=>{
-        const isMine=c.senderId===userId;
-        return <div key={c.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',marginBottom:6}}>
+      {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'16px 0'}}>Нет сообщений за этот день</div>}
+      {messages.map(m => {
+        const isMine = m.sender_id === currentUserId;
+        return <div key={m.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',marginBottom:6}}>
           <div style={{maxWidth:'80%',padding:'10px 14px',borderRadius:isMine?'14px 14px 4px 14px':'14px 14px 14px 4px',background:isMine?C.accentSoft:C.surfaceAlt,fontSize:13,lineHeight:1.6}}>
-            <div style={{fontSize:10,fontWeight:600,color:isMine?C.accent:C.warm,marginBottom:2}}>{c.senderName||'—'}</div>
-            <div>{c.text}</div>
-            <div style={{fontSize:10,color:C.muted,textAlign:'right',marginTop:2}}>{new Date(c.ts).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
+            <div style={{fontSize:10,fontWeight:600,color:isMine?C.accent:C.warm,marginBottom:2}}>{m.sender_name || '—'}</div>
+            <div style={{whiteSpace:'pre-wrap'}}>{m.text}</div>
+            <div style={{fontSize:10,color:C.muted,textAlign:'right',marginTop:2}}>{fmtTime(m.created_at)}</div>
           </div>
         </div>;
       })}
-      {typing&&<div style={{fontSize:12,color:C.accent,fontStyle:'italic',padding:'4px 0',animation:'pulse 1.5s infinite'}}>{typing} печатает...</div>}
     </div>
-    {showEmoji&&<div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
-      {EMOJIS.map(e=><button key={e} onClick={()=>{setDocComment(docComment+e);setShowEmoji(false)}} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
-        onMouseOver={ev=>ev.currentTarget.style.background=C.surfaceAlt} onMouseOut={ev=>ev.currentTarget.style.background='none'}>{e}</button>)}
+    {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
+      {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
+        onMouseOver={ev => ev.currentTarget.style.background = C.surfaceAlt} onMouseOut={ev => ev.currentTarget.style.background = 'none'}>{e}</button>)}
     </div>}
     <div style={{display:'flex',gap:6,padding:'8px 12px 12px',alignItems:'flex-end'}}>
-      <button onClick={()=>setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
-      <textarea value={docComment} onChange={e=>{setDocComment(e.target.value);onTyping&&onTyping()}} placeholder="Сообщение..." rows={1}
-        onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();onSend()}}}
+      <button onClick={() => setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
+      <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение..." rows={1}
+        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
         style={{flex:1,padding:'10px 14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.5,maxHeight:100}}
-        onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
-      <button disabled={!docComment.trim()} onClick={onSend} style={{width:38,height:38,borderRadius:'50%',border:'none',background:docComment.trim()?C.accent:'#ddd',color:'#fff',fontSize:16,cursor:docComment.trim()?'pointer':'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
+      <button disabled={!text.trim() || sending} onClick={send} style={{width:38,height:38,borderRadius:'50%',border:'none',background:text.trim() && !sending ? C.accent : '#ddd',color:'#fff',fontSize:16,cursor:text.trim() && !sending ? 'pointer' : 'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       </button>
     </div>
@@ -1335,6 +1425,50 @@ export default function App(){
   const[screen,setScreen]=useState('home');
   // Scroll to top on screen change
   useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
+
+  // Pull-to-refresh (mobile)
+  const[pullDist,setPullDist]=useState(0);
+  const[refreshing,setRefreshing]=useState(false);
+  useEffect(()=>{
+    if(typeof window==='undefined')return;
+    let startY=null,currentY=null,active=false;
+    const threshold=70;
+    const onTouchStart=(e)=>{
+      if(window.scrollY>0)return;
+      startY=e.touches[0].clientY;
+      active=true;
+    };
+    const onTouchMove=(e)=>{
+      if(!active||startY===null)return;
+      currentY=e.touches[0].clientY;
+      const dy=currentY-startY;
+      if(dy>0&&window.scrollY<=0){
+        const dist=Math.min(dy*0.5,120);
+        setPullDist(dist);
+      }else{
+        setPullDist(0);
+      }
+    };
+    const onTouchEnd=()=>{
+      if(!active){return;}
+      active=false;
+      if(pullDist>=threshold){
+        setRefreshing(true);
+        setTimeout(()=>{try{window.location.reload()}catch(e){}},100);
+      }
+      setPullDist(0);
+      startY=null;currentY=null;
+    };
+    window.addEventListener('touchstart',onTouchStart,{passive:true});
+    window.addEventListener('touchmove',onTouchMove,{passive:true});
+    window.addEventListener('touchend',onTouchEnd,{passive:true});
+    return()=>{
+      window.removeEventListener('touchstart',onTouchStart);
+      window.removeEventListener('touchmove',onTouchMove);
+      window.removeEventListener('touchend',onTouchEnd);
+    };
+  },[pullDist]);
+
   const[selMeal,setSelMeal]=useState(null);
   const[selClient,setSelClient]=useState(null);
   const[docTab,setDocTab]=useState('active');
@@ -1892,8 +2026,17 @@ export default function App(){
   const goHome = () => { setScreen('home'); setSelMeal(null); setSelClient(null); };
   const openSupport = () => { window.open('https://t.me/ellme_support','_blank'); };
 
-  const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)'}}>
+  const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)',overscrollBehavior:'none'}}>
     <style>{CSS}</style>
+    {/* Pull-to-refresh indicator */}
+    {(pullDist>0||refreshing)&&<div style={{position:'fixed',top:0,left:0,right:0,display:'flex',alignItems:'center',justifyContent:'center',height:Math.max(pullDist,refreshing?60:0),pointerEvents:'none',zIndex:9999,transition:refreshing?'none':'height .1s'}}>
+      <div style={{width:36,height:36,borderRadius:'50%',background:C.surface,boxShadow:'0 2px 12px rgba(0,0,0,.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{transform:`rotate(${refreshing?360:Math.min(pullDist*3,360)}deg)`,transition:'transform .15s',animation:refreshing?'spin 1s linear infinite':'none'}}>
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+        </svg>
+      </div>
+    </div>}
     {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
     {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}
     {renaming && <div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
@@ -1920,16 +2063,25 @@ export default function App(){
           const ps=item.date.split('-');
           setDate(new Date(+ps[0],+ps[1]-1,+ps[2]));
         }
+        const isComment=item.kind==='comment';
         if(user.role==='doc'){
           // Doc: navigate to client view for that client
           const cl=clients.find(c=>c.id===item.client_id);
           if(cl){setSelClient(cl);setScreen('clientView');}
-          if(item.meal_type){setSelMeal(item.meal_type);setScreen('clientMealDetail');}
+          // Only open meal detail for likes, not for comments
+          if(item.meal_type&&!isComment){setSelMeal(item.meal_type);setScreen('clientMealDetail');}
         }else{
-          // Client: navigate to their meal / home
+          // Client: navigate to home. For likes — open meal. For comments — stay on home & scroll to chat
           setScreen('home');
-          if(item.meal_type)setSelMeal(item.meal_type);
+          if(item.meal_type&&!isComment)setSelMeal(item.meal_type);
           else setSelMeal(null);
+        }
+        // Scroll to chat section if it's a comment-type notification
+        if(isComment){
+          setTimeout(()=>{
+            const el=typeof document!=='undefined'?document.getElementById('chat-section'):null;
+            if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+          },250);
         }
       }}
     />}
@@ -1965,7 +2117,7 @@ export default function App(){
     </SecCard>
 
     <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
-    {!isDoc&&<ChatSection comments={comments[user.id]||[]} dateKey={key} docComment={docComment} setDocComment={setDocComment} onSend={()=>sendComment(user.id,key,docComment.trim())} userId={user.id} typing={typing} onTyping={sendTyping}/>}
+    {!isDoc&&<ChatSection clientId={user.id} docId={null} currentUserId={user.id} currentUserName={user.name} dateKey={key}/>}
   </>);
 
   // ═══ DOCTOR ═══
@@ -2033,7 +2185,7 @@ export default function App(){
       </SecCard>
       <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm}/>
 
-      <ChatSection comments={comments[selClient.id]||[]} dateKey={key} docComment={docComment} setDocComment={setDocComment} onSend={()=>sendComment(selClient.id,key,docComment.trim())} userId={user.id} typing={typing} onTyping={sendTyping}/>
+      <ChatSection clientId={selClient.id} docId={user.id} currentUserId={user.id} currentUserName={user.name} dateKey={key}/>
     </>);
   }
 
