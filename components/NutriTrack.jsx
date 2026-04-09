@@ -1308,7 +1308,7 @@ function Login({onLogin}){
   return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'40px 24px'}}>
     {/* OAuth loading overlay */}
     {oauthLoading&&<div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:C.bg,animation:'fadeIn .2s'}}>
-      <ProgressBar duration={4} label="Подключаемся..."/>
+      <ProgressBar duration={4} label="Идёт загрузка, это может занять несколько секунд..."/>
     </div>}
     <div style={{width:'100%',maxWidth:400,margin:'0 auto',opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all .7s cubic-bezier(.16,1,.3,1)'}}>
 
@@ -1430,7 +1430,7 @@ function Login({onLogin}){
 export default function App(){
   const[user,setUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(!!supabase);
-  const[loadingPhase,setLoadingPhase]=useState('Загрузка...');
+  const[loadingPhase,setLoadingPhase]=useState('Идёт загрузка, это может занять несколько секунд...');
   const[diaries,setDiaries]=useState({});
   const[comments,setComments]=useState({});
   const[clients,setClients]=useState([]);
