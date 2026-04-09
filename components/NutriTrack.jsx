@@ -1340,6 +1340,8 @@ export default function App(){
   const[docTab,setDocTab]=useState('active');
   const[docComment,setDocComment]=useState('');
   const[showNotif,setShowNotif]=useState(false);
+  const[docUnread,setDocUnread]=useState(0);
+  const[clientUnread,setClientUnread]=useState(0);
   const[inv,setInv]=useState(false);
   const[invCode,setInvCode]=useState('');
   const[copied,setCopied]=useState(false);
@@ -1758,8 +1760,6 @@ export default function App(){
 
   const activePid=isDoc?(screen==='myDiary'||screen==='myMealDetail'?user.id:selClient?.id||null):(user?.id||user?.cid||'c1');
   const dis=isDoc&&screen==='clientView';
-  const[docUnread,setDocUnread]=useState(0);
-  const[clientUnread,setClientUnread]=useState(0);
   const unread=isDoc?docUnread:clientUnread;
 
   const dayData=activePid?getDay(activePid):{};
