@@ -54,6 +54,15 @@ export async function GET(request) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
+    // 3a. Check if profile already exists — preserve existing role to avoid accidental downgrade
+    // (e.g. existing doc clicking Yandex without state=doc would lose their role)
+    let existingRole = null
+    try {
+      const { data: existingProf } = await sb.from('profiles').select('role').eq('email', yEmail).maybeSingle()
+      if (existingProf?.role) existingRole = existingProf.role
+    } catch (e) { /* ignore */ }
+    const finalRole = existingRole || role
+
     const tempPass = crypto.randomUUID()
 
     // 4. Создаём пользователя (или находим существующего и обновляем пароль)
@@ -61,7 +70,7 @@ export async function GET(request) {
       email: yEmail,
       password: tempPass,
       email_confirm: true,
-      user_metadata: { name: yName, email: yEmail, role, provider: 'yandex' },
+      user_metadata: { name: yName, email: yEmail, role: finalRole, provider: 'yandex' },
     })
 
     let userId = created?.user?.id || null
@@ -95,10 +104,12 @@ export async function GET(request) {
       }
     }
 
-    // 4b. Обновляем роль в profiles (если регистрация как doc)
+    // 4b. Обновляем роль в profiles ТОЛЬКО если state='doc' (явная регистрация как нутрициолог)
+    // и текущая роль — client. НИКОГДА не понижаем doc до client.
     if (role === 'doc' && userId) {
       await sb.from('profiles').update({ role: 'doc' }).eq('id', userId).eq('role', 'client')
     }
+    // Если профиль уже doc — не трогаем (существующий doc сохранит свою роль)
 
     // 5. Логинимся с временным паролем
     const signInRes = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
