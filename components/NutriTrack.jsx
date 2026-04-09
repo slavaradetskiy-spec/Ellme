@@ -1157,10 +1157,24 @@ function Login({onLogin}){
   const[error,setError]=useState('');
   const[success,setSuccess]=useState('');
   const[consent,setConsent]=useState(false);
+  const[showP1,setShowP1]=useState(false);
+  const[showP2,setShowP2]=useState(false);
   const[show,setShow]=useState(false);
   useEffect(()=>{setTimeout(()=>setShow(true),60)},[]);
 
   const inputStyle={width:'100%',padding:'16px 18px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:15,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text,marginBottom:12,transition:'border-color .2s'};
+  const eyeOpen=<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+  const eyeClosed=<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>;
+  const passInput=(val,setVal,ph,show,setShow,extra={})=>
+    <div style={{position:'relative',marginBottom:12}}>
+      <input value={val} onChange={e=>setVal(e.target.value)} placeholder={ph} type={show?'text':'password'}
+        style={{...inputStyle,marginBottom:0,paddingRight:48}}
+        onFocus={onFB} onBlur={offFB} {...extra}/>
+      <button type="button" onClick={()=>setShow(!show)}
+        style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex',padding:2}}>
+        {show?eyeOpen:eyeClosed}
+      </button>
+    </div>;
   const onFB=e=>e.target.style.borderColor=C.accent;
   const offFB=e=>e.target.style.borderColor=C.tileBorder;
   const errBox = error ? <div style={{padding:'12px 16px',borderRadius:12,background:C.dangerSoft,color:C.danger,fontSize:13,marginBottom:12,animation:'enter .2s'}}>{error}</div> : null;
@@ -1317,8 +1331,7 @@ function Login({onLogin}){
         {errBox}{sucBox}
 
         <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-        <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}
-          onKeyDown={e=>{if(e.key==='Enter')handleSignIn()}}/>
+        {passInput(pass,setPass,'Пароль',showP1,setShowP1,{onKeyDown:e=>{if(e.key==='Enter')handleSignIn()}})}
         <div style={{textAlign:'right',marginTop:-6,marginBottom:16}}>
           <button onClick={()=>{setMode('reset');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.accent,fontFamily:'inherit',padding:0,fontWeight:500}}>Забыли пароль?</button>
         </div>
@@ -1349,8 +1362,8 @@ function Login({onLogin}){
         {!success&&<>
           <input value={regName} onChange={e=>setRegName(e.target.value)} placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
           <input value={regEmail} onChange={e=>setRegEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-          <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль (мин. 6 символов)" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-          <input value={pass2} onChange={e=>setPass2(e.target.value)} placeholder="Повторите пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          {passInput(pass,setPass,'Пароль (мин. 6 символов)',showP1,setShowP1)}
+          {passInput(pass2,setPass2,'Повторите пароль',showP2,setShowP2)}
           <button disabled={loading} onClick={()=>{if(!consent){setError('Подтвердите согласие');return;}handleSignUp('client')}} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:10,opacity:loading?.7:1,boxShadow:'0 4px 16px rgba(45,95,63,.2)'}}>
             {loading?'Создаю аккаунт...':'Зарегистрироваться'}
           </button>
@@ -1387,8 +1400,7 @@ function Login({onLogin}){
         <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Вход для нутрициолога</p>
         {errBox}{sucBox}
         <input placeholder="Email" type="email" style={inputStyle} value={email} onChange={e=>setEmail(e.target.value)} onFocus={onFB} onBlur={offFB}/>
-        <input placeholder="Пароль" type="password" style={inputStyle} value={pass} onChange={e=>setPass(e.target.value)} onFocus={onFB} onBlur={offFB}
-          onKeyDown={e=>{if(e.key==='Enter')handleDocSignIn()}}/>
+        {passInput(pass,setPass,'Пароль',showP1,setShowP1,{onKeyDown:e=>{if(e.key==='Enter')handleDocSignIn()}})}
         <div style={{textAlign:'right',marginTop:-6,marginBottom:16}}>
           <button onClick={()=>{setMode('reset');setError('');setSuccess('')}} style={{background:'none',border:'none',cursor:'pointer',fontSize:13,color:C.accent,fontFamily:'inherit',padding:0,fontWeight:500}}>Забыли пароль?</button>
         </div>
@@ -1412,8 +1424,8 @@ function Login({onLogin}){
         {!success&&<>
           <input value={regName} onChange={e=>setRegName(e.target.value)} placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
           <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-          <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Пароль (мин. 6 символов)" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
-          <input value={pass2} onChange={e=>setPass2(e.target.value)} placeholder="Повторите пароль" type="password" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
+          {passInput(pass,setPass,'Пароль (мин. 6 символов)',showP1,setShowP1)}
+          {passInput(pass2,setPass2,'Повторите пароль',showP2,setShowP2)}
           <button disabled={loading} onClick={()=>handleSignUp('doc')} style={{width:'100%',padding:'16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:16,fontWeight:600,cursor:loading?'wait':'pointer',fontFamily:'inherit',marginBottom:12,opacity:loading?.7:1}}>
             {loading?'Создаю...':'Создать аккаунт специалиста'}
           </button>
