@@ -275,20 +275,35 @@ function AvatarCropper({src,onSave,onCancel}){
 function ProgressBar({duration=3,label="Загрузка...",onDone}){
   const[pct,setPct]=useState(0);
   useEffect(()=>{
+    // Animate from 0 to ~90% during duration, then stay indeterminate
+    // (slowly creeping to ~98%) so user sees progress is ongoing
     const start=Date.now(),ms=duration*1000;
-    const tick=()=>{const el=Date.now()-start;const raw=Math.min(100,Math.round((el/ms)*100));setPct(Math.min(100,raw));if(el<ms)requestAnimationFrame(tick);else{setPct(100);if(onDone)setTimeout(onDone,200);}};
-    requestAnimationFrame(tick);
+    let raf;
+    const tick=()=>{
+      const el=Date.now()-start;
+      if(el<ms){
+        // Normal 0 → 90 over duration
+        const p=Math.min(90,Math.round((el/ms)*90));
+        setPct(p);
+        raf=requestAnimationFrame(tick);
+      }else{
+        // Beyond duration: creep slowly 90 → 98
+        const extra=el-ms;
+        const crept=Math.min(8,extra/1000); // 1% per sec after duration, max 8
+        setPct(Math.min(98,90+crept));
+        raf=requestAnimationFrame(tick);
+      }
+    };
+    raf=requestAnimationFrame(tick);
+    return()=>{if(raf)cancelAnimationFrame(raf)};
   },[]);
   return <div style={{width:'min(280px,80vw)',textAlign:'center'}}>
     <div style={{fontSize:32,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'.06em',color:C.text,marginBottom:4}}>ELLME</div>
     <div style={{fontSize:10,color:C.muted,letterSpacing:'.15em',textTransform:'uppercase',marginBottom:32}}>Eat Live Love ME</div>
-    <div style={{height:4,borderRadius:2,background:C.surfaceAlt,overflow:'hidden',marginBottom:8}}>
-      <div style={{height:'100%',borderRadius:2,background:C.accent,width:pct+'%',transition:'width .15s ease'}}/>
+    <div style={{height:4,borderRadius:2,background:C.surfaceAlt,overflow:'hidden',marginBottom:8,position:'relative'}}>
+      <div style={{height:'100%',borderRadius:2,background:C.accent,width:pct+'%',transition:'width .3s ease'}}/>
     </div>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-      <span style={{fontSize:13,color:C.muted}}>{label}</span>
-      <span style={{fontSize:13,color:C.accent,fontWeight:600}}>{pct}%</span>
-    </div>
+    <div style={{fontSize:13,color:C.muted,textAlign:'center',minHeight:20}}>{label}</div>
   </div>;
 }
 
@@ -1415,6 +1430,7 @@ function Login({onLogin}){
 export default function App(){
   const[user,setUser]=useState(null);
   const[authLoading,setAuthLoading]=useState(!!supabase);
+  const[loadingPhase,setLoadingPhase]=useState('Загрузка...');
   const[diaries,setDiaries]=useState({});
   const[comments,setComments]=useState({});
   const[clients,setClients]=useState([]);
@@ -1623,6 +1639,7 @@ export default function App(){
     const loadProfile = async (session) => {
       if (!session?.user) { setUser(null); setAuthLoading(false); return; }
       try {
+      setLoadingPhase('Загружаем профиль...');
       const u = session.user;
       const authEmail = u.email || u.user_metadata?.email || '';
       const authName = u.user_metadata?.name || u.user_metadata?.full_name || authEmail.split('@')[0] || '';
@@ -1650,6 +1667,7 @@ export default function App(){
         profile.role = 'doc';
       }
 
+      setLoadingPhase('Настраиваем аккаунт...');
       setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200 });
       setWaterNorm(profile.water_norm || 2200);
       if (profile.photo_url) updatePhoto(profile.photo_url);
@@ -1663,6 +1681,7 @@ export default function App(){
           try { inviteCode = localStorage.getItem('ellme_invite'); } catch(e) {}
         }
         if (inviteCode && (profile.role || authRole) === 'client') {
+          setLoadingPhase('Привязываем нутрициолога...');
           try {
             const { data: inv } = await supabase.from('invites').select('*').eq('code', inviteCode).eq('used', false).maybeSingle();
             if (inv) {
@@ -1678,6 +1697,7 @@ export default function App(){
         }
       }
 
+      setLoadingPhase('Почти готово...');
       setAuthLoading(false);
       } catch(e) { console.error('loadProfile error:', e); setUser(null); setAuthLoading(false); }
     };
@@ -1685,6 +1705,7 @@ export default function App(){
     // Проверяем hash — если в URL есть access_token (после Яндекс OAuth), устанавливаем сессию
     const hash2 = typeof window !== 'undefined' ? window.location.hash : '';
     if (hash2.includes('access_token=')) {
+      setLoadingPhase('Проверяем авторизацию...');
       const params = new URLSearchParams(hash2.substring(1));
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
@@ -1866,7 +1887,7 @@ export default function App(){
   // ── Loading state ──
   if (authLoading) {
     return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
-      <ProgressBar duration={4} label="Загрузка..."/>
+      <ProgressBar duration={4} label={loadingPhase}/>
     </div></>;
   }
 
