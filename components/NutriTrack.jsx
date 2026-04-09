@@ -998,42 +998,131 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
   </div>;
 }
 
-function ChatSection({comments,dateKey,docComment,setDocComment,onSend,userId,typing,onTyping}){
-  const[showEmoji,setShowEmoji]=useState(false);
-  const msgs=(comments||[]).filter(c=>c.date===dateKey);
-  const scrollRef=useRef(null);
-  // Auto-scroll only inside the chat container, not the whole page
-  useEffect(()=>{
-    const el=scrollRef.current;
-    if(el)el.scrollTop=el.scrollHeight;
-  },[msgs.length]);
+// Self-contained chat component with its own DB lifecycle.
+// Props: clientId (whose day it is), docId (nutritionist id), currentUserId, currentUserName, dateKey
+function ChatSection({ clientId, docId, currentUserId, currentUserName, dateKey }) {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState('');
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+
+  // Load messages for this specific day + subscribe to realtime.
+  // Uses empty deps — lifecycle tied to mount/unmount, not to any state.
+  useEffect(() => {
+    if (!supabase || !clientId || !dateKey) return;
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { data } = await supabase.from('doc_comments')
+          .select('*')
+          .eq('client_id', clientId)
+          .eq('date', dateKey)
+          .eq('kind', 'comment')
+          .order('created_at', { ascending: true });
+        if (mounted && data) setMessages(data);
+      } catch (e) { console.error('load chat:', e); }
+    })();
+
+    const channel = supabase.channel('chat_' + clientId + '_' + dateKey + '_' + Date.now())
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `client_id=eq.${clientId}` },
+        (payload) => {
+          if (!mounted) return;
+          const m = payload.new;
+          if (m.date !== dateKey || m.kind !== 'comment') return;
+          setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m]);
+        })
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      try { supabase.removeChannel(channel); } catch (e) {}
+    };
+  }, [clientId, dateKey]); // eslint-disable-line
+
+  // Auto-scroll chat container on new messages
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+
+  const send = async () => {
+    const t = text.trim();
+    if (!t || !supabase || !currentUserId || sending) return;
+    setSending(true);
+    // Resolve docId if not passed (e.g. client opens chat, needs to find their doc)
+    let actualDocId = docId;
+    if (!actualDocId) {
+      try {
+        const { data: link } = await supabase.from('doc_clients')
+          .select('doc_id').eq('client_id', clientId).limit(1).maybeSingle();
+        if (link) actualDocId = link.doc_id;
+      } catch (e) {}
+    }
+    if (!actualDocId) { setSending(false); return; }
+    // Optimistic UI
+    const tempId = 'tmp-' + Date.now();
+    const tempMsg = {
+      id: tempId, doc_id: actualDocId, client_id: clientId,
+      sender_id: currentUserId, sender_name: currentUserName || '',
+      date: dateKey, text: t, kind: 'comment', read: false,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, tempMsg]);
+    setText('');
+    try {
+      const { data, error } = await supabase.from('doc_comments').insert({
+        doc_id: actualDocId, client_id: clientId,
+        sender_id: currentUserId, sender_name: currentUserName || '',
+        date: dateKey, text: t, kind: 'comment', read: false,
+      }).select().maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+      }
+    } catch (e) {
+      console.error('send chat:', e);
+      // Roll back optimistic message
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setText(t);
+    }
+    setSending(false);
+  };
+
+  const fmtTime = (iso) => {
+    try {
+      return new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ''; }
+  };
+
   return <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden'}}>
     <div style={{padding:'14px 18px 8px',fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>Комментарий нутрициолога</div>
     <div ref={scrollRef} style={{maxHeight:300,overflowY:'auto',padding:'0 18px 8px'}}>
-      {msgs.length===0&&<div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'16px 0'}}>Нет сообщений за этот день</div>}
-      {msgs.map(c=>{
-        const isMine=c.senderId===userId;
-        return <div key={c.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',marginBottom:6}}>
+      {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'16px 0'}}>Нет сообщений за этот день</div>}
+      {messages.map(m => {
+        const isMine = m.sender_id === currentUserId;
+        return <div key={m.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',marginBottom:6}}>
           <div style={{maxWidth:'80%',padding:'10px 14px',borderRadius:isMine?'14px 14px 4px 14px':'14px 14px 14px 4px',background:isMine?C.accentSoft:C.surfaceAlt,fontSize:13,lineHeight:1.6}}>
-            <div style={{fontSize:10,fontWeight:600,color:isMine?C.accent:C.warm,marginBottom:2}}>{c.senderName||'—'}</div>
-            <div>{c.text}</div>
-            <div style={{fontSize:10,color:C.muted,textAlign:'right',marginTop:2}}>{new Date(c.ts).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
+            <div style={{fontSize:10,fontWeight:600,color:isMine?C.accent:C.warm,marginBottom:2}}>{m.sender_name || '—'}</div>
+            <div style={{whiteSpace:'pre-wrap'}}>{m.text}</div>
+            <div style={{fontSize:10,color:C.muted,textAlign:'right',marginTop:2}}>{fmtTime(m.created_at)}</div>
           </div>
         </div>;
       })}
-      {typing&&<div style={{fontSize:12,color:C.accent,fontStyle:'italic',padding:'4px 0',animation:'pulse 1.5s infinite'}}>{typing} печатает...</div>}
     </div>
-    {showEmoji&&<div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
-      {EMOJIS.map(e=><button key={e} onClick={()=>{setDocComment(docComment+e);setShowEmoji(false)}} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
-        onMouseOver={ev=>ev.currentTarget.style.background=C.surfaceAlt} onMouseOut={ev=>ev.currentTarget.style.background='none'}>{e}</button>)}
+    {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
+      {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
+        onMouseOver={ev => ev.currentTarget.style.background = C.surfaceAlt} onMouseOut={ev => ev.currentTarget.style.background = 'none'}>{e}</button>)}
     </div>}
     <div style={{display:'flex',gap:6,padding:'8px 12px 12px',alignItems:'flex-end'}}>
-      <button onClick={()=>setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
-      <textarea value={docComment} onChange={e=>{setDocComment(e.target.value);onTyping&&onTyping()}} placeholder="Сообщение..." rows={1}
-        onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();onSend()}}}
+      <button onClick={() => setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
+      <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение..." rows={1}
+        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
         style={{flex:1,padding:'10px 14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.5,maxHeight:100}}
-        onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
-      <button disabled={!docComment.trim()} onClick={onSend} style={{width:38,height:38,borderRadius:'50%',border:'none',background:docComment.trim()?C.accent:'#ddd',color:'#fff',fontSize:16,cursor:docComment.trim()?'pointer':'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
+      <button disabled={!text.trim() || sending} onClick={send} style={{width:38,height:38,borderRadius:'50%',border:'none',background:text.trim() && !sending ? C.accent : '#ddd',color:'#fff',fontSize:16,cursor:text.trim() && !sending ? 'pointer' : 'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       </button>
     </div>
@@ -1965,7 +2054,7 @@ export default function App(){
     </SecCard>
 
     <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
-    {!isDoc&&<ChatSection comments={comments[user.id]||[]} dateKey={key} docComment={docComment} setDocComment={setDocComment} onSend={()=>sendComment(user.id,key,docComment.trim())} userId={user.id} typing={typing} onTyping={sendTyping}/>}
+    {!isDoc&&<ChatSection clientId={user.id} docId={null} currentUserId={user.id} currentUserName={user.name} dateKey={key}/>}
   </>);
 
   // ═══ DOCTOR ═══
@@ -2033,7 +2122,7 @@ export default function App(){
       </SecCard>
       <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm}/>
 
-      <ChatSection comments={comments[selClient.id]||[]} dateKey={key} docComment={docComment} setDocComment={setDocComment} onSend={()=>sendComment(selClient.id,key,docComment.trim())} userId={user.id} typing={typing} onTyping={sendTyping}/>
+      <ChatSection clientId={selClient.id} docId={user.id} currentUserId={user.id} currentUserName={user.name} dateKey={key}/>
     </>);
   }
 
