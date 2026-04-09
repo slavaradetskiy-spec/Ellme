@@ -871,6 +871,133 @@ function Celebration({type,onClose}){
 // ═══ LOGIN ═══
 const EMOJIS=['👍','❤️','🔥','👏','😊','🥗','💪','✅','⭐','🙏','😄','🎉'];
 
+// Loads notifications for the current user from doc_comments table.
+// Isolated component with its own lifecycle — uses useEffect([]) to avoid infinite loops.
+function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Load once on mount + realtime subscription
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let mounted = true;
+    const filterCol = userRole === 'doc' ? 'doc_id' : 'client_id';
+
+    (async () => {
+      try {
+        const { data } = await supabase.from('doc_comments')
+          .select('*')
+          .eq(filterCol, userId)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (mounted && data) setItems(data);
+      } catch (e) { console.error('load notifications:', e); }
+      if (mounted) setLoading(false);
+    })();
+
+    // Realtime: listen for new inserts where we are the recipient
+    const channel = supabase.channel('notif_' + userId + '_' + Date.now())
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `${filterCol}=eq.${userId}` },
+        (payload) => {
+          if (!mounted) return;
+          setItems(prev => [payload.new, ...prev].slice(0, 100));
+        })
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'doc_comments', filter: `${filterCol}=eq.${userId}` },
+        (payload) => {
+          if (!mounted) return;
+          setItems(prev => prev.filter(x => x.id !== payload.old.id));
+        })
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      try { supabase.removeChannel(channel); } catch (e) {}
+    };
+  }, []); // eslint-disable-line
+
+  const markAllRead = async () => {
+    if (!supabase || !userId) return;
+    const unread = items.filter(x => !x.read && x.sender_id !== userId);
+    if (unread.length === 0) return;
+    try {
+      await supabase.from('doc_comments')
+        .update({ read: true })
+        .in('id', unread.map(x => x.id));
+      setItems(prev => prev.map(x => (!x.read && x.sender_id !== userId) ? { ...x, read: true } : x));
+    } catch (e) { console.error('markAllRead:', e); }
+  };
+
+  const handleClick = async (item) => {
+    // Mark single item as read
+    if (!item.read && item.sender_id !== userId && supabase) {
+      try { await supabase.from('doc_comments').update({ read: true }).eq('id', item.id); } catch (e) {}
+      setItems(prev => prev.map(x => x.id === item.id ? { ...x, read: true } : x));
+    }
+    // Navigate to that day/meal
+    onNavigate && onNavigate(item);
+    onClose && onClose();
+  };
+
+  const mealLabel = (mealType) => {
+    const m = MEALS.find(x => x.id === mealType);
+    return m ? m.label : mealType;
+  };
+
+  const fmtDate = (dateStr, ts) => {
+    try {
+      const d = ts ? new Date(ts) : new Date(dateStr);
+      return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return dateStr; }
+  };
+
+  return <div style={{position:'fixed',inset:0,zIndex:999,animation:'fadeIn .15s'}}>
+    <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.2)'}}/>
+    <div style={{position:'absolute',top:0,right:0,bottom:0,width:'min(420px,94vw)',background:C.bg,boxShadow:C.shadowHover,overflowY:'auto',animation:'slideRight .25s',padding:24,display:'flex',flexDirection:'column'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+        <span style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>Уведомления</span>
+        <div style={{display:'flex',gap:6}}>
+          {items.some(x => !x.read && x.sender_id !== userId) && <button onClick={markAllRead} style={{background:'none',border:'none',cursor:'pointer',fontSize:12,color:C.accent,fontFamily:'inherit',padding:'4px 8px'}}>Прочитать все</button>}
+          <IcoBtn icon={I.x} onClick={onClose}/>
+        </div>
+      </div>
+      {loading && <p style={{color:C.muted,textAlign:'center',padding:40}}>Загрузка...</p>}
+      {!loading && items.length === 0 && <p style={{color:C.muted,textAlign:'center',padding:40}}>Нет уведомлений</p>}
+      {!loading && items.map(item => {
+        const isMine = item.sender_id === userId;
+        const isLike = item.kind === 'like';
+        return <div key={item.id} onClick={() => handleClick(item)} style={{
+          padding: 14,
+          borderRadius: 14,
+          background: (isMine || item.read) ? C.surface : C.accentSoft,
+          boxShadow: (isMine || item.read) ? 'none' : C.shadowCard,
+          marginBottom: 8,
+          cursor: 'pointer',
+          border: `1px solid ${(isMine || item.read) ? C.surfaceAlt : 'transparent'}`,
+          opacity: isMine ? 0.75 : 1,
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            {isLike && <span style={{fontSize:18}}>❤️</span>}
+            <div style={{fontSize:12,fontWeight:600,color:C.accent,flex:1}}>{item.sender_name || (isMine ? 'Вы' : '—')}</div>
+            <div style={{fontSize:11,color:C.muted}}>{fmtDate(item.date, item.created_at)}</div>
+          </div>
+          {isLike ? (
+            <div style={{fontSize:13,color:C.text}}>
+              Понравился приём пищи: <strong>{mealLabel(item.meal_type)}</strong>
+            </div>
+          ) : (
+            <div style={{fontSize:13,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{item.text}</div>
+          )}
+          <div style={{fontSize:11,color:C.accent,fontWeight:600,marginTop:6}}>Перейти →</div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 function ChatSection({comments,dateKey,docComment,setDocComment,onSend,userId,typing,onTyping}){
   const[showEmoji,setShowEmoji]=useState(false);
   const msgs=(comments||[]).filter(c=>c.date===dateKey);
@@ -1283,6 +1410,48 @@ export default function App(){
     return()=>clearInterval(iv);
   },[user?.id]);
 
+  // Doc unread count (notifications from clients). Loaded once + realtime.
+  useEffect(()=>{
+    if(!supabase||user?.role!=='doc'||!user?.id)return;
+    let mounted=true;
+    const loadCount=async()=>{
+      try{
+        const{count}=await supabase.from('doc_comments')
+          .select('id',{count:'exact',head:true})
+          .eq('doc_id',user.id)
+          .eq('read',false)
+          .neq('sender_id',user.id);
+        if(mounted)setDocUnread(count||0);
+      }catch(e){}
+    };
+    loadCount();
+    const ch=supabase.channel('doc_unread_'+user.id)
+      .on('postgres_changes',{event:'*',schema:'public',table:'doc_comments',filter:'doc_id=eq.'+user.id},()=>loadCount())
+      .subscribe();
+    return()=>{mounted=false;try{supabase.removeChannel(ch);}catch(e){}};
+  },[user?.id,user?.role]);
+
+  // Client unread count. Loaded once + realtime.
+  useEffect(()=>{
+    if(!supabase||user?.role==='doc'||!user?.id)return;
+    let mounted=true;
+    const loadCount=async()=>{
+      try{
+        const{count}=await supabase.from('doc_comments')
+          .select('id',{count:'exact',head:true})
+          .eq('client_id',user.id)
+          .eq('read',false)
+          .neq('sender_id',user.id);
+        if(mounted)setClientUnread(count||0);
+      }catch(e){}
+    };
+    loadCount();
+    const ch=supabase.channel('client_unread_'+user.id)
+      .on('postgres_changes',{event:'*',schema:'public',table:'doc_comments',filter:'client_id=eq.'+user.id},()=>loadCount())
+      .subscribe();
+    return()=>{mounted=false;try{supabase.removeChannel(ch);}catch(e){}};
+  },[user?.id,user?.role]);
+
   const[renaming,setRenaming]=useState(null);
   const[renameVal,setRenameVal]=useState('');
   const[profilePhoto,setProfilePhoto]=useState(null);
@@ -1589,7 +1758,9 @@ export default function App(){
 
   const activePid=isDoc?(screen==='myDiary'||screen==='myMealDetail'?user.id:selClient?.id||null):(user?.id||user?.cid||'c1');
   const dis=isDoc&&screen==='clientView';
-  const unread=!isDoc?(comments[user.cid]||[]).filter(c=>!c.read).length:0;
+  const[docUnread,setDocUnread]=useState(0);
+  const[clientUnread,setClientUnread]=useState(0);
+  const unread=isDoc?docUnread:clientUnread;
 
   const dayData=activePid?getDay(activePid):{};
   const meals=dayData.meals||{};
@@ -1651,6 +1822,32 @@ export default function App(){
         diary_day_id: dayId, meal_type: mealId, liked: newLiked,
       }, { onConflict: 'diary_day_id,meal_type' });
       if (upErr) console.error('upsert meals error:', upErr);
+      // Create/remove notification for client
+      if (isDoc && user?.id) {
+        if (newLiked) {
+          // Insert like notification for client
+          await supabase.from('doc_comments').insert({
+            doc_id: user.id,
+            client_id: pid,
+            sender_id: user.id,
+            sender_name: user.name || '',
+            date: dateStr,
+            meal_type: mealId,
+            kind: 'like',
+            text: '',
+            read: false,
+          });
+        } else {
+          // Remove the like notification
+          await supabase.from('doc_comments')
+            .delete()
+            .eq('doc_id', user.id)
+            .eq('client_id', pid)
+            .eq('date', dateStr)
+            .eq('meal_type', mealId)
+            .eq('kind', 'like');
+        }
+      }
     } catch (e) { console.error('toggleMealLike error:', e); }
   };
 
@@ -1714,22 +1911,28 @@ export default function App(){
         </div>
       </div>
     </div>}
-    {showNotif&&<div style={{position:'fixed',inset:0,zIndex:999,animation:'fadeIn .15s'}}>
-      <div onClick={()=>setShowNotif(false)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.2)'}}/>
-      <div style={{position:'absolute',top:0,right:0,bottom:0,width:'min(380px,92vw)',background:C.bg,boxShadow:C.shadowHover,overflowY:'auto',animation:'slideRight .25s',padding:24}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-          <span style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>Уведомления</span>
-          <IcoBtn icon={I.x} onClick={()=>setShowNotif(false)}/>
-        </div>
-        {(comments[user.cid]||[]).length===0?<p style={{color:C.muted,textAlign:'center',padding:40}}>Нет сообщений</p>
-        :[...(comments[user.cid]||[])].filter(c=>c.senderId!==user.id).reverse().map(c=><div key={c.id} onClick={()=>{markRead(user.cid,c.id);const ps=c.date.split('-');setDate(new Date(+ps[0],+ps[1]-1,+ps[2]));setShowNotif(false);setScreen('home');setSelMeal(null)}} style={{padding:16,borderRadius:16,background:c.read?C.surface:C.accentSoft,boxShadow:c.read?'none':C.shadowCard,marginBottom:10,cursor:'pointer',border:`1px solid ${c.read?C.surfaceAlt:'transparent'}`}}>
-          <div style={{fontSize:11,fontWeight:600,color:C.accent,marginBottom:2}}>{c.senderName||'Нутрициолог'}</div>
-          <div style={{fontSize:12,color:C.muted,marginBottom:4}}>{c.date} · {new Date(c.ts).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
-          <p style={{fontSize:13,lineHeight:1.6,margin:0}}>{c.text}</p>
-          <span style={{fontSize:12,color:C.accent,fontWeight:600,marginTop:6,display:'inline-block'}}>Перейти →</span>
-        </div>)}
-      </div>
-    </div>}
+    {showNotif&&user&&<NotificationsPanel
+      userId={user.id}
+      userRole={user.role}
+      onClose={()=>setShowNotif(false)}
+      onNavigate={(item)=>{
+        if(item.date){
+          const ps=item.date.split('-');
+          setDate(new Date(+ps[0],+ps[1]-1,+ps[2]));
+        }
+        if(user.role==='doc'){
+          // Doc: navigate to client view for that client
+          const cl=clients.find(c=>c.id===item.client_id);
+          if(cl){setSelClient(cl);setScreen('clientView');}
+          if(item.meal_type){setSelMeal(item.meal_type);setScreen('clientMealDetail');}
+        }else{
+          // Client: navigate to their meal / home
+          setScreen('home');
+          if(item.meal_type)setSelMeal(item.meal_type);
+          else setSelMeal(null);
+        }
+      }}
+    />}
     <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>
       {ch}
       {screen==='profile'&&<footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:12,color:C.soft,lineHeight:2}}>
@@ -1856,7 +2059,7 @@ export default function App(){
     const invLink=invCode?((typeof window!=='undefined'?window.location.origin:'https://ellme.ru')+'/?invite='+invCode):'';
 
     return shell(<>
-      <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
+      <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
 
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
