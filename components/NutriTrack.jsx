@@ -1732,13 +1732,13 @@ export default function App(){
     </div>}
     <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>
       {ch}
-      <footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:10,color:C.muted,opacity:.3,lineHeight:1.8}}>
-        {screen==='profile'&&<div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.muted,textDecoration:'none'}}>radema.ru</a></div>}
-        <div style={{display:'flex',justifyContent:'center',gap:14,marginTop:screen==='profile'?4:0}}>
-          <a href="/privacy" style={{color:C.muted,textDecoration:'none'}}>Политика</a>
-          <a href="/terms" style={{color:C.muted,textDecoration:'none'}}>Оферта</a>
+      {screen==='profile'&&<footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:12,color:C.soft,lineHeight:2}}>
+        <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.soft,textDecoration:'none',fontWeight:700}}>radema.ru</a></div>
+        <div style={{display:'flex',justifyContent:'center',gap:16,marginTop:4}}>
+          <a href="/privacy" style={{color:C.soft,textDecoration:'none'}}>Политика конфиденциальности</a>
+          <a href="/terms" style={{color:C.soft,textDecoration:'none'}}>Оферта</a>
         </div>
-      </footer>
+      </footer>}
     </div>
   </div>;
 
