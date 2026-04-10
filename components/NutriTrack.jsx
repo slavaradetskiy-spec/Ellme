@@ -435,7 +435,7 @@ function MealTile({meal,data,onClick,delay=0}){
   const has=d.text||firstPhoto;
   return <button onClick={onClick} className="tile3d" style={{
     aspectRatio:'1',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',
-    background:firstPhoto?`url(${firstPhoto}) center/cover`:C.tile,
+    background:firstPhoto?`${C.tile} url(${firstPhoto}) center/contain no-repeat`:C.tile,
     display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:14,
     position:'relative',overflow:'hidden',textAlign:'left',
     boxShadow:has?C.shadow3d:'none',
@@ -610,7 +610,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
     </SecCard>
 
     <SecCard icon={I.pill} title="Препараты / БАДы">
-      <div style={{padding:'12px 0'}}><Area value={d.supplements} onChange={v=>upd('supplements',v)} placeholder="Что принимали..." dis={dis} rows={2}/></div>
+      <div style={{padding:'12px 0'}}><Area value={d.supplements} onChange={v=>upd('supplements',v)} placeholder="Что принимали..." dis={dis} rows={2} showMic={!dis}/></div>
     </SecCard>
 
     <SecCard icon={I.stool} title="Стул">
@@ -627,7 +627,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
         </div>
         <div>
           <Lbl>Комментарий</Lbl>
-          <Area value={d.stoolNote} onChange={v=>upd('stoolNote',v)} placeholder="Подробности..." dis={dis} rows={2}/>
+          <Area value={d.stoolNote} onChange={v=>upd('stoolNote',v)} placeholder="Подробности..." dis={dis} rows={2} showMic={!dis}/>
         </div>
       </div>
     </SecCard>
@@ -693,7 +693,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
           })}
           <div>
             <Lbl>Заметка</Lbl>
-            <Area value={mv.note} onChange={v=>setMv({...mv,note:v})} placeholder="Детали тренировки..." dis={dis} rows={2}/>
+            <Area value={mv.note} onChange={v=>setMv({...mv,note:v})} placeholder="Детали тренировки..." dis={dis} rows={2} showMic={!dis}/>
           </div>
         </div>;
       })()}
@@ -702,7 +702,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
     <SecCard icon={I.brain} title="Стресс">
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
         <div><Lbl>Уровень</Lbl><Scale max={10} value={d.stress?.level} onChange={v=>upd('stress',{...(d.stress||{}),level:v})} dis={dis}/></div>
-        <div><Lbl>Практики расслабления</Lbl><Area value={d.stress?.practices} onChange={v=>upd('stress',{...(d.stress||{}),practices:v})} placeholder="Медитация, дыхание..." dis={dis} rows={2}/></div>
+        <div><Lbl>Практики расслабления</Lbl><Area value={d.stress?.practices} onChange={v=>upd('stress',{...(d.stress||{}),practices:v})} placeholder="Медитация, дыхание..." dis={dis} rows={2} showMic={!dis}/></div>
       </div>
     </SecCard>
 
@@ -710,7 +710,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
         <div><Lbl>Энергия</Lbl><Scale max={10} value={d.well?.energy} onChange={v=>upd('well',{...(d.well||{}),energy:v})} dis={dis}/></div>
         <div><Lbl>Настроение</Lbl><Mood value={d.well?.mood} onChange={v=>upd('well',{...(d.well||{}),mood:v})} dis={dis}/></div>
-        <div><Lbl>Заметка дня</Lbl><Area value={d.well?.comment} onChange={v=>upd('well',{...(d.well||{}),comment:v})} placeholder="Как прошёл день..." dis={dis} rows={3}/></div>
+        <div><Lbl>Заметка дня</Lbl><Area value={d.well?.comment} onChange={v=>upd('well',{...(d.well||{}),comment:v})} placeholder="Как прошёл день..." dis={dis} rows={3} showMic={!dis}/></div>
       </div>
     </SecCard>
   </>;
@@ -1106,7 +1106,7 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
 
 // Self-contained chat component with its own DB lifecycle.
 // Props: clientId (whose day it is), docId (nutritionist id), currentUserId, currentUserName, dateKey
-function ChatSection({ clientId, docId, currentUserId, currentUserName, dateKey }) {
+function ChatSection({ clientId, docId, currentUserId, currentUserName, dateKey, readOnly=false }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
@@ -1218,20 +1218,23 @@ function ChatSection({ clientId, docId, currentUserId, currentUserName, dateKey 
         </div>;
       })}
     </div>
-    {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
-      {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
-        onMouseOver={ev => ev.currentTarget.style.background = C.surfaceAlt} onMouseOut={ev => ev.currentTarget.style.background = 'none'}>{e}</button>)}
-    </div>}
-    <div style={{display:'flex',gap:6,padding:'8px 12px 12px',alignItems:'flex-end'}}>
-      <button onClick={() => setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
-      <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение..." rows={1}
-        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-        style={{flex:1,padding:'10px 14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.5,maxHeight:100}}
-        onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
-      <button disabled={!text.trim() || sending} onClick={send} style={{width:38,height:38,borderRadius:'50%',border:'none',background:text.trim() && !sending ? C.accent : '#ddd',color:'#fff',fontSize:16,cursor:text.trim() && !sending ? 'pointer' : 'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-      </button>
-    </div>
+    {!readOnly&&<>
+      {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
+        {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
+          onMouseOver={ev => ev.currentTarget.style.background = C.surfaceAlt} onMouseOut={ev => ev.currentTarget.style.background = 'none'}>{e}</button>)}
+      </div>}
+      <div style={{display:'flex',gap:6,padding:'8px 12px 12px',alignItems:'flex-end'}}>
+        <button onClick={() => setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
+        <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение..." rows={1}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          style={{flex:1,padding:'10px 14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.5,maxHeight:100}}
+          onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
+        <button disabled={!text.trim() || sending} onClick={send} style={{width:38,height:38,borderRadius:'50%',border:'none',background:text.trim() && !sending ? C.accent : '#ddd',color:'#fff',fontSize:16,cursor:text.trim() && !sending ? 'pointer' : 'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </div>
+    </>}
+    {readOnly&&messages.length===0&&<div style={{padding:'8px 18px 14px',fontSize:12,color:C.muted,textAlign:'center'}}>Нутрициолог пока не оставил комментарий</div>}
   </div>;
 }
 
@@ -2267,7 +2270,7 @@ export default function App(){
     </SecCard>
 
     <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
-    {!isDoc&&<ChatSection clientId={user.id} docId={null} currentUserId={user.id} currentUserName={user.name} dateKey={key}/>}
+    {!isDoc&&<ChatSection clientId={user.id} docId={null} currentUserId={user.id} currentUserName={user.name} dateKey={key} readOnly/>}
   </>);
 
   // ═══ DOCTOR ═══
