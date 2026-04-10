@@ -359,7 +359,7 @@ function Mood({value:v,onChange,dis}){
 }
 
 // Microphone button — speech-to-text via Web Speech API
-function MicButton({onResult,style:st}){
+function MicButton({onResult,onStart,style:st}){
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
   const toggle=()=>{
@@ -370,16 +370,16 @@ function MicButton({onResult,style:st}){
     rec.lang='ru-RU';
     rec.continuous=true;
     rec.interimResults=true;
-    let final='';
+    onStart&&onStart();
     rec.onresult=(e)=>{
-      let interim='';
-      for(let i=e.resultIndex;i<e.results.length;i++){
+      let final='',interim='';
+      for(let i=0;i<e.results.length;i++){
         if(e.results[i].isFinal)final+=e.results[i][0].transcript+' ';
         else interim+=e.results[i][0].transcript;
       }
-      onResult&&onResult(final+interim,false);
+      onResult&&onResult((final+interim).trim());
     };
-    rec.onend=()=>{setListening(false);recRef.current=null;if(final)onResult&&onResult(final.trim(),true);};
+    rec.onend=()=>{setListening(false);recRef.current=null;};
     rec.onerror=()=>{setListening(false);recRef.current=null;};
     recRef.current=rec;
     rec.start();
@@ -398,17 +398,21 @@ function MicButton({onResult,style:st}){
 function Area({value:v,onChange,placeholder:ph,dis,rows=3,showMic=false}){
   if(dis)return <div style={{fontSize:14,color:v?C.text:C.muted,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{v||'—'}</div>;
   const ref=useRef(null);
+  const baseTextRef=useRef(''); // text before mic started
   const autoGrow=()=>{const el=ref.current;if(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}};
   useEffect(()=>{autoGrow()},[v]);
-  const handleMic=(text,isFinal)=>{
-    if(isFinal){onChange(((v||'')+' '+text).trim());}
-    // During interim, we don't overwrite — just let the user see the final result
+  const handleMicStart=()=>{baseTextRef.current=v||'';};
+  const handleMic=(text)=>{
+    // Show text in real-time as user speaks
+    const base=baseTextRef.current;
+    const sep=base&&!base.endsWith(' ')?' ':'';
+    onChange(base+sep+text);
   };
   return <div style={{position:'relative'}}>
     <textarea ref={ref} value={v||''} onChange={e=>{onChange(e.target.value);autoGrow()}} placeholder={ph} rows={rows}
       style={{width:'100%',padding:'12px '+(showMic?'48px':'16px')+' 12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,color:C.text,transition:'border-color .2s',overflow:'hidden',minHeight:rows*24+24}}
       onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
-    {showMic&&<MicButton onResult={handleMic} style={{position:'absolute',right:6,top:6}}/>}
+    {showMic&&<MicButton onResult={handleMic} onStart={handleMicStart} style={{position:'absolute',right:6,top:6}}/>}
   </div>;
 }
 
