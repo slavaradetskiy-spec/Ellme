@@ -398,14 +398,13 @@ function MicButton({onResult,onStart,style:st}){
 }
 
 function Area({value:v,onChange,placeholder:ph,dis,rows=3,showMic=false}){
-  if(dis)return <div style={{fontSize:14,color:v?C.text:C.muted,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{v||'—'}</div>;
   const ref=useRef(null);
-  const baseTextRef=useRef(''); // text before mic started
+  const baseTextRef=useRef('');
   const autoGrow=()=>{const el=ref.current;if(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}};
-  useEffect(()=>{autoGrow()},[v]);
+  useEffect(()=>{if(!dis)autoGrow()},[v,dis]);
+  if(dis)return <div style={{fontSize:14,color:v?C.text:C.muted,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{v||'—'}</div>;
   const handleMicStart=()=>{baseTextRef.current=v||'';};
   const handleMic=(text)=>{
-    // Show text in real-time as user speaks
     const base=baseTextRef.current;
     const sep=base&&!base.endsWith(' ')?' ':'';
     onChange(base+sep+text);
