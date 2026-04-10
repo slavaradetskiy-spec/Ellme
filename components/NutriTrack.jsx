@@ -379,10 +379,12 @@ function Lightbox({src,onClose}){
 // ═══ MEAL TILE (2×3 grid) ═══
 function MealTile({meal,data,onClick,delay=0}){
   const d=data||{};
-  const has=d.text||d.photo;
+  const photos=Array.isArray(d.photo)?d.photo:(d.photo?[d.photo]:[]);
+  const firstPhoto=photos[0]||null;
+  const has=d.text||firstPhoto;
   return <button onClick={onClick} className="tile3d" style={{
     aspectRatio:'1',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',
-    background:d.photo?`url(${d.photo}) center/cover`:C.tile,
+    background:firstPhoto?`url(${firstPhoto}) center/cover`:C.tile,
     display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:14,
     position:'relative',overflow:'hidden',textAlign:'left',
     boxShadow:has?C.shadow3d:'none',
@@ -392,15 +394,16 @@ function MealTile({meal,data,onClick,delay=0}){
     onMouseOver={e=>{e.currentTarget.style.transform='perspective(600px) rotateX(-3deg) translateY(-4px)';e.currentTarget.style.boxShadow=C.shadowHover}}
     onMouseOut={e=>{e.currentTarget.style.transform='perspective(600px) rotateX(0deg)';e.currentTarget.style.boxShadow=has?C.shadow3d:'none'}}
   >
-    {d.photo&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
-    {!d.photo&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none'}}/>}
+    {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
+    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none'}}/>}
+    {photos.length>1&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:8,padding:'2px 8px',fontSize:11,fontWeight:600,zIndex:2,backdropFilter:'blur(4px)'}}>{photos.length} фото</div>}
     {d.liked&&<div style={{position:'absolute',top:10,right:10,width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,.92)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(0,0,0,.15)',zIndex:2}}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="#E74C3C" stroke="#E74C3C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
     </div>}
     <div style={{position:'relative',zIndex:1}}>
       {!has&&<div style={{fontSize:13,color:C.muted,marginBottom:2}}>Добавить</div>}
-      <div style={{fontSize:15,fontWeight:700,color:d.photo?'#fff':C.text}}>{meal.label}</div>
-      {d.time&&<div style={{fontSize:12,color:d.photo?'rgba(255,255,255,.8)':C.soft,marginTop:2}}>{d.time}</div>}
+      <div style={{fontSize:15,fontWeight:700,color:firstPhoto?'#fff':C.text}}>{meal.label}</div>
+      {d.time&&<div style={{fontSize:12,color:firstPhoto?'rgba(255,255,255,.8)':C.soft,marginTop:2}}>{d.time}</div>}
     </div>
   </button>;
 }
@@ -410,6 +413,7 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
   const d=data||{},upd=(k,v)=>onChange({...d,[k]:v});
   const fRef=useRef(null),cRef=useRef(null);
   const[uploading,setUploading]=useState(false);
+  const photos=Array.isArray(d.photo)?d.photo:(d.photo?[d.photo]:[]);
   const hFile=async(e)=>{
     const f=e.target.files?.[0];if(!f)return;
     e.target.value='';
@@ -417,14 +421,14 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
       setUploading(true);
       try{
         const url=await onUploadPhoto(f);
-        if(url)upd('photo',url);
+        if(url) upd('photo',[...photos,url]);
       }catch(err){console.error('Photo upload error:',err)}
       setUploading(false);
     }else{
-      // Fallback: data URL (dev mode without Supabase)
-      const r=new FileReader();r.onload=ev=>upd('photo',ev.target.result);r.readAsDataURL(f);
+      const r=new FileReader();r.onload=ev=>upd('photo',[...photos,ev.target.result]);r.readAsDataURL(f);
     }
   };
+  const removePhoto=(idx)=>{ const next=photos.filter((_,i)=>i!==idx); upd('photo',next.length?next:null); };
 
   const toggleLike=()=>upd('liked',!d.liked);
   const heartBtn=<button onClick={dis?toggleLike:undefined} disabled={!dis&&!d.liked} style={{background:'none',border:'none',cursor:dis?'pointer':(d.liked?'default':'default'),padding:8,display:'flex',alignItems:'center',justifyContent:'center',opacity:(dis||d.liked)?1:0,transition:'all .2s'}}>
@@ -436,29 +440,29 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
   return <div style={{animation:'slideRight .3s ease'}}>
     <TopBar left={<BackBtn onClick={onBack}/>} title={meal.label} right={(dis||d.liked)?heartBtn:null}/>
 
-    {/* Photo */}
-    {d.photo&&<div style={{position:'relative',borderRadius:20,overflow:'hidden',marginBottom:16,boxShadow:C.shadow3d}}>
-      <div onClick={()=>onZoom(d.photo)} style={{cursor:'zoom-in',width:'100%',aspectRatio:'16/10'}}>
-        <img src={d.photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-      </div>
-      <button onClick={()=>onZoom(d.photo)} style={{position:'absolute',bottom:12,right:12,background:'rgba(0,0,0,.4)',backdropFilter:'blur(8px)',border:'none',color:'#fff',padding:'5px 12px',borderRadius:10,fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontFamily:'inherit'}}>{I.expand}</button>
-      {!dis&&<button onClick={()=>upd('photo',null)} style={{position:'absolute',top:10,right:10,background:'rgba(0,0,0,.4)',backdropFilter:'blur(8px)',border:'none',color:'#fff',width:30,height:30,borderRadius:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>{I.x}</button>}
+    {/* Photos gallery */}
+    {photos.length>0&&<div style={{display:'flex',gap:8,overflowX:'auto',marginBottom:16,paddingBottom:4,WebkitOverflowScrolling:'touch'}}>
+      {photos.map((p,i)=><div key={i} style={{position:'relative',borderRadius:16,overflow:'hidden',boxShadow:C.shadow3d,flexShrink:0,width:photos.length===1?'100%':'75%',aspectRatio:'16/10'}}>
+        <img src={p} alt="" onClick={()=>onZoom(p)} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in',display:'block'}}/>
+        {!dis&&<button onClick={()=>removePhoto(i)} style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.5)',backdropFilter:'blur(6px)',border:'none',color:'#fff',width:28,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>✕</button>}
+        {photos.length>1&&<div style={{position:'absolute',bottom:8,left:8,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:6,padding:'2px 8px',fontSize:11,backdropFilter:'blur(4px)'}}>{i+1}/{photos.length}</div>}
+      </div>)}
     </div>}
     {!dis&&<>
       <input ref={fRef} type="file" accept="image/*" onChange={hFile} style={{display:'none'}}/>
       <input ref={cRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:'none'}}/>
-      {!d.photo&&<div style={{display:'flex',gap:8,marginBottom:16}}>
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
         {uploading
           ?<div style={{flex:1,padding:'14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,background:C.accentSoft,fontSize:13,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
             <span style={{animation:'pulseGlow 1.5s infinite'}}>⏳</span> Загрузка фото...
           </div>
-          :[{r:fRef,i:I.img,t:'Галерея'},{r:cRef,i:I.cam,t:'Камера'}].map((b,i)=>
-            <button key={i} onClick={()=>b.r.current?.click()} style={{flex:1,padding:'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:13,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
+          :[{r:fRef,i:I.img,t:photos.length?'+ Ещё':'Галерея'},{r:cRef,i:I.cam,t:photos.length?'+ Камера':'Камера'}].map((b,i)=>
+            <button key={i} onClick={()=>b.r.current?.click()} style={{flex:1,padding:photos.length?'10px':'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:13,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
               onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}} onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.muted}}>
               {b.i}{b.t}
             </button>)
         }
-      </div>}
+      </div>
     </>}
 
     <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard}}>
@@ -1810,7 +1814,13 @@ export default function App(){
       const { data: mealRows } = await supabase.from('meals').select('*').eq('diary_day_id', day.id);
       const meals = {};
       (mealRows || []).forEach(m => {
-        meals[m.meal_type] = { time: m.time, hunger: m.hunger, text: m.description, feeling: m.feeling, feelingNote: m.feeling_note, photo: m.photo_url, liked: !!m.liked };
+        // Parse photo_url: could be single URL string or JSON array
+        let parsedPhoto = null;
+        if (m.photo_url) {
+          if (m.photo_url.startsWith('[')) { try { parsedPhoto = JSON.parse(m.photo_url); } catch(e) { parsedPhoto = [m.photo_url]; } }
+          else { parsedPhoto = [m.photo_url]; }
+        }
+        meals[m.meal_type] = { time: m.time, hunger: m.hunger, text: m.description, feeling: m.feeling, feelingNote: m.feeling_note, photo: parsedPhoto, liked: !!m.liked };
       });
       return {
         meals, water: day.water_ml || 0, supplements: day.supplements || '',
@@ -1850,7 +1860,7 @@ export default function App(){
           diary_day_id: day.id, meal_type: mealType,
           time: m.time || null, hunger: m.hunger || null,
           description: m.text || '', feeling: m.feeling || null,
-          feeling_note: m.feelingNote || '', photo_url: m.photo || null,
+          feeling_note: m.feelingNote || '', photo_url: m.photo ? (Array.isArray(m.photo) ? JSON.stringify(m.photo) : m.photo) : null,
           liked: !!m.liked,
         }, { onConflict: 'diary_day_id,meal_type' });
       }
