@@ -358,12 +358,58 @@ function Mood({value:v,onChange,dis}){
   return <div style={{display:'flex',gap:6}}>{f.map((c,i)=><button key={i} onClick={()=>onChange(v===i?null:i)} style={{flex:1,padding:'8px 2px',borderRadius:16,border:`2px solid ${v===i?C.accent:'transparent'}`,background:v===i?C.accentSoft:C.surfaceAlt,cursor:'pointer',transition:'all .15s',display:'flex',flexDirection:'column',alignItems:'center',gap:4,transform:v===i?'scale(1.06)':'scale(1)',boxShadow:v===i?'0 3px 12px rgba(45,95,63,.2)':'none',fontFamily:'inherit'}}><span style={{fontSize:26}}>{c}</span><span style={{fontSize:9,color:v===i?C.accent:C.muted,fontWeight:v===i?600:400}}>{MOOD_L[i]}</span></button>)}</div>;
 }
 
-function Area({value:v,onChange,placeholder:ph,dis,rows=3}){
+// Microphone button — speech-to-text via Web Speech API
+function MicButton({onResult,style:st}){
+  const[listening,setListening]=useState(false);
+  const recRef=useRef(null);
+  const toggle=()=>{
+    if(listening&&recRef.current){recRef.current.stop();return;}
+    const SR=typeof window!=='undefined'&&(window.SpeechRecognition||window.webkitSpeechRecognition);
+    if(!SR){alert('Голосовой ввод не поддерживается в этом браузере');return;}
+    const rec=new SR();
+    rec.lang='ru-RU';
+    rec.continuous=true;
+    rec.interimResults=true;
+    let final='';
+    rec.onresult=(e)=>{
+      let interim='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal)final+=e.results[i][0].transcript+' ';
+        else interim+=e.results[i][0].transcript;
+      }
+      onResult&&onResult(final+interim,false);
+    };
+    rec.onend=()=>{setListening(false);recRef.current=null;if(final)onResult&&onResult(final.trim(),true);};
+    rec.onerror=()=>{setListening(false);recRef.current=null;};
+    recRef.current=rec;
+    rec.start();
+    setListening(true);
+  };
+  return <button type="button" onClick={toggle} style={{background:listening?'#E74C3C':C.surfaceAlt,border:'none',borderRadius:12,cursor:'pointer',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'center',color:listening?'#fff':C.muted,transition:'all .2s',animation:listening?'pulse 1.5s infinite':'none',...(st||{})}}>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+      <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="23"/>
+      <line x1="8" y1="23" x2="16" y2="23"/>
+    </svg>
+  </button>;
+}
+
+function Area({value:v,onChange,placeholder:ph,dis,rows=3,showMic=false}){
   if(dis)return <div style={{fontSize:14,color:v?C.text:C.muted,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{v||'—'}</div>;
   const ref=useRef(null);
   const autoGrow=()=>{const el=ref.current;if(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}};
   useEffect(()=>{autoGrow()},[v]);
-  return <textarea ref={ref} value={v||''} onChange={e=>{onChange(e.target.value);autoGrow()}} placeholder={ph} rows={rows} style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,color:C.text,transition:'border-color .2s',overflow:'hidden',minHeight:rows*24+24}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>;
+  const handleMic=(text,isFinal)=>{
+    if(isFinal){onChange(((v||'')+' '+text).trim());}
+    // During interim, we don't overwrite — just let the user see the final result
+  };
+  return <div style={{position:'relative'}}>
+    <textarea ref={ref} value={v||''} onChange={e=>{onChange(e.target.value);autoGrow()}} placeholder={ph} rows={rows}
+      style={{width:'100%',padding:'12px '+(showMic?'48px':'16px')+' 12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,color:C.text,transition:'border-color .2s',overflow:'hidden',minHeight:rows*24+24}}
+      onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>
+    {showMic&&<MicButton onResult={handleMic} style={{position:'absolute',right:6,top:6}}/>}
+  </div>;
 }
 
 function Lbl({children}){return <div style={{fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase',marginBottom:8}}>{children}</div>;}
@@ -485,7 +531,7 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
 
       <div style={{marginBottom:18}}>
         <Lbl>Что ели</Lbl>
-        <Area value={d.text} onChange={v=>upd('text',v)} placeholder="Опишите приём пищи..." dis={dis} rows={2}/>
+        <Area value={d.text} onChange={v=>upd('text',v)} placeholder="Опишите приём пищи..." dis={dis} rows={2} showMic={!dis}/>
       </div>
 
       <div>
@@ -497,7 +543,7 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
           }
           {dis && !d.feeling && <span style={{fontSize:13,color:C.muted}}>—</span>}
         </div>
-        <Area value={d.feelingNote} onChange={v=>upd('feelingNote',v)} placeholder="Подробнее об ощущениях..." dis={dis} rows={2}/>
+        <Area value={d.feelingNote} onChange={v=>upd('feelingNote',v)} placeholder="Подробнее об ощущениях..." dis={dis} rows={2} showMic={!dis}/>
       </div>
     </div>
     {!dis&&<button onClick={onBack} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:14,fontWeight:500,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
