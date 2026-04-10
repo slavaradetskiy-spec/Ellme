@@ -134,23 +134,31 @@ const ACTIVITIES = [
   {id:'yoga',label:'Йога'},
   {id:'strength',label:'Силовая'},
   {id:'pilates',label:'Пилатес'},
+  {id:'gymnastics',label:'Гимнастика'},
   {id:'dance',label:'Танцы'},
   {id:'other',label:'Другое'},
 ];
 
-// Parse movement field — handles both old text format and new JSON
+// Parse movement field — handles old (single type) and new (multiple activities) formats
 function parseMovement(raw){
-  if(!raw)return {type:null,duration:10,note:''};
-  if(typeof raw==='object')return {type:raw.type||null,duration:raw.duration||10,note:raw.note||''};
-  // Try JSON
+  const empty={activities:[],note:''};
+  if(!raw)return empty;
+  if(typeof raw==='object'){
+    // New format with activities array
+    if(raw.activities)return {activities:raw.activities,note:raw.note||''};
+    // Old single-type format → convert
+    if(raw.type)return {activities:[{type:raw.type,duration:raw.duration||10}],note:raw.note||''};
+    return {activities:[],note:raw.note||''};
+  }
   if(typeof raw==='string'&&raw.startsWith('{')){
     try{
       const p=JSON.parse(raw);
-      return {type:p.type||null,duration:p.duration||10,note:p.note||''};
+      if(p.activities)return {activities:p.activities,note:p.note||''};
+      if(p.type)return {activities:[{type:p.type,duration:p.duration||10}],note:p.note||''};
+      return {activities:[],note:p.note||''};
     }catch(e){}
   }
-  // Fallback: old text format → put into note
-  return {type:null,duration:10,note:String(raw)};
+  return {activities:[],note:String(raw)};
 }
 
 function mkDemo(){
@@ -352,7 +360,10 @@ function Mood({value:v,onChange,dis}){
 
 function Area({value:v,onChange,placeholder:ph,dis,rows=3}){
   if(dis)return <div style={{fontSize:14,color:v?C.text:C.muted,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{v||'—'}</div>;
-  return <textarea value={v||''} onChange={e=>onChange(e.target.value)} placeholder={ph} rows={rows} style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'vertical',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,color:C.text,transition:'border-color .2s'}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>;
+  const ref=useRef(null);
+  const autoGrow=()=>{const el=ref.current;if(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}};
+  useEffect(()=>{autoGrow()},[v]);
+  return <textarea ref={ref} value={v||''} onChange={e=>{onChange(e.target.value);autoGrow()}} placeholder={ph} rows={rows} style={{width:'100%',padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.surface,lineHeight:1.6,color:C.text,transition:'border-color .2s',overflow:'hidden',minHeight:rows*24+24}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>e.target.style.borderColor=C.tileBorder}/>;
 }
 
 function Lbl({children}){return <div style={{fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase',marginBottom:8}}>{children}</div>;}
@@ -485,6 +496,10 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
         <Area value={d.feelingNote} onChange={v=>upd('feelingNote',v)} placeholder="Подробнее об ощущениях..." dis={dis} rows={2}/>
       </div>
     </div>
+    {!dis&&<button onClick={onBack} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:14,fontWeight:500,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
+      onMouseOver={e=>{e.currentTarget.style.background=C.accentSoft}} onMouseOut={e=>{e.currentTarget.style.background='transparent'}}>
+      ← Вернуться на главную
+    </button>}
   </div>;
 }
 
@@ -579,29 +594,45 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
       {(()=>{
         const mv=parseMovement(d.movement);
         const setMv=(next)=>upd('movement',JSON.stringify(next));
+        const acts=mv.activities||[];
+        const toggleAct=(id)=>{
+          if(dis)return;
+          const exists=acts.find(a=>a.type===id);
+          if(exists){
+            setMv({...mv,activities:acts.filter(a=>a.type!==id)});
+          }else{
+            setMv({...mv,activities:[...acts,{type:id,duration:10}]});
+          }
+        };
+        const setActDur=(id,dur)=>{
+          setMv({...mv,activities:acts.map(a=>a.type===id?{...a,duration:dur}:a)});
+        };
         return <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
           <div>
             <Lbl>Тип активности</Lbl>
             <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
               {ACTIVITIES.map(a=>
-                <Chip key={a.id} sel={mv.type===a.id} dis={dis}
-                  onClick={()=>setMv({...mv,type:mv.type===a.id?null:a.id})}>{a.label}</Chip>
+                <Chip key={a.id} sel={!!acts.find(x=>x.type===a.id)} dis={dis}
+                  onClick={()=>toggleAct(a.id)}>{a.label}</Chip>
               )}
             </div>
           </div>
-          <div>
-            <Lbl>Продолжительность</Lbl>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,padding:'4px 0'}}>
-              <button onClick={dis?undefined:()=>setMv({...mv,duration:Math.max(10,(mv.duration||10)-10)})}
-                style={{width:40,height:40,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:dis?'default':'pointer',fontSize:20,fontWeight:600,color:dis?C.muted:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
-              <div style={{minWidth:90,textAlign:'center'}}>
-                <span style={{fontSize:22,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{mv.duration||10}</span>
-                <span style={{fontSize:13,color:C.muted,marginLeft:6}}>мин</span>
+          {acts.length>0&&acts.map(act=>{
+            const label=ACTIVITIES.find(a=>a.id===act.type)?.label||act.type;
+            return <div key={act.type} style={{background:C.surfaceAlt,borderRadius:14,padding:'10px 14px'}}>
+              <div style={{fontSize:13,fontWeight:600,color:C.accent,marginBottom:6}}>{label}</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:14}}>
+                <button onClick={dis?undefined:()=>setActDur(act.type,Math.max(5,act.duration-10))}
+                  style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:dis?'default':'pointer',fontSize:18,fontWeight:600,color:dis?C.muted:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+                <div style={{minWidth:70,textAlign:'center'}}>
+                  <span style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{act.duration}</span>
+                  <span style={{fontSize:12,color:C.muted,marginLeft:4}}>мин</span>
+                </div>
+                <button onClick={dis?undefined:()=>setActDur(act.type,act.duration+10)}
+                  style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:dis?'default':'pointer',fontSize:18,fontWeight:600,color:dis?C.muted:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
               </div>
-              <button onClick={dis?undefined:()=>setMv({...mv,duration:(mv.duration||10)+10})}
-                style={{width:40,height:40,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:dis?'default':'pointer',fontSize:20,fontWeight:600,color:dis?C.muted:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
-            </div>
-          </div>
+            </div>;
+          })}
           <div>
             <Lbl>Заметка</Lbl>
             <Area value={mv.note} onChange={v=>setMv({...mv,note:v})} placeholder="Детали тренировки..." dis={dis} rows={2}/>
