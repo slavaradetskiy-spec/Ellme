@@ -435,7 +435,7 @@ function MealTile({meal,data,onClick,delay=0}){
   const has=d.text||firstPhoto;
   return <button onClick={onClick} className="tile3d" style={{
     aspectRatio:'1',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',
-    background:firstPhoto?`${C.tile} url(${firstPhoto}) center/contain no-repeat`:C.tile,
+    background:firstPhoto?`url(${firstPhoto}) center/cover`:C.tile,
     display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:14,
     position:'relative',overflow:'hidden',textAlign:'left',
     boxShadow:has?C.shadow3d:'none',
