@@ -974,6 +974,164 @@ function Celebration({type,onClose}){
   </div>;
 }
 
+// ═══ WEEKLY GOAL WIDGET ═══
+const GOAL_PRESETS=[{d:7,l:'неделя'},{d:14,l:'2 недели'},{d:21,l:'привычка'},{d:30,l:'месяц'},{d:45,l:'1,5 мес'},{d:90,l:'квартал'},{d:180,l:'полгода'},{d:365,l:'год'}];
+const GOAL_HINTS={7:'7 дней — хороший старт',14:'14 дней — закрепление',21:'21 день — порог привычки',30:'30 дней — месяц дисциплины',45:'45 дней — устойчивая привычка',90:'90 дней — новый образ жизни',180:'Полгода — серьёзный результат',365:'365 дней — год новой себя'};
+const GOAL_MSGS=[
+  null,
+  {t:'Отмечено!',s:'Первый шаг сделан'},
+  {t:'2 дня!',s:'Продолжай в том же духе'},
+  {t:'3 дня!',s:'Привычка формируется'},
+  {t:'4 дня подряд!',s:'Ты на верном пути'},
+  {t:'5 дней!',s:'Невероятно!'},
+  {t:'6 дней!',s:'Один шаг до победы'},
+  {t:'Вся неделя!',s:'Это уже привычка! 🎉'},
+];
+
+function WeeklyGoalWidget({goal,goalDays,goalStarted,goalSetBy,daysDone,onToggleDay,onOpen}){
+  const[open,setOpen]=useState(false);
+  if(!goal)return null;
+
+  const startDate=goalStarted?new Date(goalStarted):new Date();
+  const totalDays=goalDays||7;
+  const today=new Date();
+  today.setHours(0,0,0,0);
+
+  // Build day status array
+  const days=[];
+  for(let i=0;i<Math.min(totalDays,42);i++){// show max 42 days (6 weeks)
+    const d=new Date(startDate);
+    d.setDate(d.getDate()+i);
+    d.setHours(0,0,0,0);
+    const dateStr=dk(d);
+    const isPast=d<today;
+    const isToday=d.getTime()===today.getTime();
+    const isFuture=d>today;
+    const done=daysDone?.[dateStr]||false;
+    days.push({date:d,dateStr,isPast,isToday,isFuture,done});
+  }
+
+  // Streak calculation
+  let streak=0;
+  for(let i=days.length-1;i>=0;i--){
+    if(days[i].isFuture)continue;
+    if(days[i].done)streak++;
+    else break;
+  }
+  const totalDone=days.filter(d=>d.done).length;
+
+  // Motivational message
+  let motivation=null;
+  if(totalDone===totalDays)motivation={t:'Все дни выполнены!',s:'Это уже привычка! 🎉'};
+  else if(streak>=7)motivation={t:streak+' дней подряд!',s:'Ты в потоке, так держать!'};
+  else if(streak>=4)motivation={t:streak+' дня подряд!',s:'Ты на верном пути ⭐'};
+  else if(streak>=2)motivation={t:streak+' дня подряд!',s:'Продолжай! 🔥'};
+  else if(totalDone>0)motivation={t:totalDone+' из '+totalDays,s:'Отметь сегодня тоже'};
+
+  const weekDays=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+  return <div style={{background:'#2A4A2A',borderRadius:16,marginBottom:14,overflow:'hidden',animation:'enter .4s ease'}}>
+    {/* Collapsed header — always visible */}
+    <button onClick={()=>setOpen(!open)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:'none',border:'none',cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+      <div style={{width:8,height:8,borderRadius:4,background:'#fff',animation:'pulse 3s infinite',flexShrink:0}}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:9,letterSpacing:1,color:'#7AAA7A',textTransform:'uppercase',marginBottom:2}}>Задача{goalDays&&goalDays>7?' на '+goalDays+' дн.':' недели'}</div>
+        <div style={{fontSize:14,color:'#F5F2EC',fontStyle:'italic',fontFamily:'var(--fd)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{goal}</div>
+      </div>
+      {totalDays<=42&&<div style={{fontSize:10,color:'#7AAA7A',flexShrink:0}}>{totalDone}/{totalDays}</div>}
+      <div style={{width:22,height:22,borderRadius:11,border:'1px solid rgba(255,255,255,.2)',background:'rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',transition:'transform .25s',transform:open?'rotate(180deg)':'rotate(0)',flexShrink:0}}>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#f5f2ec" strokeWidth="1.5"><path d="M2 3.5L5 6.5L8 3.5"/></svg>
+      </div>
+    </button>
+
+    {/* Expanded tracker */}
+    {open&&<div style={{padding:'0 14px 14px',borderTop:'1px solid rgba(255,255,255,.1)',animation:'enter .2s ease'}}>
+      {/* Days grid */}
+      <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:10,justifyContent:'flex-start'}}>
+        {days.map((d,i)=>{
+          const bg=d.done?'#F5F2EC':d.isToday?'transparent':d.isFuture?'rgba(255,255,255,.05)':'rgba(255,255,255,.08)';
+          const border=d.isToday?'1.5px solid #7AAA7A':'1.5px solid transparent';
+          const canTap=!d.isFuture;
+          return <button key={d.dateStr} onClick={canTap?()=>onToggleDay&&onToggleDay(d.dateStr,!d.done):undefined}
+            style={{width:28,height:28,borderRadius:'50%',background:bg,border,display:'flex',alignItems:'center',justifyContent:'center',cursor:canTap?'pointer':'default',opacity:d.isFuture?.3:1,transition:'all .15s',padding:0,fontFamily:'inherit',fontSize:10}}>
+            {d.done?<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#2A4A2A" strokeWidth="2" strokeLinecap="round"><path d="M2.5 6L5 8.5L9.5 3.5"/></svg>
+            :d.isPast?<span style={{color:'rgba(255,100,100,.6)',fontSize:11,fontWeight:600}}>✕</span>
+            :d.isToday?<span style={{color:'#7AAA7A',fontSize:8}}>●</span>
+            :null}
+          </button>;
+        })}
+      </div>
+
+      {/* Progress line */}
+      {motivation&&<div style={{marginTop:10,fontSize:12,color:'#F5F2EC',display:'flex',alignItems:'center',gap:6}}>
+        <span style={{fontWeight:700}}>{motivation.t}</span>
+        <span style={{color:'#7AAA7A',fontSize:11}}>{motivation.s}</span>
+      </div>}
+
+      {goalSetBy&&<div style={{marginTop:6,fontSize:10,color:'#7AAA7A',fontStyle:'italic'}}>назначено нутрициологом</div>}
+    </div>}
+  </div>;
+}
+
+// Goal assigner for nutritionist in client view
+function DocGoalAssigner({clientId,docId,currentGoal,currentDays}){
+  const[open,setOpen]=useState(false);
+  const[text,setText]=useState(currentGoal||'');
+  const[days,setDays]=useState(currentDays||7);
+  const[saved,setSaved]=useState(false);
+
+  const save=async()=>{
+    if(!supabase||!clientId||!text.trim())return;
+    try{
+      const{error}=await supabase.from('profiles').update({
+        weekly_goal:text.trim(),
+        weekly_goal_days:days,
+        weekly_goal_set_by:docId||null,
+        weekly_goal_started_at:new Date().toISOString(),
+      }).eq('id',clientId);
+      if(error){console.error('save goal error:',error);return;}
+      setSaved(true);
+      setTimeout(()=>setSaved(false),2000);
+    }catch(e){console.error('save goal:',e)}
+  };
+
+  return <div style={{background:C.surface,borderRadius:16,boxShadow:C.shadowCard,marginBottom:12,overflow:'hidden'}}>
+    <button onClick={()=>setOpen(!open)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'12px 16px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>
+      <span style={{fontSize:16}}>🎯</span>
+      <div style={{flex:1,textAlign:'left'}}>
+        <div style={{fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.04em'}}>ЗАДАЧА КЛИЕНТУ</div>
+        <div style={{fontSize:13,color:currentGoal?C.text:C.muted,fontStyle:'italic'}}>{currentGoal||'Не задана'}</div>
+      </div>
+      <div style={{transform:open?'rotate(180deg)':'rotate(0)',transition:'transform .25s',color:C.muted,display:'flex'}}>
+        <svg width="14" height="14" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 3.5L5 6.5L8 3.5"/></svg>
+      </div>
+    </button>
+    {open&&<div style={{padding:'0 16px 16px',borderTop:`1px solid ${C.surfaceAlt}`,animation:'enter .2s ease'}}>
+      <div style={{marginTop:12}}>
+        <Lbl>Текст задачи</Lbl>
+        <Area value={text} onChange={setText} placeholder="Добавляй овощи в каждый приём пищи..." rows={2} showMic/>
+      </div>
+      <div style={{marginTop:12}}>
+        <Lbl>Количество дней</Lbl>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,marginBottom:8}}>
+          <button onClick={()=>setDays(Math.max(1,days-1))} style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:18,fontWeight:600,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+          <div style={{minWidth:60,textAlign:'center'}}><span style={{fontSize:22,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{days}</span><span style={{fontSize:11,color:C.muted,marginLeft:4}}>дн.</span></div>
+          <button onClick={()=>setDays(Math.min(365,days+1))} style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:18,fontWeight:600,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:4}}>
+          {GOAL_PRESETS.map(p=><button key={p.d} onClick={()=>setDays(p.d)} style={{padding:'6px 4px',borderRadius:10,border:`1.5px solid ${days===p.d?C.accent:C.tileBorder}`,background:days===p.d?C.accentSoft:C.surface,cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:days===p.d?600:400,color:days===p.d?C.accent:C.soft,transition:'all .15s'}}>
+            <div>{p.d}</div><div style={{fontSize:9,color:days===p.d?C.accent:C.muted}}>{p.l}</div>
+          </button>)}
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginTop:6,textAlign:'center',fontStyle:'italic'}}>{GOAL_HINTS[days]||days+' дней'}</div>
+      </div>
+      <button onClick={save} style={{width:'100%',marginTop:14,padding:'12px',borderRadius:14,border:'none',background:saved?C.accentSoft:C.accent,color:saved?C.accent:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',transition:'all .2s'}}>
+        {saved?'Сохранено! ✓':'Назначить клиенту →'}
+      </button>
+    </div>}
+  </div>;
+}
+
 // ═══ LOGIN ═══
 const EMOJIS=['👍','❤️','🔥','👏','😊','🥗','💪','✅','⭐','🙏','😄','🎉'];
 
@@ -1539,6 +1697,7 @@ export default function App(){
   const[authLoading,setAuthLoading]=useState(!!supabase);
   const[loadingPhase,setLoadingPhase]=useState('Идёт загрузка, это может занять несколько секунд...');
   const[diaries,setDiaries]=useState({});
+  const[goalDays,setGoalDays]=useState({}); // {dateStr: true/false}
   const[comments,setComments]=useState({});
   const[clients,setClients]=useState([]);
   const[date,setDate]=useState(new Date());
@@ -1624,7 +1783,7 @@ export default function App(){
   // Load doc's clients from DB
   const loadClients=async()=>{
     if(!supabase||!user?.id||user.role!=='doc')return;
-    const{data:links}=await supabase.from('doc_clients').select('*,profiles!doc_clients_client_id_fkey(id,name,email,age,request,photo_url,last_seen,created_at)').eq('doc_id',user.id);
+    const{data:links}=await supabase.from('doc_clients').select('*,profiles!doc_clients_client_id_fkey(id,name,email,age,request,photo_url,last_seen,weekly_goal,weekly_goal_days,created_at)').eq('doc_id',user.id);
     if(links&&links.length>0){
       const now=Date.now();
       const cls=links.map(l=>{
@@ -1642,6 +1801,8 @@ export default function App(){
           joined:new Date(l.profiles?.created_at||l.created_at),
           lastSeen:ls||null,
           isOnline:!!isOnline,
+          weeklyGoal:l.profiles?.weekly_goal||null,
+          weeklyGoalDays:l.profiles?.weekly_goal_days||7,
         };
       });
       setClients(cls);
@@ -1672,6 +1833,30 @@ export default function App(){
     const iv=setInterval(ping,120000);
     return()=>clearInterval(iv);
   },[user?.id]);
+
+  // Load weekly goal day completions
+  useEffect(()=>{
+    if(!supabase||!user?.id||!user?.weeklyGoal)return;
+    (async()=>{
+      try{
+        const{data}=await supabase.from('diary_days').select('date,goal_done').eq('user_id',user.id).eq('goal_done',true);
+        if(data){
+          const done={};
+          data.forEach(d=>{done[d.date]=true});
+          setGoalDays(done);
+        }
+      }catch(e){}
+    })();
+  },[user?.id,user?.weeklyGoal]);
+
+  // Toggle goal day completion
+  const toggleGoalDay=async(dateStr,done)=>{
+    setGoalDays(p=>({...p,[dateStr]:done}));
+    if(!supabase||!user?.id)return;
+    try{
+      await supabase.from('diary_days').upsert({user_id:user.id,date:dateStr,goal_done:done},{onConflict:'user_id,date'});
+    }catch(e){console.error('toggleGoalDay:',e)}
+  };
 
   // Doc unread count (notifications from clients). Loaded once + realtime.
   useEffect(()=>{
@@ -1783,7 +1968,7 @@ export default function App(){
       }
 
       setLoadingPhase('Настраиваем аккаунт...');
-      setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200 });
+      setUser({ id: u.id, role: profile.role || authRole, name: profile.name || authName, email: profile.email || authEmail, cid: u.id, waterNorm: profile.water_norm || 2200, weeklyGoal: profile.weekly_goal || null, weeklyGoalDays: profile.weekly_goal_days || 7, weeklyGoalSetBy: profile.weekly_goal_set_by || null, weeklyGoalStarted: profile.weekly_goal_started_at || null });
       setWaterNorm(profile.water_norm || 2200);
       if (profile.photo_url) updatePhoto(profile.photo_url);
 
@@ -2263,6 +2448,8 @@ export default function App(){
     <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
     <Cal sel={date} onSelect={setDate}/>
 
+    <WeeklyGoalWidget goal={user.weeklyGoal} goalDays={user.weeklyGoalDays} goalStarted={user.weeklyGoalStarted} goalSetBy={user.weeklyGoalSetBy} daysDone={goalDays} onToggleDay={toggleGoalDay}/>
+
     <SecCard icon={I.fork} title="Приёмы пищи">
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
         {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={meals[m.id]} onClick={()=>setSelMeal(m.id)} delay={i*0.05}/>)}
@@ -2330,6 +2517,9 @@ export default function App(){
         </div>
         <button onClick={()=>{setScreen('clientProfile');window.scrollTo(0,0)}} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',padding:'6px 12px',borderRadius:8,fontSize:12,color:C.accent,fontFamily:'inherit',fontWeight:500}}>Профиль</button>
       </div>
+      {/* Goal assignment for nutritionist */}
+      <DocGoalAssigner clientId={selClient.id} docId={user.id} currentGoal={selClient.weeklyGoal} currentDays={selClient.weeklyGoalDays}/>
+
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
