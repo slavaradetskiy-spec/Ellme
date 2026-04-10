@@ -1074,7 +1074,7 @@ function WeeklyGoalWidget({goal,goalDays,goalStarted,goalSetBy,daysDone,onToggle
 }
 
 // Goal assigner for nutritionist in client view
-function DocGoalAssigner({clientId,currentGoal,currentDays}){
+function DocGoalAssigner({clientId,docId,currentGoal,currentDays}){
   const[open,setOpen]=useState(false);
   const[text,setText]=useState(currentGoal||'');
   const[days,setDays]=useState(currentDays||7);
@@ -1083,12 +1083,13 @@ function DocGoalAssigner({clientId,currentGoal,currentDays}){
   const save=async()=>{
     if(!supabase||!clientId||!text.trim())return;
     try{
-      await supabase.from('profiles').update({
+      const{error}=await supabase.from('profiles').update({
         weekly_goal:text.trim(),
         weekly_goal_days:days,
-        weekly_goal_set_by:clientId,// will be overridden below
+        weekly_goal_set_by:docId||null,
         weekly_goal_started_at:new Date().toISOString(),
       }).eq('id',clientId);
+      if(error){console.error('save goal error:',error);return;}
       setSaved(true);
       setTimeout(()=>setSaved(false),2000);
     }catch(e){console.error('save goal:',e)}
@@ -2517,7 +2518,7 @@ export default function App(){
         <button onClick={()=>{setScreen('clientProfile');window.scrollTo(0,0)}} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',padding:'6px 12px',borderRadius:8,fontSize:12,color:C.accent,fontFamily:'inherit',fontWeight:500}}>Профиль</button>
       </div>
       {/* Goal assignment for nutritionist */}
-      <DocGoalAssigner clientId={selClient.id} currentGoal={selClient.weeklyGoal} currentDays={selClient.weeklyGoalDays}/>
+      <DocGoalAssigner clientId={selClient.id} docId={user.id} currentGoal={selClient.weeklyGoal} currentDays={selClient.weeklyGoalDays}/>
 
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
