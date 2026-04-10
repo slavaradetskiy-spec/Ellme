@@ -1458,35 +1458,39 @@ export default function App(){
   // Pull-to-refresh (mobile)
   const[pullDist,setPullDist]=useState(0);
   const[refreshing,setRefreshing]=useState(false);
+  const pullRef=useRef(0);
   useEffect(()=>{
     if(typeof window==='undefined')return;
-    let startY=null,currentY=null,active=false;
+    let startY=null;
     const threshold=70;
     const onTouchStart=(e)=>{
-      if(window.scrollY>0)return;
+      if(window.scrollY>0||refreshing)return;
       startY=e.touches[0].clientY;
-      active=true;
     };
     const onTouchMove=(e)=>{
-      if(!active||startY===null)return;
-      currentY=e.touches[0].clientY;
-      const dy=currentY-startY;
+      if(startY===null)return;
+      const dy=e.touches[0].clientY-startY;
       if(dy>0&&window.scrollY<=0){
         const dist=Math.min(dy*0.5,120);
+        pullRef.current=dist;
         setPullDist(dist);
       }else{
+        pullRef.current=0;
         setPullDist(0);
       }
     };
     const onTouchEnd=()=>{
-      if(!active){return;}
-      active=false;
-      if(pullDist>=threshold){
+      if(pullRef.current>=threshold){
         setRefreshing(true);
-        setTimeout(()=>{try{window.location.reload()}catch(e){}},100);
+        setPullDist(0);
+        pullRef.current=0;
+        startY=null;
+        setTimeout(()=>{try{window.location.reload()}catch(e){}},200);
+      }else{
+        setPullDist(0);
+        pullRef.current=0;
+        startY=null;
       }
-      setPullDist(0);
-      startY=null;currentY=null;
     };
     window.addEventListener('touchstart',onTouchStart,{passive:true});
     window.addEventListener('touchmove',onTouchMove,{passive:true});
@@ -1496,7 +1500,7 @@ export default function App(){
       window.removeEventListener('touchmove',onTouchMove);
       window.removeEventListener('touchend',onTouchEnd);
     };
-  },[pullDist]);
+  },[]);// eslint-disable-line
 
   const[selMeal,setSelMeal]=useState(null);
   const[selClient,setSelClient]=useState(null);
