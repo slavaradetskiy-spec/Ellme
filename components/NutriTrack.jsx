@@ -1442,6 +1442,8 @@ function Login({onLogin}){
 // ═══ MAIN APP ═══
 export default function App(){
   const[user,setUser]=useState(null);
+  const userRef=useRef(null);
+  useEffect(()=>{userRef.current=user},[user]);
   const[authLoading,setAuthLoading]=useState(!!supabase);
   const[loadingPhase,setLoadingPhase]=useState('Идёт загрузка, это может занять несколько секунд...');
   const[diaries,setDiaries]=useState({});
@@ -1654,7 +1656,11 @@ export default function App(){
     const _oauthRole = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oauth_role') : null;
 
     const loadProfile = async (session) => {
-      if (!session?.user) { setUser(null); setAuthLoading(false); return; }
+      if (!session?.user) {
+        // If user was already logged in — don't clear (temporary network loss)
+        if (userRef.current) { console.warn('Session lost but keeping cached user (offline?)'); setAuthLoading(false); return; }
+        setUser(null); setAuthLoading(false); return;
+      }
       try {
       setLoadingPhase('Загружаем профиль...');
       const u = session.user;
@@ -1744,9 +1750,20 @@ export default function App(){
         setAuthLoading(false);
       }
     } else {
-      supabase.auth.getSession().then(({ data }) => loadProfile(data?.session)).catch(() => { setUser(null); setAuthLoading(false); });
+      supabase.auth.getSession().then(({ data }) => loadProfile(data?.session)).catch(() => {
+        // Network error on initial load — if user was cached, keep them
+        if (userRef.current) { setAuthLoading(false); return; }
+        setUser(null); setAuthLoading(false);
+      });
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // Explicit sign out — always clear user
+        userRef.current = null;
+        setUser(null);
+        setAuthLoading(false);
+        return;
+      }
       if (event !== 'INITIAL_SESSION') loadProfile(session);
     });
     return () => subscription.unsubscribe();
