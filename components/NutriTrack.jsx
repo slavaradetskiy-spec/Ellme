@@ -185,7 +185,9 @@ function TopBar({left,title,subtitle,right,onHome,noBorder}){
 }
 
 function BackBtn({onClick}){
-  return <button onClick={onClick} style={{background:'none',border:'none',cursor:'pointer',color:C.soft,display:'flex',padding:4}}>{I.back}</button>;
+  return <button onClick={onClick} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.text,display:'flex',alignItems:'center',justifyContent:'center',padding:10,borderRadius:14,minWidth:44,minHeight:44,WebkitTapHighlightColor:'transparent'}}>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+  </button>;
 }
 
 function IcoBtn({icon,onClick,badge,style:st}){
@@ -498,22 +500,8 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
         {photos.length>1&&<div style={{position:'absolute',bottom:8,left:8,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:6,padding:'2px 8px',fontSize:11,backdropFilter:'blur(4px)'}}>{i+1}/{photos.length}</div>}
       </div>)}
     </div>}
-    {!dis&&<>
-      <input ref={fRef} type="file" accept="image/*" onChange={hFile} style={{display:'none'}}/>
-      <input ref={cRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:'none'}}/>
-      <div style={{display:'flex',gap:8,marginBottom:16}}>
-        {uploading
-          ?<div style={{flex:1,padding:'14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,background:C.accentSoft,fontSize:13,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-            <span style={{animation:'pulseGlow 1.5s infinite'}}>⏳</span> Загрузка фото...
-          </div>
-          :[{r:fRef,i:I.img,t:photos.length?'+ Ещё':'Галерея'},{r:cRef,i:I.cam,t:photos.length?'+ Камера':'Камера'}].map((b,i)=>
-            <button key={i} onClick={()=>b.r.current?.click()} style={{flex:1,padding:photos.length?'10px':'14px',borderRadius:16,border:`1.5px dashed ${C.tileBorder}`,background:'transparent',cursor:'pointer',fontSize:13,color:C.muted,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s'}}
-              onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}} onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.muted}}>
-              {b.i}{b.t}
-            </button>)
-        }
-      </div>
-    </>}
+    {/* Hidden file inputs */}
+    {!dis&&<><input ref={fRef} type="file" accept="image/*" onChange={hFile} style={{display:'none'}}/><input ref={cRef} type="file" accept="image/*" capture="environment" onChange={hFile} style={{display:'none'}}/></>}
 
     <div style={{background:C.surface,borderRadius:20,padding:20,boxShadow:C.shadowCard}}>
       {/* Time */}
@@ -532,6 +520,23 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
           {dis&&!d.hunger&&<span style={{fontSize:13,color:C.muted}}>—</span>}
         </div>
       </div>
+
+      {/* Photo upload — after hunger, before "Что ели" */}
+      {!dis&&<div style={{marginBottom:18,animation:'enter .4s ease'}}>
+        <Lbl>📸 Добавьте фото еды</Lbl>
+        <div style={{display:'flex',gap:8}}>
+          {uploading
+            ?<div style={{flex:1,padding:'16px',borderRadius:16,border:`1.5px solid ${C.accent}`,background:C.accentSoft,fontSize:13,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,animation:'pulseGlow 1.5s infinite'}}>
+              ⏳ Загрузка фото...
+            </div>
+            :[{r:fRef,i:I.img,t:photos.length?'+ Ещё фото':'📁 Галерея'},{r:cRef,i:I.cam,t:photos.length?'+ Камера':'📷 Камера'}].map((b,i)=>
+              <button key={i} onClick={()=>b.r.current?.click()} style={{flex:1,padding:'16px 12px',borderRadius:16,border:`1.5px dashed ${photos.length?C.tileBorder:C.accent}`,background:photos.length?'transparent':C.accentSoft,cursor:'pointer',fontSize:13,fontWeight:photos.length?400:600,color:photos.length?C.muted:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all .2s',animation:photos.length?'none':'enter .5s ease '+(i*0.1)+'s both'}}
+                onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent;e.currentTarget.style.background=C.accentSoft}} onMouseOut={e=>{e.currentTarget.style.borderColor=photos.length?C.tileBorder:C.accent;e.currentTarget.style.color=photos.length?C.muted:C.accent;e.currentTarget.style.background=photos.length?'transparent':C.accentSoft}}>
+                {b.t}
+              </button>)
+          }
+        </div>
+      </div>}
 
       <div style={{marginBottom:18}}>
         <Lbl>Что ели</Lbl>
