@@ -988,87 +988,104 @@ const GOAL_MSGS=[
   {t:'Вся неделя!',s:'Это уже привычка! 🎉'},
 ];
 
-function WeeklyGoalWidget({goal,goalDays,goalStarted,goalSetBy,daysDone,onToggleDay,onOpen}){
+function WeeklyGoalWidget({goal,goalDays,goalStarted,goalSetBy,daysDone,onToggleDay}){
   const[open,setOpen]=useState(false);
+  const[viewMonth,setViewMonth]=useState(()=>new Date());
   if(!goal)return null;
 
   const startDate=goalStarted?new Date(goalStarted):new Date();
+  startDate.setHours(0,0,0,0);
   const totalDays=goalDays||7;
-  const today=new Date();
-  today.setHours(0,0,0,0);
+  const endDate=new Date(startDate);endDate.setDate(endDate.getDate()+totalDays-1);endDate.setHours(0,0,0,0);
+  const today=new Date();today.setHours(0,0,0,0);
 
-  // Build day status array
-  const days=[];
-  for(let i=0;i<Math.min(totalDays,42);i++){// show max 42 days (6 weeks)
-    const d=new Date(startDate);
-    d.setDate(d.getDate()+i);
-    d.setHours(0,0,0,0);
-    const dateStr=dk(d);
-    const isPast=d<today;
-    const isToday=d.getTime()===today.getTime();
-    const isFuture=d>today;
-    const done=daysDone?.[dateStr]||false;
-    days.push({date:d,dateStr,isPast,isToday,isFuture,done});
-  }
+  // Count done
+  const totalDone=daysDone?Object.values(daysDone).filter(Boolean).length:0;
 
-  // Streak calculation
+  // Streak
   let streak=0;
-  for(let i=days.length-1;i>=0;i--){
-    if(days[i].isFuture)continue;
-    if(days[i].done)streak++;
-    else break;
+  const sd=new Date(today);
+  for(let i=0;i<totalDays;i++){
+    const ds=dk(sd);
+    if(daysDone?.[ds])streak++;
+    else if(sd.getTime()!==today.getTime())break;
+    sd.setDate(sd.getDate()-1);
   }
-  const totalDone=days.filter(d=>d.done).length;
 
-  // Motivational message
-  let motivation=null;
-  if(totalDone===totalDays)motivation={t:'Все дни выполнены!',s:'Это уже привычка! 🎉'};
-  else if(streak>=7)motivation={t:streak+' дней подряд!',s:'Ты в потоке, так держать!'};
-  else if(streak>=4)motivation={t:streak+' дня подряд!',s:'Ты на верном пути ⭐'};
-  else if(streak>=2)motivation={t:streak+' дня подряд!',s:'Продолжай! 🔥'};
-  else if(totalDone>0)motivation={t:totalDone+' из '+totalDays,s:'Отметь сегодня тоже'};
+  // Motivation
+  let mot=null;
+  if(totalDone>=totalDays)mot='Все дни выполнены! 🎉';
+  else if(streak>=7)mot=streak+' дней подряд! 🔥';
+  else if(streak>=3)mot=streak+' дня подряд! ⭐';
 
+  // Calendar for viewMonth
+  const vm=viewMonth;
+  const year=vm.getFullYear(),month=vm.getMonth();
+  const firstDay=new Date(year,month,1);
+  let startWeekDay=firstDay.getDay()-1;if(startWeekDay<0)startWeekDay=6;// Mon=0
+  const daysInMonth=new Date(year,month+1,0).getDate();
   const weekDays=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 
+  const cells=[];
+  for(let i=0;i<startWeekDay;i++)cells.push(null);
+  for(let d=1;d<=daysInMonth;d++){
+    const dt=new Date(year,month,d);dt.setHours(0,0,0,0);
+    const dateStr=dk(dt);
+    const inRange=dt>=startDate&&dt<=endDate;
+    const isPast=dt<today;
+    const isToday=dt.getTime()===today.getTime();
+    const isFuture=dt>today;
+    const done=daysDone?.[dateStr]||false;
+    cells.push({day:d,date:dt,dateStr,inRange,isPast,isToday,isFuture,done});
+  }
+
+  const prevMonth=()=>setViewMonth(new Date(year,month-1,1));
+  const nextMonth=()=>setViewMonth(new Date(year,month+1,1));
+
   return <div style={{background:'#2A4A2A',borderRadius:16,marginBottom:14,overflow:'hidden',animation:'enter .4s ease'}}>
-    {/* Collapsed header — always visible */}
+    {/* Header */}
     <button onClick={()=>setOpen(!open)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:'none',border:'none',cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
       <div style={{width:8,height:8,borderRadius:4,background:'#fff',animation:'pulse 3s infinite',flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:9,letterSpacing:1,color:'#7AAA7A',textTransform:'uppercase',marginBottom:2}}>Задача{goalDays&&goalDays>7?' на '+goalDays+' дн.':' недели'}</div>
+        <div style={{fontSize:9,letterSpacing:1,color:'#7AAA7A',textTransform:'uppercase',marginBottom:2}}>Задача{totalDays>7?' на '+totalDays+' дн.':' недели'}</div>
         <div style={{fontSize:14,color:'#F5F2EC',fontStyle:'italic',fontFamily:'var(--fd)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{goal}</div>
       </div>
-      {totalDays<=42&&<div style={{fontSize:10,color:'#7AAA7A',flexShrink:0}}>{totalDone}/{totalDays}</div>}
+      <div style={{fontSize:11,color:'#7AAA7A',flexShrink:0,fontWeight:600}}>{totalDone}/{totalDays}</div>
       <div style={{width:22,height:22,borderRadius:11,border:'1px solid rgba(255,255,255,.2)',background:'rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',transition:'transform .25s',transform:open?'rotate(180deg)':'rotate(0)',flexShrink:0}}>
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#f5f2ec" strokeWidth="1.5"><path d="M2 3.5L5 6.5L8 3.5"/></svg>
       </div>
     </button>
 
-    {/* Expanded tracker */}
+    {/* Expanded — mini calendar */}
     {open&&<div style={{padding:'0 14px 14px',borderTop:'1px solid rgba(255,255,255,.1)',animation:'enter .2s ease'}}>
-      {/* Days grid */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:10,justifyContent:'flex-start'}}>
-        {days.map((d,i)=>{
-          const bg=d.done?'#F5F2EC':d.isToday?'transparent':d.isFuture?'rgba(255,255,255,.05)':'rgba(255,255,255,.08)';
-          const border=d.isToday?'1.5px solid #7AAA7A':'1.5px solid transparent';
-          const canTap=!d.isFuture;
-          return <button key={d.dateStr} onClick={canTap?()=>onToggleDay&&onToggleDay(d.dateStr,!d.done):undefined}
-            style={{width:28,height:28,borderRadius:'50%',background:bg,border,display:'flex',alignItems:'center',justifyContent:'center',cursor:canTap?'pointer':'default',opacity:d.isFuture?.3:1,transition:'all .15s',padding:0,fontFamily:'inherit',fontSize:10}}>
-            {d.done?<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#2A4A2A" strokeWidth="2" strokeLinecap="round"><path d="M2.5 6L5 8.5L9.5 3.5"/></svg>
-            :d.isPast?<span style={{color:'rgba(255,100,100,.6)',fontSize:11,fontWeight:600}}>✕</span>
-            :d.isToday?<span style={{color:'#7AAA7A',fontSize:8}}>●</span>
-            :null}
+      {/* Month navigation */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'10px 0 8px'}}>
+        <button onClick={prevMonth} style={{background:'none',border:'none',color:'#7AAA7A',cursor:'pointer',fontSize:16,padding:4}}>‹</button>
+        <div style={{fontSize:13,fontWeight:700,color:'#F5F2EC',fontFamily:'var(--fd)',letterSpacing:'.03em'}}>{MO[month]} {year}</div>
+        <button onClick={nextMonth} style={{background:'none',border:'none',color:'#7AAA7A',cursor:'pointer',fontSize:16,padding:4}}>›</button>
+      </div>
+      {/* Weekday headers */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:4}}>
+        {weekDays.map(w=><div key={w} style={{textAlign:'center',fontSize:9,color:'#7AAA7A',fontWeight:600}}>{w}</div>)}
+      </div>
+      {/* Day cells */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+        {cells.map((c,i)=>{
+          if(!c)return <div key={'e'+i}/>;
+          const canTap=c.inRange&&!c.isFuture;
+          const bg=c.done?'#F5F2EC':c.isToday&&c.inRange?'rgba(122,170,122,.3)':'transparent';
+          const color=c.done?'#2A4A2A':c.inRange?(c.isFuture?'rgba(255,255,255,.25)':'#F5F2EC'):'rgba(255,255,255,.15)';
+          return <button key={c.dateStr} onClick={canTap?()=>onToggleDay&&onToggleDay(c.dateStr,!c.done):undefined}
+            style={{width:'100%',aspectRatio:'1',borderRadius:'50%',background:bg,border:c.isToday&&c.inRange?'1.5px solid #7AAA7A':'1.5px solid transparent',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:canTap?'pointer':'default',padding:0,fontFamily:'inherit',transition:'all .15s'}}>
+            {c.done?<svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="#2A4A2A" strokeWidth="2" strokeLinecap="round"><path d="M2.5 6L5 8.5L9.5 3.5"/></svg>
+            :<span style={{fontSize:11,fontWeight:c.isToday?700:400,color}}>{c.day}</span>}
+            {c.inRange&&c.isPast&&!c.done&&<div style={{width:3,height:3,borderRadius:'50%',background:'rgba(255,100,100,.5)',marginTop:1}}/>}
           </button>;
         })}
       </div>
-
-      {/* Progress line */}
-      {motivation&&<div style={{marginTop:10,fontSize:12,color:'#F5F2EC',display:'flex',alignItems:'center',gap:6}}>
-        <span style={{fontWeight:700}}>{motivation.t}</span>
-        <span style={{color:'#7AAA7A',fontSize:11}}>{motivation.s}</span>
-      </div>}
-
-      {goalSetBy&&<div style={{marginTop:6,fontSize:10,color:'#7AAA7A',fontStyle:'italic'}}>назначено нутрициологом</div>}
+      {/* Motivation */}
+      {mot&&<div style={{textAlign:'center',fontSize:12,color:'#7AAA7A',marginTop:8,fontWeight:600}}>{mot}</div>}
+      {goalSetBy&&<div style={{fontSize:9,color:'rgba(255,255,255,.3)',marginTop:4,textAlign:'center'}}>назначено нутрициологом</div>}
     </div>}
   </div>;
 }
