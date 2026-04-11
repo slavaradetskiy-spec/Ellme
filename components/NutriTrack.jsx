@@ -1396,11 +1396,22 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const [sending, setSending] = useState(false);
   const [resolvedDocId, setResolvedDocId] = useState(docId || null);
   const [otherParty, setOtherParty] = useState({ name: '', photo: null });
+  const [photoBroken, setPhotoBroken] = useState(false);
   // iOS keyboard awareness: track keyboard height via visualViewport so
   // the modal's inner padding-bottom lifts the input above the keyboard.
   const [kbHeight, setKbHeight] = useState(0);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // Auto-grow the textarea as the user types — height follows content
+  // up to a max, like Telegram's composer.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }, [text]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
@@ -1518,13 +1529,19 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // Load the other party's profile (name + avatar) so the header shows
   // who you're talking to. For the client, it's the nutritionist; for
   // the nutritionist, it's the client. If the direct profiles select is
-  // blocked by RLS, the effect below also picks up name/avatar from
-  // incoming message rows as a fallback.
+  // blocked by RLS or photo_url is empty, we also fall back to the
+  // predictable public storage URL and the sender_name from messages.
   useEffect(() => {
     if (!supabase || !currentUserId) return;
     const otherId = currentUserId === clientId ? resolvedDocId : clientId;
     if (!otherId) return;
     let mounted = true;
+    // Default guess: the profile avatar lives at photos/<uid>/avatar.jpg
+    const storageGuess = sbUrl
+      ? sbUrl + '/storage/v1/object/public/photos/' + otherId + '/avatar.jpg'
+      : null;
+    setPhotoBroken(false);
+    setOtherParty(prev => ({ ...prev, photo: prev.photo || storageGuess }));
     supabase.from('profiles')
       .select('id,name,nick,photo_url')
       .eq('id', otherId)
@@ -1533,7 +1550,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         if (!mounted || !data) return;
         setOtherParty(prev => ({
           name: data.nick || data.name || prev.name || '',
-          photo: data.photo_url || prev.photo || null,
+          photo: data.photo_url || prev.photo || storageGuess || null,
         }));
       }, () => {});
     return () => { mounted = false; };
@@ -1638,8 +1655,8 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      {otherParty.photo
-        ? <img src={otherParty.photo} alt="" style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
+      {otherParty.photo && !photoBroken
+        ? <img src={otherParty.photo} alt="" onError={() => setPhotoBroken(true)} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
         : <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
       }
       <div style={{flex:1,minWidth:0}}>
@@ -1712,19 +1729,18 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
-        <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение" rows={1}
+        <textarea ref={textareaRef} value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение" rows={1}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-          style={{flex:1,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.5,maxHeight:120,minHeight:38}}
+          style={{flex:1,minWidth:0,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:16,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.4,maxHeight:120,minHeight:40,overflowY:'auto'}}
           onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
-        <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>
+        {!text.trim() && <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>}
         {text.trim()
-          ? <button disabled={sending} onClick={() => send()} style={{width:38,height:38,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          ? <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
             </button>
-          : <MicButton onResult={(t) => setText(t)} onStart={() => {}} style={{width:38,height:38,borderRadius:'50%',padding:0,background:C.accent,color:'#fff'}}/>
+          : <MicButton onResult={(t) => setText(t)} onStart={() => {}} style={{width:40,height:40,borderRadius:'50%',padding:0,background:C.accent,color:'#fff',flexShrink:0}}/>
         }
       </div>
-      <div style={{textAlign:'center',fontSize:10,color:C.muted,marginTop:6}}>удерживай — аудио · нажми — видео кружок</div>
     </div>
   </div>;
 }
