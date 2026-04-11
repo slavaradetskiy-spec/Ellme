@@ -2154,7 +2154,7 @@ function buildAnalytics(days, meals, waterNorm) {
       return { label: 'Внимание', color: '#B8453A' };
     })() },
     meals: { avg: mealsAvg, unit: '/день', status: status(mealsAvg, 4, 3) },
-    energy: { avg: energyAvg, unit: '/5', status: status(energyAvg, 4, 3) },
+    energy: { avg: energyAvg, unit: '/10', status: status(energyAvg, 7, 5) },
     mood: { avg: moodAvg, unit: '/5', status: status(moodAvg, 4, 3) },
     stress: { avg: stressAvg, unit: '/10', status: status(stressAvg, 4, 7, true) },
     movement: { pct: movementPct, unit: '%', status: status(movementPct, 70, 40) },
@@ -2353,11 +2353,6 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
     {!loading && renderError && <div style={{textAlign:'center',padding:'48px 16px',color:C.danger,fontSize:13,lineHeight:1.5}}>
       Не получилось построить аналитику<br/><span style={{color:C.muted,fontSize:12}}>{renderError}</span>
     </div>}
-
-    {!loading && analytics?.debug && <details open style={{background:C.surface,borderRadius:12,padding:10,marginBottom:12,fontSize:11,color:C.muted}}>
-      <summary style={{cursor:'pointer',fontWeight:600}}>debug: в диапазоне — {analytics.debug.daysCountInRange ?? '?'} / всего для user — {analytics.debug.totalDaysForUser ?? '?'}</summary>
-      <pre style={{margin:'8px 0 0',fontSize:10,whiteSpace:'pre-wrap',wordBreak:'break-all'}}>{JSON.stringify(analytics.debug, null, 2)}</pre>
-    </details>}
 
     {!loading && !renderError && <>
       {/* Tile grid */}
@@ -2732,58 +2727,26 @@ export default function App(){
         const start = new Date();
         start.setDate(start.getDate() - daysBack + 1);
         const startStr = dk(start), endStr = dk(end);
-        console.log('[analytics] query range', startStr, '→', endStr, 'user.id=', user.id);
         const { data: days, error: dayErr } = await supabase.from('diary_days')
           .select('*')
           .eq('user_id', user.id)
           .gte('date', startStr)
           .lte('date', endStr)
           .order('date', { ascending: true });
-        console.log('[analytics] diary_days rows:', days?.length || 0, 'err:', dayErr);
         if (dayErr) console.error('analytics days error:', dayErr);
-
-        // Diagnostic: total rows for this user without the date filter,
-        // and the most recent 3 rows' dates. Tells us whether the range
-        // is wrong vs. RLS blocking vs. no data at all.
-        const { count: totalCount, error: cntErr } = await supabase.from('diary_days')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-        const { data: latestDays } = await supabase.from('diary_days')
-          .select('id,date,water_ml')
-          .eq('user_id', user.id)
-          .order('date', { ascending: false })
-          .limit(5);
-        console.log('[analytics] total rows for user:', totalCount, 'latest:', latestDays);
-
         const dayIds = (days || []).map(d => d.id).filter(Boolean);
         let meals = [];
         if (dayIds.length) {
           const { data: m, error: mealErr } = await supabase.from('meals')
             .select('diary_day_id,meal_type,time,liked')
             .in('diary_day_id', dayIds);
-          console.log('[analytics] meals rows:', m?.length || 0, 'err:', mealErr);
           if (mealErr) console.error('analytics meals error:', mealErr);
           meals = m || [];
         }
-        if (!cancelled) setAnalytics({
-          range: analyticsRange,
-          days: days || [],
-          meals,
-          loading: false,
-          debug: {
-            startStr, endStr,
-            userId: user.id,
-            daysCountInRange: (days || []).length,
-            totalDaysForUser: totalCount,
-            latestDays: (latestDays || []).map(d => ({ date: d.date, water_ml: d.water_ml })),
-            dayErr: dayErr?.message,
-            cntErr: cntErr?.message,
-            sampleDay: days?.[0],
-          },
-        });
+        if (!cancelled) setAnalytics({ range: analyticsRange, days: days || [], meals, loading: false });
       } catch (e) {
         console.error('analytics load error:', e);
-        if (!cancelled) setAnalytics({ range: analyticsRange, days: [], meals: [], loading: false, debug: { error: e.message } });
+        if (!cancelled) setAnalytics({ range: analyticsRange, days: [], meals: [], loading: false });
       }
     })();
 
