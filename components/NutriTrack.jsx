@@ -1760,7 +1760,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
 
     {/* Input toolbar — extends all the way to the bottom edge so no
         background-color strip shows under it on iOS */}
-    <div style={{background:C.surface,padding:`14px 18px calc(env(safe-area-inset-bottom) + 18px)`,flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
+    <div style={{background:C.surface,padding:`14px 18px calc(env(safe-area-inset-bottom) + 23px)`,flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
       <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
         <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
         <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
