@@ -2684,6 +2684,11 @@ export default function App(){
 
   // Navigation stack
   const[screen,setScreen]=useState('home');
+  // Analytics state must be declared BEFORE the useEffect that uses
+  // analyticsRange in its dependency array — otherwise its deps are
+  // evaluated in the Temporal Dead Zone and the whole page crashes.
+  const[analytics,setAnalytics]=useState(null);
+  const[analyticsRange,setAnalyticsRange]=useState('week');
   // Scroll to top on screen change
   useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
 
@@ -2793,9 +2798,6 @@ export default function App(){
   const[chatModal,setChatModal]=useState(null);
   // Doc-side chat list (list of all chats with clients)
   const[showChatList,setShowChatList]=useState(false);
-  // Analytics screen data: { userId, range: 'week'|'month'|'year', days: [...], meals: [...], loading }
-  const[analytics,setAnalytics]=useState(null);
-  const[analyticsRange,setAnalyticsRange]=useState('week');
   // When the user clicks a day-tag in the chat, we close the modal,
   // navigate to that day, and remember the chat context here so a
   // floating "back to chat" button can reopen it.
