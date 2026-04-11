@@ -54,8 +54,7 @@ export async function GET(request) {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    // 3a. Check if profile already exists — preserve existing role to avoid accidental downgrade
-    // (e.g. existing doc clicking Yandex without state=doc would lose their role)
+    // 3a. Check if profile already exists — preserve existing role
     let existingRole = null
     try {
       const { data: existingProf } = await sb.from('profiles').select('role').eq('email', yEmail).maybeSingle()
@@ -63,12 +62,10 @@ export async function GET(request) {
     } catch (e) { /* ignore */ }
     const finalRole = existingRole || role
 
-    const tempPass = crypto.randomUUID()
-
-    // 4. Создаём пользователя (или находим существующего и обновляем пароль)
+    // 4. Создаём пользователя если не существует (БЕЗ пароля — magic link не нуждается)
+    // Если пользователь уже есть — createUser вернёт ошибку/null, ничего не обновляем
     const { data: created } = await sb.auth.admin.createUser({
       email: yEmail,
-      password: tempPass,
       email_confirm: true,
       user_metadata: { name: yName, email: yEmail, role: finalRole, provider: 'yandex' },
     })
@@ -76,7 +73,7 @@ export async function GET(request) {
     let userId = created?.user?.id || null
 
     if (!userId) {
-      // Пользователь уже существует — находим его
+      // Пользователь уже существует — находим его, но НЕ трогаем пароль
       try {
         const { data: prof } = await sb.from('profiles').select('id').eq('email', yEmail).maybeSingle()
         if (prof?.id) userId = prof.id
@@ -97,34 +94,32 @@ export async function GET(request) {
       if (!userId) {
         return NextResponse.redirect(origin + '/?error=auth_failed')
       }
-
-      const { error: upErr } = await sb.auth.admin.updateUserById(userId, { password: tempPass })
-      if (upErr) {
-        return NextResponse.redirect(origin + '/?error=auth_failed')
-      }
     }
 
-    // 4b. Обновляем роль в profiles ТОЛЬКО если state='doc' (явная регистрация как нутрициолог)
-    // и текущая роль — client. НИКОГДА не понижаем doc до client.
+    // 4b. Обновляем роль в profiles ТОЛЬКО если state='doc' и текущая роль — client
     if (role === 'doc' && userId) {
       await sb.from('profiles').update({ role: 'doc' }).eq('id', userId).eq('role', 'client')
     }
-    // Если профиль уже doc — не трогаем (существующий doc сохранит свою роль)
 
-    // 5. Логинимся с временным паролем
-    const signInRes = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
-      body: JSON.stringify({ email: yEmail, password: tempPass }),
+    // 5. Генерируем magic link для входа (не перезаписывает пароль!)
+    const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
+      type: 'magiclink',
+      email: yEmail,
     })
-    const session = await signInRes.json()
 
-    if (!session?.access_token || !session?.refresh_token) {
+    if (linkErr || !linkData?.properties?.hashed_token) {
+      console.error('generateLink error:', linkErr)
       return NextResponse.redirect(origin + '/?error=auth_failed')
     }
 
-    // 6. Редиректим с токенами — Supabase JS подхватит сессию
-    return NextResponse.redirect(origin + '/#access_token=' + session.access_token + '&refresh_token=' + session.refresh_token + '&token_type=bearer&type=magiclink')
+    // 6. Редиректим через Supabase verify endpoint, который создаст сессию
+    // и вернёт пользователя на origin с токенами в хеше
+    const verifyUrl = new URL(SUPABASE_URL + '/auth/v1/verify')
+    verifyUrl.searchParams.set('token', linkData.properties.hashed_token)
+    verifyUrl.searchParams.set('type', 'magiclink')
+    verifyUrl.searchParams.set('redirect_to', origin + '/')
+
+    return NextResponse.redirect(verifyUrl.toString())
 
   } catch (e) {
     console.error('Yandex auth error:', e)
