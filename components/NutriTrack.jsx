@@ -1685,7 +1685,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const displayName = otherParty.name || (iAmClient ? 'Нутрициолог' : (clientName || 'Клиент'));
   const avatarInitial = (displayName || '').trim().slice(0,2).toUpperCase() || '—';
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':'calc(env(safe-area-inset-bottom) + 28px)',overflow:'hidden'}}>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':0,overflow:'hidden'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
@@ -1758,8 +1758,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8}}>{e}</button>)}
     </div>}
 
-    {/* Input toolbar */}
-    <div style={{background:C.surface,padding:'14px 18px 22px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
+    {/* Input toolbar — extends all the way to the bottom edge so no
+        background-color strip shows under it on iOS */}
+    <div style={{background:C.surface,padding:`14px 18px calc(env(safe-area-inset-bottom) + 18px)`,flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
       <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
         <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
         <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
