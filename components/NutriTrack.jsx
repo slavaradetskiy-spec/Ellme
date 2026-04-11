@@ -3150,6 +3150,10 @@ export default function App(){
           </div>
           <span style={{color:C.muted,display:'flex'}}>{I.chev}</span>
         </button>
+        <button onClick={e=>{e.stopPropagation();openChat(c.id, c.nick||c.name, user.id, null)}} style={{position:'relative',background:C.accentSoft,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.accent,display:'flex',boxShadow:C.shadowCard}} title="Открыть чат">
+          {I.chat}
+          {(docChatUnreadByClient[c.id]||0)>0&&<div style={{position:'absolute',top:-3,right:-3,minWidth:16,height:16,borderRadius:8,background:C.danger,color:'#fff',fontSize:9,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{docChatUnreadByClient[c.id]}</div>}
+        </button>
         <button onClick={e=>{e.stopPropagation();setClientMenu(clientMenu===c.id?null:c.id)}} style={{background:C.surface,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.muted,display:'flex',boxShadow:C.shadowCard,fontSize:18,lineHeight:1}}>⋮</button>
         {clientMenu===c.id&&<>
           <div onClick={()=>setClientMenu(null)} style={{position:'fixed',inset:0,zIndex:9998}}/>
