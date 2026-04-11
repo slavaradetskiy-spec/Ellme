@@ -174,13 +174,13 @@ function mkComments(){return{c1:[{id:"cm1",date:dk(ago(1)),text:"Анна, хо�
 
 // ═══ PRIMITIVES ═══
 function TopBar({left,title,subtitle,right,onHome,noBorder}){
-  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:noBorder?'none':`1px solid ${C.surfaceAlt}`}}>
-    <div style={{width:48,display:'flex',justifyContent:'flex-start'}}>{left}</div>
-    <div style={{textAlign:'center',cursor:onHome?'pointer':'default'}} onClick={onHome||undefined}>
-      <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text}}>{title}</div>
+  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:noBorder?'none':`1px solid ${C.surfaceAlt}`,gap:8}}>
+    <div style={{minWidth:48,display:'flex',justifyContent:'flex-start',flexShrink:0}}>{left}</div>
+    <div style={{flex:1,textAlign:'center',cursor:onHome?'pointer':'default',minWidth:0}} onClick={onHome||undefined}>
+      <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{title}</div>
       {subtitle&&<div style={{fontSize:9,color:C.muted,letterSpacing:'.1em',textTransform:'uppercase',marginTop:1}}>{subtitle}</div>}
     </div>
-    <div style={{width:48,display:'flex',justifyContent:'flex-end'}}>{right}</div>
+    <div style={{minWidth:48,display:'flex',justifyContent:'flex-end',flexShrink:0}}>{right}</div>
   </div>;
 }
 
@@ -2453,7 +2453,7 @@ export default function App(){
         }
       }}
     />}
-    <div style={{maxWidth:520,margin:'0 auto',padding:'0 16px 48px'}}>
+    <div style={{maxWidth:520,margin:'0 auto',padding:'0 calc(20px + env(safe-area-inset-left)) 48px calc(20px + env(safe-area-inset-right))',paddingLeft:'max(20px, env(safe-area-inset-left))',paddingRight:'max(20px, env(safe-area-inset-right))'}}>
       {ch}
       {screen==='profile'&&<footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:12,color:C.soft,lineHeight:2}}>
         <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.soft,textDecoration:'none',fontWeight:700}}>radema.ru</a></div>
