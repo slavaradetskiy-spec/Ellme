@@ -1321,23 +1321,40 @@ const fmtChatTime = (iso) => {
 
 // Compact preview for a day: shows the latest tagged message for this date,
 // and a single action button to open the full chat thread.
-// Props: clientId, currentUserId, dateKey, role ('doc'|'client'), clientName, onOpenChat
-function DayChatPreview({ clientId, currentUserId, dateKey, role, clientName, onOpenChat }) {
+// Props: clientId, docId (optional), currentUserId, dateKey, role ('doc'|'client'), clientName, onOpenChat
+function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientName, onOpenChat }) {
   const [latest, setLatest] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeDocId, setActiveDocId] = useState(docId || null);
+
+  // Resolve the active (most recent) doc for this client if not passed.
+  useEffect(() => {
+    if (activeDocId || !supabase || !clientId) return;
+    let mounted = true;
+    supabase.from('doc_clients')
+      .select('doc_id,created_at')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (mounted && data?.doc_id) setActiveDocId(data.doc_id);
+      });
+    return () => { mounted = false; };
+  }, [clientId, activeDocId]);
 
   useEffect(() => {
     if (!supabase || !clientId || !dateKey) { setLoading(false); return; }
     let mounted = true;
     (async () => {
       try {
-        const { data } = await supabase.from('doc_comments')
-          .select('id,sender_id,sender_name,text,date,created_at,kind')
+        let q = supabase.from('doc_comments')
+          .select('id,doc_id,sender_id,sender_name,text,date,created_at,kind')
           .eq('client_id', clientId)
           .eq('date', dateKey)
-          .eq('kind', 'comment')
-          .order('created_at', { ascending: false })
-          .limit(1);
+          .eq('kind', 'comment');
+        if (activeDocId) q = q.eq('doc_id', activeDocId);
+        const { data } = await q.order('created_at', { ascending: false }).limit(1);
         if (mounted) {
           setLatest((data && data[0]) || null);
           setLoading(false);
@@ -1346,19 +1363,22 @@ function DayChatPreview({ clientId, currentUserId, dateKey, role, clientName, on
     })();
 
     // Listen to new messages for this day to refresh preview
-    const channel = supabase.channel('day_preview_' + clientId + '_' + dateKey + '_' + Date.now())
+    const filter = activeDocId ? `doc_id=eq.${activeDocId}` : `client_id=eq.${clientId}`;
+    const channel = supabase.channel('day_preview_' + clientId + '_' + (activeDocId||'?') + '_' + dateKey + '_' + Date.now())
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `client_id=eq.${clientId}` },
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter },
         (payload) => {
           if (!mounted) return;
           const m = payload.new;
           if (m.date !== dateKey || m.kind !== 'comment') return;
+          if (m.client_id !== clientId) return;
+          if (activeDocId && m.doc_id !== activeDocId) return;
           setLatest(prev => (!prev || new Date(m.created_at) >= new Date(prev.created_at)) ? m : prev);
         })
       .subscribe();
 
     return () => { mounted = false; try { supabase.removeChannel(channel); } catch(e){} };
-  }, [clientId, dateKey]); // eslint-disable-line
+  }, [clientId, dateKey, activeDocId]); // eslint-disable-line
 
   const fromDoc = latest && latest.sender_id !== currentUserId && role === 'client';
   const title = role === 'doc'
@@ -1455,50 +1475,66 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     };
   }, []);
 
-  // Resolve docId if not provided (client opens chat, needs to find their doc)
+  // Resolve docId if not provided (client opens chat, needs to find
+  // their doc). We pick the MOST RECENTLY created doc_clients link so
+  // that if the client has history with both an old test account and a
+  // real one, we always land on the real (most recent) nutritionist.
   useEffect(() => {
     if (resolvedDocId || !supabase || !clientId) return;
     let mounted = true;
     (async () => {
       try {
         const { data } = await supabase.from('doc_clients')
-          .select('doc_id').eq('client_id', clientId).limit(1).maybeSingle();
+          .select('doc_id,created_at')
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
         if (mounted && data?.doc_id) setResolvedDocId(data.doc_id);
       } catch (e) { /* ignore */ }
     })();
     return () => { mounted = false; };
   }, [clientId, resolvedDocId]);
 
-  // Load full thread + realtime subscribe
+  // Load full thread + realtime subscribe. Scope by doc_id when known
+  // so old threads from a different (stale) doc account don't leak in.
   useEffect(() => {
     if (!supabase || !clientId) return;
     let mounted = true;
 
     (async () => {
       try {
-        const { data } = await supabase.from('doc_comments')
+        let q = supabase.from('doc_comments')
           .select('*')
           .eq('client_id', clientId)
-          .eq('kind', 'comment')
-          .order('created_at', { ascending: true });
+          .eq('kind', 'comment');
+        if (resolvedDocId) q = q.eq('doc_id', resolvedDocId);
+        const { data } = await q.order('created_at', { ascending: true });
         if (mounted && data) setMessages(data);
       } catch (e) { console.error('load chat:', e); }
     })();
 
-    const channel = supabase.channel('chat_full_' + clientId + '_' + Date.now())
+    const channelFilter = resolvedDocId
+      ? `doc_id=eq.${resolvedDocId}`
+      : `client_id=eq.${clientId}`;
+    const channel = supabase.channel('chat_full_' + clientId + '_' + (resolvedDocId||'?') + '_' + Date.now())
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `client_id=eq.${clientId}` },
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: channelFilter },
         (payload) => {
           if (!mounted) return;
           const m = payload.new;
           if (m.kind !== 'comment') return;
+          if (resolvedDocId && m.doc_id !== resolvedDocId) return;
+          if (m.client_id !== clientId) return;
           setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m]);
         })
       .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'doc_comments', filter: `client_id=eq.${clientId}` },
+        { event: 'UPDATE', schema: 'public', table: 'doc_comments', filter: channelFilter },
         (payload) => {
           if (!mounted) return;
           const m = payload.new;
+          if (resolvedDocId && m.doc_id !== resolvedDocId) return;
+          if (m.client_id !== clientId) return;
           setMessages(prev => prev.map(x => x.id === m.id ? Object.assign({}, x, m) : x));
         })
       .subscribe();
@@ -1507,7 +1543,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       mounted = false;
       try { supabase.removeChannel(channel); } catch (e) {}
     };
-  }, [clientId]); // eslint-disable-line
+  }, [clientId, resolvedDocId]); // eslint-disable-line
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -3007,6 +3043,7 @@ export default function App(){
 
       <DayChatPreview
         clientId={selClient.id}
+        docId={user.id}
         currentUserId={user.id}
         dateKey={key}
         role="doc"
