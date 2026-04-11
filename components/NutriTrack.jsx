@@ -2607,8 +2607,8 @@ export default function App(){
         r.readAsDataURL(file);
       });
     }
-    // Compress image before upload (max 1200px, quality 0.82)
-    const compressed = await compressImage(file, 1200, 0.82);
+    // Compress image before upload (max 1200px, quality 0.80)
+    const compressed = await compressImage(file, 1200, 0.80);
     const ext = file.type === 'image/png' ? 'png' : 'jpg';
     const path = `${pid}/meals/${dateStr}/${mealId}_${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from('photos').upload(path, compressed, {
@@ -2842,7 +2842,8 @@ export default function App(){
     let contentType = file.type || 'application/octet-stream';
     if (file.type && file.type.startsWith('image/')) {
       try {
-        body = await compressImage(file, 1600, 0.85);
+        // Same hard economy as meal photos: max 1200px, 80% JPEG
+        body = await compressImage(file, 1200, 0.80);
         contentType = body.type || 'image/jpeg';
       } catch (e) { /* fall back to original */ }
     }
@@ -3189,7 +3190,7 @@ export default function App(){
 }
 
 // ═══ IMAGE COMPRESSION UTILITY ═══
-function compressImage(file, maxDim = 1200, quality = 0.82) {
+function compressImage(file, maxDim = 1200, quality = 0.80) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
