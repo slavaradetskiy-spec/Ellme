@@ -365,6 +365,7 @@ function MicButton({onResult,onStart,style:st}){
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
   const finalBufferRef=useRef('');
+  const seenFinalsRef=useRef(null);
   const toggle=()=>{
     if(listening&&recRef.current){recRef.current.stop();return;}
     const SR=typeof window!=='undefined'&&(window.SpeechRecognition||window.webkitSpeechRecognition);
@@ -374,24 +375,29 @@ function MicButton({onResult,onStart,style:st}){
     rec.continuous=true;
     rec.interimResults=true;
     finalBufferRef.current='';
+    seenFinalsRef.current=new Set();
     onStart&&onStart();
     rec.onresult=(e)=>{
       let interim='';
-      // Use resultIndex to only process NEW results since last event
-      // This prevents duplication on Android where results may persist
-      for(let i=e.resultIndex;i<e.results.length;i++){
+      // Iterate ALL results — Android often re-fires events with old indices
+      // Dedupe finals by (index + text) key to prevent duplication
+      for(let i=0;i<e.results.length;i++){
         const result=e.results[i];
         const transcript=result[0].transcript;
         if(result.isFinal){
-          finalBufferRef.current+=transcript+' ';
+          const key=i+'::'+transcript.trim();
+          if(!seenFinalsRef.current.has(key)){
+            finalBufferRef.current+=transcript+' ';
+            seenFinalsRef.current.add(key);
+          }
         }else{
           interim+=transcript+' ';
         }
       }
       onResult&&onResult((finalBufferRef.current+interim).trim());
     };
-    rec.onend=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';};
-    rec.onerror=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';};
+    rec.onend=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;};
+    rec.onerror=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;};
     recRef.current=rec;
     rec.start();
     setListening(true);
