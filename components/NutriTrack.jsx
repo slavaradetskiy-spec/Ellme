@@ -2354,8 +2354,8 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
       Не получилось построить аналитику<br/><span style={{color:C.muted,fontSize:12}}>{renderError}</span>
     </div>}
 
-    {!loading && analytics?.debug && <details style={{background:C.surface,borderRadius:12,padding:10,marginBottom:12,fontSize:11,color:C.muted}}>
-      <summary style={{cursor:'pointer',fontWeight:600}}>debug: загружено дней — {analytics.debug.daysCount ?? '?'}</summary>
+    {!loading && analytics?.debug && <details open style={{background:C.surface,borderRadius:12,padding:10,marginBottom:12,fontSize:11,color:C.muted}}>
+      <summary style={{cursor:'pointer',fontWeight:600}}>debug: в диапазоне — {analytics.debug.daysCountInRange ?? '?'} / всего для user — {analytics.debug.totalDaysForUser ?? '?'}</summary>
       <pre style={{margin:'8px 0 0',fontSize:10,whiteSpace:'pre-wrap',wordBreak:'break-all'}}>{JSON.stringify(analytics.debug, null, 2)}</pre>
     </details>}
 
@@ -2741,6 +2741,20 @@ export default function App(){
           .order('date', { ascending: true });
         console.log('[analytics] diary_days rows:', days?.length || 0, 'err:', dayErr);
         if (dayErr) console.error('analytics days error:', dayErr);
+
+        // Diagnostic: total rows for this user without the date filter,
+        // and the most recent 3 rows' dates. Tells us whether the range
+        // is wrong vs. RLS blocking vs. no data at all.
+        const { count: totalCount, error: cntErr } = await supabase.from('diary_days')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+        const { data: latestDays } = await supabase.from('diary_days')
+          .select('id,date,water_ml')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false })
+          .limit(5);
+        console.log('[analytics] total rows for user:', totalCount, 'latest:', latestDays);
+
         const dayIds = (days || []).map(d => d.id).filter(Boolean);
         let meals = [];
         if (dayIds.length) {
@@ -2756,7 +2770,16 @@ export default function App(){
           days: days || [],
           meals,
           loading: false,
-          debug: { startStr, endStr, userId: user.id, daysCount: (days||[]).length, dayErr: dayErr?.message, sampleDay: days?.[0] },
+          debug: {
+            startStr, endStr,
+            userId: user.id,
+            daysCountInRange: (days || []).length,
+            totalDaysForUser: totalCount,
+            latestDays: (latestDays || []).map(d => ({ date: d.date, water_ml: d.water_ml })),
+            dayErr: dayErr?.message,
+            cntErr: cntErr?.message,
+            sampleDay: days?.[0],
+          },
         });
       } catch (e) {
         console.error('analytics load error:', e);
