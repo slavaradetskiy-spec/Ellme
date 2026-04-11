@@ -879,13 +879,16 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     <div style={{textAlign:'center',marginBottom:24}}>
       <input ref={avatarRef} type="file" accept="image/*" onChange={handleAvatar} style={{display:'none'}}/>
       <div style={{position:'relative',width:110,height:110,margin:'0 auto 12px'}}>
-        <div onClick={()=>{if(photo&&onZoom){onZoom(photo)}else{avatarRef.current?.click()}}} style={{width:110,height:110,borderRadius:'50%',background:photo?'transparent':C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,boxShadow:'0 4px 16px rgba(45,95,63,.1)',cursor:'pointer',overflow:'hidden',WebkitTapHighlightColor:'transparent'}}>
-        {photo
-          ? <img src={photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover',pointerEvents:'none'}}/>
-          : <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.2" opacity=".5" style={{pointerEvents:'none'}}><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0112 0v1"/></svg>
-        }
-        </div>
-        <button onClick={()=>avatarRef.current?.click()} style={{position:'absolute',bottom:4,right:4,width:28,height:28,borderRadius:'50%',background:C.accent,border:'2px solid '+C.bg,color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
+        {photo?<button onClick={()=>{if(onZoom)onZoom(photo)}} style={{width:110,height:110,borderRadius:'50%',background:'transparent',border:'none',padding:0,cursor:'zoom-in',overflow:'hidden',display:'block',boxShadow:'0 4px 16px rgba(45,95,63,.1)',WebkitTapHighlightColor:'transparent'}}>
+          <img src={photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover',pointerEvents:'none',display:'block'}}/>
+        </button>:<button onClick={()=>avatarRef.current?.click()} style={{width:110,height:110,borderRadius:'50%',background:C.accentSoft,border:'none',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,boxShadow:'0 4px 16px rgba(45,95,63,.1)'}}>
+          <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.2" opacity=".5"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0112 0v1"/></svg>
+        </button>}
+        {/* Zoom hint overlay */}
+        {photo&&<div style={{position:'absolute',top:6,left:6,width:24,height:24,borderRadius:'50%',background:'rgba(0,0,0,.45)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none',boxShadow:'0 2px 6px rgba(0,0,0,.2)'}}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </div>}
+        <button onClick={()=>avatarRef.current?.click()} style={{position:'absolute',bottom:4,right:4,width:28,height:28,borderRadius:'50%',background:C.accent,border:'2px solid '+C.bg,color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,zIndex:2}}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </button>
       </div>
