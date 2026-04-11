@@ -2049,38 +2049,51 @@ function ReactionPicker({ onPick, active }) {
 // Input: days array of diary_days rows, meals array joined via diary_day_id.
 // Output: { series: { water:[{date,value}], sleep:[...], ... }, summary: {...} }
 function buildAnalytics(days, meals, waterNorm) {
+  const safeDays = Array.isArray(days) ? days : [];
+  const safeMeals = Array.isArray(meals) ? meals : [];
   const byDayId = {};
-  (days || []).forEach(d => { byDayId[d.id] = d.date; });
+  safeDays.forEach(d => { if (d && d.id) byDayId[d.id] = d.date; });
   const mealsByDate = {};
-  (meals || []).forEach(m => {
+  safeMeals.forEach(m => {
+    if (!m) return;
     const date = byDayId[m.diary_day_id];
     if (!date) return;
     if (!mealsByDate[date]) mealsByDate[date] = [];
     mealsByDate[date].push(m);
   });
 
+  // Parse a "HH:MM" or "HH:MM:SS" string to minutes since midnight.
+  const parseTime = (t) => {
+    if (t == null || typeof t !== 'string') return null;
+    const parts = t.split(':');
+    const h = parseInt(parts[0], 10), m = parseInt(parts[1] || '0', 10);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
   // Build a dense series: one entry per day, sorted ASC
   const series = {
     water: [], sleep: [], meals: [], energy: [], mood: [], stress: [], movement: [],
   };
-  (days || []).forEach(d => {
-    series.water.push({ date: d.date, value: d.water_ml || 0 });
-    // Sleep hours computed from bed/wake
+  safeDays.forEach(d => {
+    if (!d) return;
+    series.water.push({ date: d.date, value: Number(d.water_ml) || 0 });
+    // Sleep hours computed from bed/wake (handles midnight wrap)
     let hours = null;
-    if (d.sleep_bed && d.sleep_wake) {
-      const [bH,bM] = d.sleep_bed.split(':').map(Number);
-      const [wH,wM] = d.sleep_wake.split(':').map(Number);
-      let mins = (wH*60+wM) - (bH*60+bM);
-      if (mins < 0) mins += 24*60;
+    const bedMin = parseTime(d.sleep_bed);
+    const wakeMin = parseTime(d.sleep_wake);
+    if (bedMin != null && wakeMin != null) {
+      let mins = wakeMin - bedMin;
+      if (mins < 0) mins += 24 * 60;
       hours = mins / 60;
     }
     series.sleep.push({ date: d.date, value: hours });
     series.meals.push({ date: d.date, value: (mealsByDate[d.date] || []).length });
-    series.energy.push({ date: d.date, value: d.energy || null });
-    series.mood.push({ date: d.date, value: d.mood != null ? d.mood + 1 : null }); // mood is 0-4, shift to 1-5
-    series.stress.push({ date: d.date, value: d.stress_level || null });
+    series.energy.push({ date: d.date, value: d.energy != null ? Number(d.energy) : null });
+    series.mood.push({ date: d.date, value: d.mood != null ? Number(d.mood) + 1 : null }); // mood 0-4 → 1-5
+    series.stress.push({ date: d.date, value: d.stress_level != null ? Number(d.stress_level) : null });
     // Movement is a free-text field; count as "active day" = 1 if filled
-    series.movement.push({ date: d.date, value: d.movement ? 1 : 0 });
+    series.movement.push({ date: d.date, value: (typeof d.movement === 'string' && d.movement.trim()) ? 1 : 0 });
   });
 
   const avg = (arr) => {
@@ -2222,9 +2235,20 @@ const fmt1 = (v) => v == null || isNaN(v) ? '—' : (Math.round(v*10)/10).toStri
 // Main analytics screen. Shared between client and nutritionist (their own data).
 function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm }) {
   const [activeMetric, setActiveMetric] = useState('water');
+  const [renderError, setRenderError] = useState(null);
 
   const loading = !analytics || analytics.loading;
-  const { summary, series } = (!loading && analytics ? buildAnalytics(analytics.days, analytics.meals, waterNorm || 2200) : { summary: null, series: null });
+  let summary = null, series = null;
+  if (!loading && analytics) {
+    try {
+      const r = buildAnalytics(analytics.days, analytics.meals, waterNorm || 2200);
+      summary = r.summary;
+      series = r.series;
+    } catch (e) {
+      console.error('buildAnalytics error:', e);
+      if (!renderError) setTimeout(() => setRenderError(e.message || 'Ошибка построения аналитики'), 0);
+    }
+  }
 
   const METRICS = [
     { key: 'water',   icon: '💧', label: 'Вода',        color: '#2D5F3F', norm: waterNorm||2200 },
@@ -2240,12 +2264,15 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
     if (!summary) return '—';
     const s = summary[key];
     if (!s) return '—';
-    if (key === 'water') return s.avg.toLocaleString('ru');
+    if (key === 'water') {
+      const n = Number(s.avg);
+      return (isNaN(n) ? 0 : n).toLocaleString('ru');
+    }
     if (key === 'sleep') return fmt1(s.avg);
     if (key === 'meals') return fmt1(s.avg);
     if (key === 'energy' || key === 'mood') return fmt1(s.avg);
     if (key === 'stress') return fmt1(s.avg);
-    if (key === 'movement') return s.pct + '%';
+    if (key === 'movement') return (s.pct != null ? s.pct : 0) + '%';
     return '—';
   };
   const tileUnit = (key) => {
@@ -2265,25 +2292,33 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
 
   // Insights text per metric
   const insight = (() => {
-    if (!summary || !series) return '';
-    const s = summary[activeMetric];
-    const arr = series[activeMetric] || [];
-    const valid = arr.filter(x => x.value != null && !isNaN(x.value));
-    if (!valid.length) return 'Недостаточно данных. Заполни дневник за несколько дней, чтобы увидеть статистику.';
-    if (activeMetric === 'water') {
-      const normVal = waterNorm || 2200;
-      return `В среднем ${s.avg.toLocaleString('ru')} мл/день — это ${s.pct}% от нормы (${normVal} мл). Лучший день: ${valid.reduce((a,b)=>a.value>b.value?a:b).value.toLocaleString('ru')} мл.`;
+    try {
+      if (!summary || !series) return '';
+      const s = summary[activeMetric];
+      if (!s) return '';
+      const arr = series[activeMetric] || [];
+      const valid = arr.filter(x => x.value != null && !isNaN(x.value));
+      if (!valid.length) return 'Недостаточно данных. Заполни дневник за несколько дней, чтобы увидеть статистику.';
+      if (activeMetric === 'water') {
+        const normVal = waterNorm || 2200;
+        const avgN = Number(s.avg) || 0;
+        const bestVal = Number(valid.reduce((a,b)=>a.value>b.value?a:b).value) || 0;
+        return `В среднем ${avgN.toLocaleString('ru')} мл/день — ${s.pct || 0}% нормы (${normVal} мл). Лучший день: ${bestVal.toLocaleString('ru')} мл.`;
+      }
+      if (activeMetric === 'sleep') {
+        return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
+      }
+      if (activeMetric === 'meals') {
+        return `В среднем ${fmt1(s.avg)} приёмов пищи в день из ${arr.length} дней наблюдения.`;
+      }
+      if (activeMetric === 'movement') {
+        return `Активность заполнена в ${s.pct || 0}% дней за период.`;
+      }
+      return `В среднем ${fmt1(s.avg)}${s.unit||''}.`;
+    } catch (e) {
+      console.error('insight error:', e);
+      return '';
     }
-    if (activeMetric === 'sleep') {
-      return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
-    }
-    if (activeMetric === 'meals') {
-      return `В среднем ${fmt1(s.avg)} приёмов пищи в день из ${arr.length} дней наблюдения.`;
-    }
-    if (activeMetric === 'movement') {
-      return `Активность заполнена в ${s.pct}% дней за период.`;
-    }
-    return `В среднем ${fmt1(s.avg)}${s.unit||''}.`;
   })();
 
   return <div style={{animation:'slideRight .3s ease'}}>
@@ -2298,7 +2333,11 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
 
     {loading && <div style={{textAlign:'center',padding:'48px 0',color:C.muted,fontSize:14}}>Загружаем данные...</div>}
 
-    {!loading && <>
+    {!loading && renderError && <div style={{textAlign:'center',padding:'48px 16px',color:C.danger,fontSize:13,lineHeight:1.5}}>
+      Не получилось построить аналитику<br/><span style={{color:C.muted,fontSize:12}}>{renderError}</span>
+    </div>}
+
+    {!loading && !renderError && <>
       {/* Tile grid */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
         {METRICS.map(m => <MetricTile
@@ -2648,15 +2687,45 @@ export default function App(){
   // Scroll to top on screen change
   useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
 
-  // Load analytics when screen switches to 'analytics' or range changes
+  // Load analytics when screen switches to 'analytics' or range changes.
+  // The query is inlined here (not a separate helper) to avoid any
+  // subtle forward-reference issues in the function component body.
   useEffect(() => {
-    if (screen !== 'analytics' || !user?.id) return;
+    if (screen !== 'analytics' || !user?.id || !supabase) return;
+    let cancelled = false;
     const daysBack = analyticsRange === 'week' ? 7 : analyticsRange === 'month' ? 30 : 365;
-    setAnalytics(prev => ({ range: analyticsRange, days: [], meals: [], loading: true }));
-    loadAnalyticsRange(user.id, daysBack).then(({ days, meals }) => {
-      setAnalytics({ range: analyticsRange, days, meals, loading: false });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setAnalytics({ range: analyticsRange, days: [], meals: [], loading: true });
+
+    (async () => {
+      try {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(start.getDate() - daysBack + 1);
+        const startStr = dk(start), endStr = dk(end);
+        const { data: days, error: dayErr } = await supabase.from('diary_days')
+          .select('*')
+          .eq('user_id', user.id)
+          .gte('date', startStr)
+          .lte('date', endStr)
+          .order('date', { ascending: true });
+        if (dayErr) console.error('analytics days error:', dayErr);
+        const dayIds = (days || []).map(d => d.id).filter(Boolean);
+        let meals = [];
+        if (dayIds.length) {
+          const { data: m, error: mealErr } = await supabase.from('meals')
+            .select('diary_day_id,meal_type,time,liked')
+            .in('diary_day_id', dayIds);
+          if (mealErr) console.error('analytics meals error:', mealErr);
+          meals = m || [];
+        }
+        if (!cancelled) setAnalytics({ range: analyticsRange, days: days || [], meals, loading: false });
+      } catch (e) {
+        console.error('analytics load error:', e);
+        if (!cancelled) setAnalytics({ range: analyticsRange, days: [], meals: [], loading: false });
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, [screen, analyticsRange, user?.id]);
 
   // Pull-to-refresh (mobile)
@@ -3061,34 +3130,6 @@ export default function App(){
         _dayId: day.id,
       };
     } catch(e) { return {}; }
-  };
-
-  // ── Database: load a range of days + their meals for analytics ──
-  // Returns { days: [diary_days...], meals: [...] } filtered to the
-  // requested date range (inclusive). Meals are grouped by diary_day_id.
-  const loadAnalyticsRange = async (pid, daysBack) => {
-    if (!supabase || !pid) return { days: [], meals: [] };
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - daysBack + 1);
-    const startStr = dk(start), endStr = dk(end);
-    try {
-      const { data: days } = await supabase.from('diary_days')
-        .select('*')
-        .eq('user_id', pid)
-        .gte('date', startStr)
-        .lte('date', endStr)
-        .order('date', { ascending: true });
-      const dayIds = (days || []).map(d => d.id);
-      let meals = [];
-      if (dayIds.length) {
-        const { data: m } = await supabase.from('meals')
-          .select('diary_day_id,meal_type,description,time,liked')
-          .in('diary_day_id', dayIds);
-        meals = m || [];
-      }
-      return { days: days || [], meals };
-    } catch (e) { console.error('loadAnalyticsRange:', e); return { days: [], meals: [] }; }
   };
 
   // ── Database: save day ──
