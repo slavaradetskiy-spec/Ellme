@@ -909,13 +909,13 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
         <div style={{flex:1}}>{inp('Рост, см',height,setHeight)}</div>
         <div style={{flex:1}}>{inp('Вес, кг',weight,setWeight)}</div>
       </div>
-      {!isDoc&&<div style={{marginBottom:16}}>
+      <div style={{marginBottom:16}}>
         <Lbl>Дневная норма воды, мл</Lbl>
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           <input value={wn} onChange={e=>setWn(e.target.value)} type="number" style={{flex:1,padding:'12px 16px',borderRadius:14,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',background:C.surface,color:C.text}} onFocus={e=>e.target.style.borderColor=C.accent} onBlur={e=>{e.target.style.borderColor=C.tileBorder;const v=parseInt(wn);if(v>0)onWaterNormChange(v)}}/>
           <span style={{fontSize:13,color:C.muted,whiteSpace:'nowrap'}}>мл / день</span>
         </div>
-      </div>}
+      </div>
       {!isDoc&&<>{inp('Основной запрос',request,setRequest)}</>}
       <button onClick={saveProfile} style={{width:'100%',padding:'14px',borderRadius:14,border:'none',background:saved?C.accentSoft:C.accent,color:saved?C.accent:'#fff',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:4,transition:'all .3s',boxShadow:saved?'none':'0 2px 8px rgba(45,95,63,.2)'}}>
         {saved?'Сохранено ✓':'Сохранить'}
