@@ -1395,8 +1395,26 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const [showEmoji, setShowEmoji] = useState(false);
   const [sending, setSending] = useState(false);
   const [resolvedDocId, setResolvedDocId] = useState(docId || null);
+  const [otherParty, setOtherParty] = useState({ name: clientName || '', photo: null });
+  // iOS keyboard awareness: track visible viewport height so the modal
+  // can shrink when the keyboard opens instead of hiding the input
+  // behind it. Falls back to 100vh on browsers without visualViewport.
+  const [viewportHeight, setViewportHeight] = useState(null);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => setViewportHeight(vv.height);
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
 
   // Resolve docId if not provided (client opens chat, needs to find their doc)
   useEffect(() => {
@@ -1468,6 +1486,28 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       .neq('sender_id', currentUserId)
       .then(()=>{}, ()=>{});
   }, [clientId, currentUserId]);
+
+  // Load the other party's profile (name + avatar) so the header shows
+  // who you're talking to. For the client, it's the nutritionist; for
+  // the nutritionist, it's the client.
+  useEffect(() => {
+    if (!supabase || !currentUserId) return;
+    const otherId = currentUserId === clientId ? resolvedDocId : clientId;
+    if (!otherId) return;
+    let mounted = true;
+    supabase.from('profiles')
+      .select('id,name,nick,photo_url')
+      .eq('id', otherId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted || !data) return;
+        setOtherParty({
+          name: data.nick || data.name || clientName || '',
+          photo: data.photo_url || null,
+        });
+      });
+    return () => { mounted = false; };
+  }, [currentUserId, clientId, resolvedDocId]); // eslint-disable-line
 
   const send = async (overrides = {}) => {
     const t = (overrides.text !== undefined ? overrides.text : text).trim();
@@ -1544,23 +1584,34 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     grouped.push({ msg: m, key: m.id });
   });
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}}>
+  const dismissKeyboard = () => {
+    if (typeof document === 'undefined') return;
+    const el = document.activeElement;
+    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) el.blur();
+  };
+  const iAmClient = currentUserId === clientId;
+  const partyLabel = iAmClient ? 'нутрициолог' : 'клиент';
+  const displayName = otherParty.name || clientName || 'Чат';
+  const avatarInitial = (displayName || '').trim().slice(0,2).toUpperCase() || '—';
+
+  return <div style={{position:'fixed',left:0,right:0,top:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',height:viewportHeight?viewportHeight+'px':'100vh',overflow:'hidden'}}>
     {/* Header */}
-    <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
-      <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
+      <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
+      {otherParty.photo
+        ? <img src={otherParty.photo} alt="" style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
+        : <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
+      }
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{clientName || 'Чат'}</div>
-        <div style={{fontSize:11,color:C.muted}}>нутрициолог · онлайн</div>
-      </div>
-      <div style={{width:40,height:40,borderRadius:'50%',background:C.accent,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,flexShrink:0}}>
-        {(clientName || '').slice(0,2).toUpperCase() || 'МС'}
+        <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayName}</div>
+        <div style={{fontSize:11,color:C.muted}}>{partyLabel} · онлайн</div>
       </div>
     </div>
 
     {/* Messages */}
-    <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'16px',display:'flex',flexDirection:'column',gap:4}}>
+    <div ref={scrollRef} onTouchStart={dismissKeyboard} onMouseDown={dismissKeyboard} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px',display:'flex',flexDirection:'column',gap:4,minHeight:0}}>
       {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
         if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
@@ -1570,7 +1621,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         const reactionEntries = Object.entries(reactions).filter(([,users]) => Array.isArray(users) && users.length > 0);
         const atts = Array.isArray(m.attachments) ? m.attachments : [];
         return <div key={g.key} style={{display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',marginBottom:8}}>
-          <div style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard}}>
+          <div style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere'}}>
             {atts.map((a, i) => a.type === 'image'
               ? <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>
               : <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
@@ -2773,7 +2824,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.chat} badge={clientChatUnread} onClick={()=>openChat(user.id, user.name||'Нутрициолог', null, null)}/><IcoBtn icon={I.support} onClick={openSupport}/></div>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+    <TopBar left={<IcoBtn icon={I.chat} badge={clientChatUnread} onClick={()=>openChat(user.id, user.name||'Нутрициолог', null, null)}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <WeeklyGoalWidget goal={user.weeklyGoal} goalDays={user.weeklyGoalDays} goalStarted={user.weeklyGoalStarted} goalSetBy={user.weeklyGoalSetBy} daysDone={goalDays} onToggleDay={toggleGoalDay}/>
