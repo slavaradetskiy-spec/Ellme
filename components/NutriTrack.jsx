@@ -97,6 +97,7 @@ const I={
   link:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
   logout:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
   support:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>,
+  chat:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>,
   fork:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>,
   stool:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 2h6l1 7H8L9 2z"/><path d="M8 9l-2 13M16 9l2 13M12 9v13"/></svg>,
   steth:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4.8 2.3A.3.3 0 105 2H4a2 2 0 00-2 2v5a6 6 0 006 6 6 6 0 006-6V4a2 2 0 00-2-2h-1a.2.2 0 10.3.3"/><path d="M8 15v1a6 6 0 006 6 6 6 0 006-6v-4"/><circle cx="20" cy="10" r="2"/></svg>,
@@ -2017,6 +2018,10 @@ export default function App(){
   const[showNotif,setShowNotif]=useState(false);
   const[docUnread,setDocUnread]=useState(0);
   const[clientUnread,setClientUnread]=useState(0);
+  // Unread chat messages (kind='comment' only, for the chat-icon badge)
+  const[clientChatUnread,setClientChatUnread]=useState(0);
+  // Per-client unread count for the doc, keyed by client_id
+  const[docChatUnreadByClient,setDocChatUnreadByClient]=useState({});
   const[inv,setInv]=useState(false);
   const[invCode,setInvCode]=useState('');
   const[copied,setCopied]=useState(false);
@@ -2127,6 +2132,19 @@ export default function App(){
           .eq('read',false)
           .neq('sender_id',user.id);
         if(mounted)setDocUnread(count||0);
+        // Also load per-client chat unread (kind='comment') so we can show a
+        // badge on the chat icon when the doc is inside a specific client.
+        const{data:rows}=await supabase.from('doc_comments')
+          .select('client_id')
+          .eq('doc_id',user.id)
+          .eq('read',false)
+          .eq('kind','comment')
+          .neq('sender_id',user.id);
+        if(mounted){
+          const map={};
+          (rows||[]).forEach(r=>{map[r.client_id]=(map[r.client_id]||0)+1});
+          setDocChatUnreadByClient(map);
+        }
       }catch(e){}
     };
     loadCount();
@@ -2148,6 +2166,14 @@ export default function App(){
           .eq('read',false)
           .neq('sender_id',user.id);
         if(mounted)setClientUnread(count||0);
+        // Chat-only unread (kind='comment')
+        const{count:chatCount}=await supabase.from('doc_comments')
+          .select('id',{count:'exact',head:true})
+          .eq('client_id',user.id)
+          .eq('read',false)
+          .eq('kind','comment')
+          .neq('sender_id',user.id);
+        if(mounted)setClientChatUnread(chatCount||0);
       }catch(e){}
     };
     loadCount();
@@ -2747,7 +2773,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+    <TopBar left={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.chat} badge={clientChatUnread} onClick={()=>openChat(user.id, user.name||'Нутрициолог', null, null)}/><IcoBtn icon={I.support} onClick={openSupport}/></div>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <WeeklyGoalWidget goal={user.weeklyGoal} goalDays={user.weeklyGoalDays} goalStarted={user.weeklyGoalStarted} goalSetBy={user.weeklyGoalSetBy} daysDone={goalDays} onToggleDay={toggleGoalDay}/>
@@ -2815,7 +2841,7 @@ export default function App(){
   if(isDoc&&screen==='clientView'&&selClient){
     const cd=getDay(selClient.id),cm=cd.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('profile');window.scrollTo(0,0)}}/>}/>
+      <TopBar left={<div style={{display:'flex',gap:4,alignItems:'center'}}><BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/><IcoBtn icon={I.chat} badge={docChatUnreadByClient[selClient.id]||0} onClick={()=>openChat(selClient.id, selClient.nick||selClient.name, user.id, null)}/></div>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('profile');window.scrollTo(0,0)}}/>}/>
       <div style={{background:C.surface,borderRadius:16,padding:'12px 16px',marginBottom:12,boxShadow:C.shadowCard,display:'flex',alignItems:'center',gap:12}}>
         <div style={{position:'relative',flexShrink:0}}>
           {selClient.photo?<img src={selClient.photo} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>}
