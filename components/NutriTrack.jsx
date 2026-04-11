@@ -1443,6 +1443,139 @@ function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientN
   </div>;
 }
 
+// Full-screen chat list for the nutritionist. Shows a row per client
+// with avatar, name, last message preview and unread count, sorted by
+// most recent activity. Tap a row → opens ChatModal for that client.
+// Props: docId, clients, unreadByClient, onOpenChat(client), onClose
+function ChatListModal({ docId, clients, unreadByClient, onOpenChat, onClose }) {
+  const [latestMap, setLatestMap] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  // Lock body scroll while open (same trick as ChatModal)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const scrollY = window.scrollY || 0;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      body.style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !docId) { setLoading(false); return; }
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('doc_comments')
+          .select('id,client_id,sender_id,sender_name,text,created_at,date,attachments')
+          .eq('doc_id', docId)
+          .eq('kind', 'comment')
+          .order('created_at', { ascending: false })
+          .limit(300);
+        if (!mounted) return;
+        const map = {};
+        (data || []).forEach(m => {
+          if (!map[m.client_id]) map[m.client_id] = m;
+        });
+        setLatestMap(map);
+        setLoading(false);
+      } catch (e) { if (mounted) setLoading(false); }
+    })();
+
+    // Live-refresh on new messages
+    const channel = supabase.channel('chat_list_' + docId + '_' + Date.now())
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `doc_id=eq.${docId}` },
+        (payload) => {
+          const m = payload.new;
+          if (m.kind !== 'comment') return;
+          setLatestMap(prev => {
+            const cur = prev[m.client_id];
+            if (cur && new Date(cur.created_at) >= new Date(m.created_at)) return prev;
+            return Object.assign({}, prev, { [m.client_id]: m });
+          });
+        })
+      .subscribe();
+
+    return () => { mounted = false; try { supabase.removeChannel(channel); } catch(e){} };
+  }, [docId]);
+
+  // Sort clients by most recent message time (no messages → joined date)
+  const sortedClients = [...clients].sort((a, b) => {
+    const ma = latestMap[a.id];
+    const mb = latestMap[b.id];
+    const ta = ma ? new Date(ma.created_at).getTime() : (a.joined ? new Date(a.joined).getTime() : 0);
+    const tb = mb ? new Date(mb.created_at).getTime() : (b.joined ? new Date(b.joined).getTime() : 0);
+    return tb - ta;
+  });
+
+  const previewText = (m) => {
+    if (!m) return '';
+    if (m.text) return m.text;
+    const atts = Array.isArray(m.attachments) ? m.attachments : [];
+    if (atts.length > 0) return atts[0].type === 'image' ? '📷 Фото' : '📎 Файл';
+    return '';
+  };
+
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',overflow:'hidden'}}>
+    {/* Header */}
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
+      <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:18,fontWeight:600,color:C.text,fontFamily:'var(--fd)'}}>Чаты</div>
+        <div style={{fontSize:11,color:C.muted}}>{clients.length} клиент{clients.length===1?'':clients.length>=2&&clients.length<=4?'а':'ов'}</div>
+      </div>
+    </div>
+
+    {/* List */}
+    <div style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'8px 14px 20px',minHeight:0}}>
+      {loading && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Загрузка...</div>}
+      {!loading && sortedClients.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет клиентов</div>}
+      {!loading && sortedClients.map(c => {
+        const last = latestMap[c.id];
+        const unread = unreadByClient[c.id] || 0;
+        const lastMine = last && last.sender_id === docId;
+        const preview = previewText(last);
+        return <button key={c.id} onClick={() => onOpenChat(c)} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'12px 14px',borderRadius:16,border:'none',background:C.surface,cursor:'pointer',fontFamily:'inherit',textAlign:'left',marginBottom:8,boxShadow:C.shadowCard,transition:'transform .15s'}}
+          onMouseDown={e=>e.currentTarget.style.transform='scale(.98)'}
+          onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}
+          onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+          <div style={{position:'relative',flexShrink:0}}>
+            {c.photo
+              ? <img src={c.photo} alt="" style={{width:48,height:48,borderRadius:'50%',objectFit:'cover',background:C.surfaceAlt}}/>
+              : <div style={{width:48,height:48,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,fontWeight:700,fontFamily:'var(--fd)'}}>{(c.nick||c.name||'').charAt(0).toUpperCase()}</div>
+            }
+            {c.isOnline && <div style={{position:'absolute',bottom:0,right:0,width:12,height:12,borderRadius:'50%',background:'#34C759',border:'2px solid '+C.surface}}/>}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:8}}>
+              <div style={{fontSize:15,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.nick||c.name}</div>
+              {last && <div style={{fontSize:11,color:C.muted,flexShrink:0}}>{fmtChatTime(last.created_at)}</div>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginTop:2}}>
+              <div style={{flex:1,fontSize:13,color:unread>0?C.text:C.soft,fontWeight:unread>0?500:400,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {last ? (lastMine?'Вы: ':'') + preview : <span style={{color:C.muted,fontStyle:'italic'}}>Нет сообщений</span>}
+              </div>
+              {unread > 0 && <div style={{flexShrink:0,minWidth:20,height:20,borderRadius:10,background:C.accent,color:'#fff',fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 6px'}}>{unread}</div>}
+            </div>
+          </div>
+        </button>;
+      })}
+    </div>
+  </div>;
+}
+
 // Full-screen chat modal. Single thread per (doc, client) pair.
 // Props: clientId, docId (nullable — resolved on demand), currentUserId, currentUserName,
 //        clientName, initialTagDate, onClose, uploadAttachment(file)
@@ -2207,6 +2340,8 @@ export default function App(){
   const[copied,setCopied]=useState(false);
   // Chat modal: {clientId, docId, clientName, tagDate} | null
   const[chatModal,setChatModal]=useState(null);
+  // Doc-side chat list (list of all chats with clients)
+  const[showChatList,setShowChatList]=useState(false);
   // When the user clicks a day-tag in the chat, we close the modal,
   // navigate to that day, and remember the chat context here so a
   // floating "back to chat" button can reopen it.
@@ -2877,6 +3012,13 @@ export default function App(){
     </div>}
     {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
     {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}
+    {showChatList && user?.role==='doc' && <ChatListModal
+      docId={user.id}
+      clients={clients.filter(c=>c.status==='active')}
+      unreadByClient={docChatUnreadByClient}
+      onClose={()=>setShowChatList(false)}
+      onOpenChat={(c)=>{setShowChatList(false);openChat(c.id, c.nick||c.name, user.id, null);}}
+    />}
     {chatModal && <ChatModal
       clientId={chatModal.clientId}
       docId={chatModal.docId}
@@ -3115,7 +3257,7 @@ export default function App(){
     const invLink=invCode?((typeof window!=='undefined'?window.location.origin:'https://ellme.ru')+'/?invite='+invCode):'';
 
     return shell(<>
-      <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+      <TopBar left={<IcoBtn icon={I.chat} badge={Object.values(docChatUnreadByClient).reduce((s,n)=>s+n,0)} onClick={()=>setShowChatList(true)}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
 
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
@@ -3149,10 +3291,6 @@ export default function App(){
             <div style={{fontSize:11,color:c.isOnline?'#34C759':C.muted,marginTop:1}}>{c.isOnline?'онлайн':c.lastSeen?formatLastSeen(c.lastSeen):daysBetween(c.joined,new Date())+' дней'}</div>
           </div>
           <span style={{color:C.muted,display:'flex'}}>{I.chev}</span>
-        </button>
-        <button onClick={e=>{e.stopPropagation();openChat(c.id, c.nick||c.name, user.id, null)}} style={{position:'relative',background:C.accentSoft,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.accent,display:'flex',boxShadow:C.shadowCard}} title="Открыть чат">
-          {I.chat}
-          {(docChatUnreadByClient[c.id]||0)>0&&<div style={{position:'absolute',top:-3,right:-3,minWidth:16,height:16,borderRadius:8,background:C.danger,color:'#fff',fontSize:9,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{docChatUnreadByClient[c.id]}</div>}
         </button>
         <button onClick={e=>{e.stopPropagation();setClientMenu(clientMenu===c.id?null:c.id)}} style={{background:C.surface,border:'none',cursor:'pointer',padding:10,borderRadius:12,color:C.muted,display:'flex',boxShadow:C.shadowCard,fontSize:18,lineHeight:1}}>⋮</button>
         {clientMenu===c.id&&<>
