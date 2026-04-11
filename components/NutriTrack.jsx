@@ -1388,7 +1388,7 @@ function DayChatPreview({ clientId, currentUserId, dateKey, role, clientName, on
 // Full-screen chat modal. Single thread per (doc, client) pair.
 // Props: clientId, docId (nullable — resolved on demand), currentUserId, currentUserName,
 //        clientName, initialTagDate, onClose, uploadAttachment(file)
-function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName, initialTagDate, onClose, uploadAttachment }) {
+function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName, initialTagDate, onClose, uploadAttachment, onTagClick }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [tagDate, setTagDate] = useState(initialTagDate || null);
@@ -1666,7 +1666,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     </div>
 
     {/* Messages */}
-    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px',display:'flex',flexDirection:'column',gap:4,minHeight:0}}>
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0}}>
       {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
         if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
@@ -1684,10 +1684,10 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
                   <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
                 </div>)}
             {m.text && <div style={{whiteSpace:'pre-wrap'}}>{m.text}</div>}
-            {m.date && <div style={{display:'inline-flex',alignItems:'center',gap:4,marginTop:6,padding:'3px 8px',borderRadius:10,background:isMine?'rgba(255,255,255,.18)':C.accentSoft,color:isMine?'#fff':C.accent,fontSize:10,fontWeight:600}}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              {fmtDateTag(m.date)}
-            </div>}
+            {m.date && <button type="button" onClick={() => onTagClick && onTagClick(m.date)} style={{display:'inline-flex',alignItems:'center',gap:4,marginTop:6,padding:'4px 9px',borderRadius:10,background:isMine?'rgba(255,255,255,.18)':C.accentSoft,color:isMine?'#fff':C.accent,fontSize:11,fontWeight:600,border:'none',cursor:'pointer',fontFamily:'inherit',textDecoration:'underline',textUnderlineOffset:2}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              {fmtDateTag(m.date)} →
+            </button>}
           </div>
           <div style={{fontSize:10,color:C.muted,marginTop:3,padding:'0 4px'}}>{fmtChatTime(m.created_at)}</div>
           {/* Reactions — always show row for doc messages so clients can react;
@@ -1723,8 +1723,8 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     </div>}
 
     {/* Input toolbar */}
-    <div style={{background:C.surface,padding:'10px 12px 12px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
-      <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+    <div style={{background:C.surface,padding:'12px 18px 16px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
+      <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
         <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
         <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
@@ -2132,6 +2132,10 @@ export default function App(){
   const[copied,setCopied]=useState(false);
   // Chat modal: {clientId, docId, clientName, tagDate} | null
   const[chatModal,setChatModal]=useState(null);
+  // When the user clicks a day-tag in the chat, we close the modal,
+  // navigate to that day, and remember the chat context here so a
+  // floating "back to chat" button can reopen it.
+  const[returnToChat,setReturnToChat]=useState(null);
 
   // ═══ SAVE TIMERS (per-pid to avoid cross-client data loss) ═══
   const saveTimers=useRef({});
@@ -2775,6 +2779,7 @@ export default function App(){
 
   // Helper to open the chat modal with the given target
   const openChat = (targetClientId, targetClientName, targetDocId, tagDate) => {
+    setReturnToChat(null);
     setChatModal({
       clientId: targetClientId,
       docId: targetDocId || null,
@@ -2805,7 +2810,38 @@ export default function App(){
       initialTagDate={chatModal.tagDate}
       onClose={()=>setChatModal(null)}
       uploadAttachment={uploadChatAttachment}
+      onTagClick={(tagDate)=>{
+        if(!tagDate)return;
+        const ps=tagDate.split('-');
+        if(ps.length>=3){
+          const d=new Date(+ps[0],+ps[1]-1,+ps[2]);
+          if(!isNaN(d))setDate(d);
+        }
+        // Remember how to reopen the chat from the day view
+        setReturnToChat({
+          clientId:chatModal.clientId,
+          docId:chatModal.docId,
+          clientName:chatModal.clientName,
+          tagDate:tagDate,
+        });
+        setChatModal(null);
+        // Make sure the right screen is visible (client stays on home;
+        // doc needs to be on the specific client view)
+        if(user?.role==='doc'){
+          const cl=clients.find(c=>c.id===chatModal.clientId);
+          if(cl){setSelClient(cl);setScreen('clientView');}
+        }else{
+          setScreen('home');setSelMeal(null);
+        }
+      }}
     />}
+    {/* Floating "back to chat" button shown after navigating from a tag */}
+    {returnToChat && !chatModal && <button
+      onClick={()=>{setChatModal(returnToChat);setReturnToChat(null);}}
+      style={{position:'fixed',right:16,bottom:'calc(20px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 14l-4-4 4-4M5 10h11a4 4 0 014 4v0a4 4 0 01-4 4H9"/></svg>
+      Вернуться в чат
+    </button>}
     {renaming && <div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
       <div onClick={()=>setRenaming(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
       <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(400px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
