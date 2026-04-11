@@ -1319,11 +1319,13 @@ const fmtChatTime = (iso) => {
   catch(e) { return ''; }
 };
 
-// Compact preview for a day: shows the latest tagged message for this date,
-// and a single action button to open the full chat thread.
+// Day-chat feedback block with three states:
+//  1. No messages yet → CTA to start the conversation
+//  2. Exactly one message → show it with a "reply" button
+//  3. Two or more messages → show count with "open chat" button
 // Props: clientId, docId (optional), currentUserId, dateKey, role ('doc'|'client'), clientName, onOpenChat
 function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientName, onOpenChat }) {
-  const [latest, setLatest] = useState(null);
+  const [dayMessages, setDayMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeDocId, setActiveDocId] = useState(docId || null);
 
@@ -1354,15 +1356,15 @@ function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientN
           .eq('date', dateKey)
           .eq('kind', 'comment');
         if (activeDocId) q = q.eq('doc_id', activeDocId);
-        const { data } = await q.order('created_at', { ascending: false }).limit(1);
+        const { data } = await q.order('created_at', { ascending: true });
         if (mounted) {
-          setLatest((data && data[0]) || null);
+          setDayMessages(data || []);
           setLoading(false);
         }
       } catch (e) { if (mounted) setLoading(false); }
     })();
 
-    // Listen to new messages for this day to refresh preview
+    // Listen to new messages for this day to refresh the preview
     const filter = activeDocId ? `doc_id=eq.${activeDocId}` : `client_id=eq.${clientId}`;
     const channel = supabase.channel('day_preview_' + clientId + '_' + (activeDocId||'?') + '_' + dateKey + '_' + Date.now())
       .on('postgres_changes',
@@ -1373,34 +1375,70 @@ function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientN
           if (m.date !== dateKey || m.kind !== 'comment') return;
           if (m.client_id !== clientId) return;
           if (activeDocId && m.doc_id !== activeDocId) return;
-          setLatest(prev => (!prev || new Date(m.created_at) >= new Date(prev.created_at)) ? m : prev);
+          setDayMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m]);
         })
       .subscribe();
 
     return () => { mounted = false; try { supabase.removeChannel(channel); } catch(e){} };
   }, [clientId, dateKey, activeDocId]); // eslint-disable-line
 
-  const fromDoc = latest && latest.sender_id !== currentUserId && role === 'client';
-  const title = role === 'doc'
-    ? ('Написать ' + (clientName || 'клиенту') + ' про этот день')
-    : 'Ответить в чате';
+  const count = dayMessages.length;
+  const single = count === 1 ? dayMessages[0] : null;
+
+  // Who is the *other* party from the single message's perspective
+  const singleFromOther = single && single.sender_id !== currentUserId;
+
+  // State-specific copy
+  let ctaText, hintText;
+  if (count === 0) {
+    hintText = role === 'doc'
+      ? 'Хотите прокомментировать этот день?'
+      : 'Есть вопрос по этому дню?';
+    ctaText = role === 'doc' ? 'Написать клиенту' : 'Написать нутрициологу';
+  } else if (count === 1) {
+    ctaText = 'Ответить в чате';
+  } else {
+    ctaText = 'Перейти в чат';
+  }
+
+  const heart = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>;
+
+  // Colored dot indicator: green for doc messages (on client view),
+  // amber for client messages (on doc view)
+  const dotColor = role === 'client' ? '#2D5F3F' : '#E3A23C';
 
   return <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden',padding:'16px 18px'}}>
-    <div style={{fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase',marginBottom:10}}>Комментарий нутрициолога</div>
-    {loading && <div style={{fontSize:13,color:C.muted}}>Загрузка...</div>}
-    {!loading && latest && <div style={{background:C.accentSoft,borderRadius:14,padding:'12px 14px',marginBottom:12}}>
-      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4,fontSize:11,color:C.accent,fontWeight:600}}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-        {latest.sender_name || (fromDoc ? 'Нутрициолог' : 'Вы')} · {fmtChatTime(latest.created_at)}
+    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>
+      <span style={{display:'inline-flex',color:C.accent}}>{heart}</span>
+      Обратная связь
+    </div>
+
+    {loading && <div style={{fontSize:13,color:C.muted,marginBottom:12}}>Загрузка...</div>}
+
+    {/* State 1 — no messages */}
+    {!loading && count === 0 && <div style={{fontSize:14,color:C.soft,marginBottom:14,lineHeight:1.5}}>
+      «{hintText}»
+    </div>}
+
+    {/* State 2 — exactly one message */}
+    {!loading && count === 1 && <div style={{background:C.accentSoft,borderRadius:14,padding:'12px 14px',marginBottom:14}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5,fontSize:12,fontWeight:600,color:C.text}}>
+        <span style={{width:8,height:8,borderRadius:'50%',background:singleFromOther?dotColor:C.muted,flexShrink:0}}/>
+        <span>{single.sender_name || (singleFromOther ? (role==='client'?'Нутрициолог':'Клиент') : 'Вы')}</span>
+        <span style={{color:C.muted,fontWeight:400,fontSize:11}}>· {fmtChatTime(single.created_at)}</span>
       </div>
-      <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{latest.text}</div>
+      <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{single.text}»</div>
     </div>}
-    {!loading && !latest && <div style={{fontSize:13,color:C.muted,marginBottom:12}}>
-      {role === 'client' ? 'Нутрициолог пока не оставил комментарий' : 'Пока нет сообщений про этот день'}
+
+    {/* State 3 — 2+ messages */}
+    {!loading && count >= 2 && <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:C.accentSoft,borderRadius:14,marginBottom:14}}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <div style={{fontSize:14,color:C.text,fontWeight:500}}>{count} {count%10===1&&count!==11?'сообщение':count%10>=2&&count%10<=4&&(count<10||count>20)?'сообщения':'сообщений'} за этот день</div>
     </div>}
-    <button onClick={onOpenChat} style={{width:'100%',padding:'12px 16px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 2px 8px rgba(45,95,63,.2)',transition:'all .2s'}}>
+
+    <button onClick={onOpenChat} style={{width:'100%',padding:'13px 16px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 2px 8px rgba(45,95,63,.2)',transition:'all .2s'}}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      {title}
+      {ctaText}
     </button>
   </div>;
 }
