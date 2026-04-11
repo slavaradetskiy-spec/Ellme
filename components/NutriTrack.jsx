@@ -508,10 +508,6 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
     {photos.length>0&&<div style={{display:'flex',gap:8,overflowX:'auto',marginBottom:16,paddingBottom:4,WebkitOverflowScrolling:'touch'}}>
       {photos.map((p,i)=><div key={i} onClick={()=>onZoom&&onZoom(p)} style={{position:'relative',borderRadius:16,overflow:'hidden',boxShadow:C.shadow3d,flexShrink:0,width:photos.length===1?'100%':'75%',aspectRatio:'16/10',cursor:'zoom-in'}}>
         <img src={p} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',pointerEvents:'none'}}/>
-        {/* Visible zoom button */}
-        <div style={{position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,.55)',backdropFilter:'blur(8px)',color:'#fff',width:36,height:36,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none',boxShadow:'0 2px 8px rgba(0,0,0,.2)'}}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-        </div>
         {!dis&&<button onClick={(e)=>{e.stopPropagation();removePhoto(i)}} style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.5)',backdropFilter:'blur(6px)',border:'none',color:'#fff',width:28,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,zIndex:2}}>✕</button>}
         {photos.length>1&&<div style={{position:'absolute',bottom:8,left:8,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:6,padding:'2px 8px',fontSize:11,backdropFilter:'blur(4px)',pointerEvents:'none'}}>{i+1}/{photos.length}</div>}
       </div>)}
@@ -885,9 +881,6 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
           <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.2" opacity=".5"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0112 0v1"/></svg>
         </button>}
         {/* Zoom hint overlay */}
-        {photo&&<div style={{position:'absolute',top:6,left:6,width:24,height:24,borderRadius:'50%',background:'rgba(0,0,0,.45)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none',boxShadow:'0 2px 6px rgba(0,0,0,.2)'}}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-        </div>}
         <button onClick={()=>avatarRef.current?.click()} style={{position:'absolute',bottom:4,right:4,width:28,height:28,borderRadius:'50%',background:C.accent,border:'2px solid '+C.bg,color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,zIndex:2}}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </button>
@@ -2515,14 +2508,9 @@ export default function App(){
       <TopBar left={<BackBtn onClick={()=>{setScreen('clientView');setClientProfileData(null)}}/>} title="Профиль клиента" right={null}/>
       <div style={{textAlign:'center',marginBottom:20}}>
         {cp?.photo_url||selClient.photo
-          ? <div style={{position:'relative',width:96,height:96,margin:'0 auto 10px'}}>
-              <button onClick={()=>setLb(cp?.photo_url||selClient.photo)} style={{width:96,height:96,borderRadius:'50%',background:'transparent',border:'none',padding:0,cursor:'zoom-in',overflow:'hidden',display:'block',boxShadow:'0 4px 16px rgba(0,0,0,.08)',WebkitTapHighlightColor:'transparent'}}>
-                <img src={cp?.photo_url||selClient.photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover',pointerEvents:'none',display:'block',background:C.surfaceAlt}}/>
-              </button>
-              <div style={{position:'absolute',top:4,left:4,width:22,height:22,borderRadius:'50%',background:'rgba(0,0,0,.45)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-              </div>
-            </div>
+          ? <button onClick={()=>setLb(cp?.photo_url||selClient.photo)} style={{width:96,height:96,borderRadius:'50%',background:'transparent',border:'none',padding:0,cursor:'zoom-in',overflow:'hidden',display:'block',margin:'0 auto 10px',boxShadow:'0 4px 16px rgba(0,0,0,.08)',WebkitTapHighlightColor:'transparent'}}>
+              <img src={cp?.photo_url||selClient.photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover',pointerEvents:'none',display:'block',background:C.surfaceAlt}}/>
+            </button>
           : <div style={{width:96,height:96,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:36,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>
         }
         <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>{selClient.nick||selClient.name}</div>
