@@ -458,9 +458,9 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
     {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none'}}/>}
     {photos.length>1&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:8,padding:'2px 8px',fontSize:11,fontWeight:600,zIndex:2,backdropFilter:'blur(4px)'}}>{photos.length} фото</div>}
-    {/* Like button: clickable for doc (canLike), decorative for client when liked */}
-    {(canLike&&has)?<button onClick={handleLike} style={{position:'absolute',top:8,right:8,width:32,height:32,borderRadius:'50%',background:d.liked?'rgba(255,255,255,.95)':'rgba(255,255,255,.25)',backdropFilter:'blur(8px)',border:'none',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:d.liked?'0 2px 8px rgba(0,0,0,.15)':'none',zIndex:3,cursor:'pointer',padding:0,transition:'all .15s'}}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill={d.liked?'#E74C3C':'none'} stroke={d.liked?'#E74C3C':'#fff'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+    {/* Like button: always visible for doc (canLike), decorative for client when liked */}
+    {canLike?<button onClick={handleLike} style={{position:'absolute',top:8,right:8,width:32,height:32,borderRadius:'50%',background:d.liked?'rgba(255,255,255,.95)':'rgba(255,255,255,.2)',backdropFilter:'blur(8px)',border:'none',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:d.liked?'0 2px 8px rgba(0,0,0,.15)':'none',zIndex:3,cursor:'pointer',padding:0,transition:'all .15s'}}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill={d.liked?'#E74C3C':'none'} stroke={d.liked?'#E74C3C':(firstPhoto?'#fff':C.muted)} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
     </button>:d.liked?<div style={{position:'absolute',top:10,right:10,width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,.92)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(0,0,0,.15)',zIndex:2}}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="#E74C3C" stroke="#E74C3C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
     </div>:null}
@@ -879,10 +879,10 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     <div style={{textAlign:'center',marginBottom:24}}>
       <input ref={avatarRef} type="file" accept="image/*" onChange={handleAvatar} style={{display:'none'}}/>
       <div style={{position:'relative',width:110,height:110,margin:'0 auto 12px'}}>
-        <div onClick={()=>photo?onZoom(photo):avatarRef.current?.click()} style={{width:110,height:110,borderRadius:'50%',background:photo?'transparent':C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,boxShadow:'0 4px 16px rgba(45,95,63,.1)',cursor:'pointer',overflow:'hidden'}}>
+        <div onClick={()=>{if(photo&&onZoom){onZoom(photo)}else{avatarRef.current?.click()}}} style={{width:110,height:110,borderRadius:'50%',background:photo?'transparent':C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,boxShadow:'0 4px 16px rgba(45,95,63,.1)',cursor:'pointer',overflow:'hidden',WebkitTapHighlightColor:'transparent'}}>
         {photo
-          ? <img src={photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-          : <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.2" opacity=".5"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0112 0v1"/></svg>
+          ? <img src={photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover',pointerEvents:'none'}}/>
+          : <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.2" opacity=".5" style={{pointerEvents:'none'}}><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0112 0v1"/></svg>
         }
         </div>
         <button onClick={()=>avatarRef.current?.click()} style={{position:'absolute',bottom:4,right:4,width:28,height:28,borderRadius:'50%',background:C.accent,border:'2px solid '+C.bg,color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
