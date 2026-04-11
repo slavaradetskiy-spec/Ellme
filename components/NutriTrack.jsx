@@ -1395,24 +1395,52 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const [showEmoji, setShowEmoji] = useState(false);
   const [sending, setSending] = useState(false);
   const [resolvedDocId, setResolvedDocId] = useState(docId || null);
-  const [otherParty, setOtherParty] = useState({ name: clientName || '', photo: null });
-  // iOS keyboard awareness: track visible viewport height so the modal
-  // can shrink when the keyboard opens instead of hiding the input
-  // behind it. Falls back to 100vh on browsers without visualViewport.
-  const [viewportHeight, setViewportHeight] = useState(null);
+  const [otherParty, setOtherParty] = useState({ name: '', photo: null });
+  // iOS keyboard awareness: track keyboard height via visualViewport so
+  // the modal's inner padding-bottom lifts the input above the keyboard.
+  const [kbHeight, setKbHeight] = useState(0);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
     const vv = window.visualViewport;
-    const update = () => setViewportHeight(vv.height);
+    const update = () => {
+      const h = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0));
+      setKbHeight(h);
+    };
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
     update();
     return () => {
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
+    };
+  }, []);
+
+  // Lock body scroll while the chat is open so iOS doesn't scroll the
+  // underlying page when the textarea is focused, and restore the exact
+  // scroll position on close.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    const body = document.body;
+    const prev = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      body.style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
     };
   }, []);
 
@@ -1489,7 +1517,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
 
   // Load the other party's profile (name + avatar) so the header shows
   // who you're talking to. For the client, it's the nutritionist; for
-  // the nutritionist, it's the client.
+  // the nutritionist, it's the client. If the direct profiles select is
+  // blocked by RLS, the effect below also picks up name/avatar from
+  // incoming message rows as a fallback.
   useEffect(() => {
     if (!supabase || !currentUserId) return;
     const otherId = currentUserId === clientId ? resolvedDocId : clientId;
@@ -1501,13 +1531,23 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       .maybeSingle()
       .then(({ data }) => {
         if (!mounted || !data) return;
-        setOtherParty({
-          name: data.nick || data.name || clientName || '',
-          photo: data.photo_url || null,
-        });
-      });
+        setOtherParty(prev => ({
+          name: data.nick || data.name || prev.name || '',
+          photo: data.photo_url || prev.photo || null,
+        }));
+      }, () => {});
     return () => { mounted = false; };
   }, [currentUserId, clientId, resolvedDocId]); // eslint-disable-line
+
+  // Fallback: when profiles read is blocked by RLS, at least fill the
+  // display name from the latest message sent by the other party.
+  useEffect(() => {
+    if (otherParty.name) return;
+    const other = [...messages].reverse().find(m => m.sender_id && m.sender_id !== currentUserId);
+    if (other && other.sender_name) {
+      setOtherParty(prev => ({ ...prev, name: other.sender_name }));
+    }
+  }, [messages, currentUserId, otherParty.name]);
 
   const send = async (overrides = {}) => {
     const t = (overrides.text !== undefined ? overrides.text : text).trim();
@@ -1584,17 +1624,15 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     grouped.push({ msg: m, key: m.id });
   });
 
-  const dismissKeyboard = () => {
-    if (typeof document === 'undefined') return;
-    const el = document.activeElement;
-    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) el.blur();
-  };
   const iAmClient = currentUserId === clientId;
   const partyLabel = iAmClient ? 'нутрициолог' : 'клиент';
-  const displayName = otherParty.name || clientName || 'Чат';
+  // For the client the "clientName" prop is their OWN name, so we prefer
+  // the loaded other-party name and only use clientName when the viewer
+  // is the doc (clientName is then the client's display name).
+  const displayName = otherParty.name || (iAmClient ? 'Нутрициолог' : (clientName || 'Клиент'));
   const avatarInitial = (displayName || '').trim().slice(0,2).toUpperCase() || '—';
 
-  return <div style={{position:'fixed',left:0,right:0,top:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',height:viewportHeight?viewportHeight+'px':'100vh',overflow:'hidden'}}>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':'env(safe-area-inset-bottom)',overflow:'hidden'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
@@ -1611,7 +1649,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     </div>
 
     {/* Messages */}
-    <div ref={scrollRef} onTouchStart={dismissKeyboard} onMouseDown={dismissKeyboard} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px',display:'flex',flexDirection:'column',gap:4,minHeight:0}}>
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px',display:'flex',flexDirection:'column',gap:4,minHeight:0}}>
       {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
         if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
