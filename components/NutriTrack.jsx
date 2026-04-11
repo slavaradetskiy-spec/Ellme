@@ -2515,7 +2515,14 @@ export default function App(){
       <TopBar left={<BackBtn onClick={()=>{setScreen('clientView');setClientProfileData(null)}}/>} title="Профиль клиента" right={null}/>
       <div style={{textAlign:'center',marginBottom:20}}>
         {cp?.photo_url||selClient.photo
-          ? <img src={cp?.photo_url||selClient.photo} alt="" style={{width:96,height:96,borderRadius:'50%',objectFit:'cover',margin:'0 auto 10px',display:'block',background:C.surfaceAlt,boxShadow:'0 4px 16px rgba(0,0,0,.08)'}}/>
+          ? <div style={{position:'relative',width:96,height:96,margin:'0 auto 10px'}}>
+              <button onClick={()=>setLb(cp?.photo_url||selClient.photo)} style={{width:96,height:96,borderRadius:'50%',background:'transparent',border:'none',padding:0,cursor:'zoom-in',overflow:'hidden',display:'block',boxShadow:'0 4px 16px rgba(0,0,0,.08)',WebkitTapHighlightColor:'transparent'}}>
+                <img src={cp?.photo_url||selClient.photo} alt="" style={{width:'100%',height:'100%',objectFit:'cover',pointerEvents:'none',display:'block',background:C.surfaceAlt}}/>
+              </button>
+              <div style={{position:'absolute',top:4,left:4,width:22,height:22,borderRadius:'50%',background:'rgba(0,0,0,.45)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </div>
+            </div>
           : <div style={{width:96,height:96,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:36,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>
         }
         <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)'}}>{selClient.nick||selClient.name}</div>
