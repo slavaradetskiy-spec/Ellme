@@ -1908,11 +1908,11 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   });
 
   const iAmClient = currentUserId === clientId;
-  const partyLabel = iAmClient ? 'нутрициолог' : 'клиент';
-  // For the client the "clientName" prop is their OWN name, so we prefer
-  // the loaded other-party name and only use clientName when the viewer
-  // is the doc (clientName is then the client's display name).
-  const displayName = otherParty.name || (iAmClient ? 'Нутрициолог' : (clientName || 'Клиент'));
+  // The "clientName" prop is the CURRENT viewer's own name on the client
+  // side (openChat is called from client home with user.name). We prefer
+  // the loaded other-party name — for both roles it's the full profile
+  // name (e.g. "Радецкий.В.") — and only fall back if it hasn't loaded.
+  const displayName = otherParty.name || (iAmClient ? '' : (clientName || ''));
   const avatarInitial = (displayName || '').trim().slice(0,2).toUpperCase() || '—';
   // Online = last_seen within 2 min. Otherwise show "была/был N мин назад".
   const isOnline = (() => {
@@ -1921,15 +1921,10 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     return Date.now() - dt < 120000;
   })();
   const seenAgo = otherParty.lastSeen ? formatLastSeen(otherParty.lastSeen) : '';
-  // Grammatical gender for "был/была" — nutritionists in this product
-  // are mostly women, clients mixed. Default feminine for doc, neutral
-  // "был(а)" for others.
-  const seenVerb = iAmClient ? 'была' : 'был(а)';
-  let statusLine, statusColor;
+  let statusLine = '', statusColor = C.muted;
   if (otherTyping) { statusLine = 'печатает...'; statusColor = '#34C759'; }
-  else if (isOnline) { statusLine = partyLabel + ' · онлайн'; statusColor = '#34C759'; }
-  else if (seenAgo) { statusLine = partyLabel + ' · ' + seenVerb + ' ' + seenAgo; statusColor = C.muted; }
-  else { statusLine = partyLabel; statusColor = C.muted; }
+  else if (isOnline) { statusLine = 'онлайн'; statusColor = '#34C759'; }
+  else if (seenAgo) { statusLine = 'был(а) ' + seenAgo; statusColor = C.muted; }
 
   return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':0,overflow:'hidden'}}>
     {/* Header */}
@@ -1943,7 +1938,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       }
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayName}</div>
-        <div style={{fontSize:11,color:statusColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{statusLine}</div>
+        {statusLine && <div style={{fontSize:11,color:statusColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:statusColor==='#34C759'?500:400}}>{statusLine}</div>}
       </div>
     </div>
 
