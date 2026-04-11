@@ -764,7 +764,7 @@ function Cal({sel,onSelect}){
 }
 
 // ═══ PROFILE PAGE ═══
-function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNormChange,onZoom}){
+function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNormChange,onZoom,onOpenAnalytics}){
   const[name,setName]=useState(user.name||'');
   const[email,setEmail]=useState('');
   const[phone,setPhone]=useState('');
@@ -928,6 +928,14 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
         {saved?'Сохранено ✓':'Сохранить'}
       </button>
     </div>
+
+    {/* Analytics entry */}
+    {onOpenAnalytics && <button onClick={onOpenAnalytics} style={{width:'100%',padding:'14px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginTop:12,boxShadow:C.shadowCard,transition:'all .15s'}}
+      onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}}
+      onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.text}}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+      Моя аналитика
+    </button>}
 
     {/* Support - collapsible */}
     <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:12,overflow:'hidden'}}>
@@ -2035,6 +2043,299 @@ function ReactionPicker({ onPick, active }) {
   </div>;
 }
 
+// ═══ ANALYTICS ═══
+
+// Aggregate a diary range into per-metric summaries.
+// Input: days array of diary_days rows, meals array joined via diary_day_id.
+// Output: { series: { water:[{date,value}], sleep:[...], ... }, summary: {...} }
+function buildAnalytics(days, meals, waterNorm) {
+  const byDayId = {};
+  (days || []).forEach(d => { byDayId[d.id] = d.date; });
+  const mealsByDate = {};
+  (meals || []).forEach(m => {
+    const date = byDayId[m.diary_day_id];
+    if (!date) return;
+    if (!mealsByDate[date]) mealsByDate[date] = [];
+    mealsByDate[date].push(m);
+  });
+
+  // Build a dense series: one entry per day, sorted ASC
+  const series = {
+    water: [], sleep: [], meals: [], energy: [], mood: [], stress: [], movement: [],
+  };
+  (days || []).forEach(d => {
+    series.water.push({ date: d.date, value: d.water_ml || 0 });
+    // Sleep hours computed from bed/wake
+    let hours = null;
+    if (d.sleep_bed && d.sleep_wake) {
+      const [bH,bM] = d.sleep_bed.split(':').map(Number);
+      const [wH,wM] = d.sleep_wake.split(':').map(Number);
+      let mins = (wH*60+wM) - (bH*60+bM);
+      if (mins < 0) mins += 24*60;
+      hours = mins / 60;
+    }
+    series.sleep.push({ date: d.date, value: hours });
+    series.meals.push({ date: d.date, value: (mealsByDate[d.date] || []).length });
+    series.energy.push({ date: d.date, value: d.energy || null });
+    series.mood.push({ date: d.date, value: d.mood != null ? d.mood + 1 : null }); // mood is 0-4, shift to 1-5
+    series.stress.push({ date: d.date, value: d.stress_level || null });
+    // Movement is a free-text field; count as "active day" = 1 if filled
+    series.movement.push({ date: d.date, value: d.movement ? 1 : 0 });
+  });
+
+  const avg = (arr) => {
+    const nums = arr.map(x => x.value).filter(v => v != null && !isNaN(v));
+    if (!nums.length) return null;
+    return nums.reduce((a,b)=>a+b,0) / nums.length;
+  };
+  const pct = (arr) => {
+    const vals = arr.filter(x => x.value != null && x.value > 0).length;
+    return arr.length ? Math.round(vals / arr.length * 100) : 0;
+  };
+
+  const waterAvg = avg(series.water) || 0;
+  const sleepAvg = avg(series.sleep);
+  const mealsAvg = avg(series.meals) || 0;
+  const energyAvg = avg(series.energy);
+  const moodAvg = avg(series.mood);
+  const stressAvg = avg(series.stress);
+  const movementPct = pct(series.movement);
+
+  // Simple status rules
+  const status = (avg, goodMin, okMin, reverse=false) => {
+    if (avg == null) return { label: 'Нет данных', color: '#999' };
+    const val = avg;
+    if (reverse) {
+      if (val <= goodMin) return { label: 'Отлично', color: '#2D5F3F' };
+      if (val <= okMin) return { label: 'Хорошо', color: '#C98B5F' };
+      return { label: 'Внимание', color: '#B8453A' };
+    }
+    if (val >= goodMin) return { label: 'Отлично', color: '#2D5F3F' };
+    if (val >= okMin) return { label: 'Хорошо', color: '#C98B5F' };
+    return { label: 'Внимание', color: '#B8453A' };
+  };
+
+  const summary = {
+    water: { avg: Math.round(waterAvg), unit: 'мл', norm: waterNorm, pct: Math.min(100, Math.round(waterAvg/waterNorm*100)), status: status(waterAvg/waterNorm*100, 90, 70) },
+    sleep: { avg: sleepAvg, unit: 'ч', status: (() => {
+      if (sleepAvg == null) return { label: 'Нет данных', color: '#999' };
+      if (sleepAvg >= 7 && sleepAvg <= 9) return { label: 'Отлично', color: '#2D5F3F' };
+      if (sleepAvg >= 6 && sleepAvg <= 10) return { label: 'Хорошо', color: '#C98B5F' };
+      return { label: 'Внимание', color: '#B8453A' };
+    })() },
+    meals: { avg: mealsAvg, unit: '/день', status: status(mealsAvg, 4, 3) },
+    energy: { avg: energyAvg, unit: '/5', status: status(energyAvg, 4, 3) },
+    mood: { avg: moodAvg, unit: '/5', status: status(moodAvg, 4, 3) },
+    stress: { avg: stressAvg, unit: '/10', status: status(stressAvg, 4, 7, true) },
+    movement: { pct: movementPct, unit: '%', status: status(movementPct, 70, 40) },
+  };
+
+  return { series, summary };
+}
+
+// Tiny SVG sparkline for metric tiles (inline, no deps)
+function Sparkline({ data, width = 100, height = 28, color = '#2D5F3F' }) {
+  const nums = (data || []).map(d => d.value);
+  const valid = nums.filter(v => v != null && !isNaN(v));
+  if (valid.length < 2) {
+    return <svg width={width} height={height}><line x1={0} y1={height/2} x2={width} y2={height/2} stroke="#ddd" strokeWidth="1" strokeDasharray="3 3"/></svg>;
+  }
+  const max = Math.max(...valid);
+  const min = Math.min(...valid);
+  const range = max - min || 1;
+  const points = nums.map((v, i) => {
+    const x = (i / (nums.length - 1 || 1)) * width;
+    if (v == null || isNaN(v)) return null;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return x + ',' + y;
+  }).filter(Boolean).join(' ');
+  return <svg width={width} height={height}>
+    <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>;
+}
+
+// Larger line chart for detail section
+function DetailLineChart({ data, color = '#2D5F3F', norm = null, unit = '' }) {
+  const width = 480;
+  const height = 160;
+  const padding = { t: 12, r: 12, b: 24, l: 36 };
+  const innerW = width - padding.l - padding.r;
+  const innerH = height - padding.t - padding.b;
+  const nums = (data || []).map(d => d.value);
+  const validNums = nums.filter(v => v != null && !isNaN(v));
+  const hasData = validNums.length > 0;
+  const max = hasData ? Math.max(...validNums, norm || 0) : 1;
+  const min = 0; // start from 0 for readability
+  const range = (max - min) || 1;
+  const x = (i) => padding.l + (i / (nums.length - 1 || 1)) * innerW;
+  const y = (v) => padding.t + innerH - ((v - min) / range) * innerH;
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map(t => padding.t + innerH * (1 - t));
+  const labels = [0, 0.5, 1].map(t => Math.round(min + range * t));
+
+  const points = nums.map((v, i) => v != null && !isNaN(v) ? (x(i) + ',' + y(v)) : null).filter(Boolean).join(' ');
+  const areaPoints = nums.map((v, i) => v != null && !isNaN(v) ? (x(i) + ',' + y(v)) : null).filter(Boolean);
+  const areaPath = areaPoints.length
+    ? `M ${areaPoints[0]} L ${areaPoints.join(' L ')} L ${x(nums.length-1)},${padding.t+innerH} L ${x(0)},${padding.t+innerH} Z`
+    : '';
+
+  return <div style={{width:'100%',overflow:'visible'}}>
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{display:'block'}}>
+      {/* Grid */}
+      {gridLines.map((gy, i) => <line key={i} x1={padding.l} y1={gy} x2={width-padding.r} y2={gy} stroke="#EDE9E1" strokeWidth="1" strokeDasharray={i===0||i===gridLines.length-1?'':'3 3'}/>)}
+      {/* Y-axis labels */}
+      {labels.map((v, i) => <text key={i} x={padding.l - 6} y={padding.t + innerH * (1 - i*0.5) + 3} fontSize="9" fill="#ABABAB" textAnchor="end" fontFamily="Plus Jakarta Sans">{v}</text>)}
+      {/* Norm line */}
+      {norm != null && norm > 0 && norm <= max && <line x1={padding.l} y1={y(norm)} x2={width-padding.r} y2={y(norm)} stroke="#C98B5F" strokeWidth="1.5" strokeDasharray="4 3"/>}
+      {/* Area fill */}
+      {areaPath && <path d={areaPath} fill={color} fillOpacity="0.08"/>}
+      {/* Line */}
+      {hasData && <polyline points={points} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>}
+      {/* Points */}
+      {nums.map((v, i) => v != null && !isNaN(v) && <circle key={i} cx={x(i)} cy={y(v)} r="3" fill={color}/>)}
+      {/* No data label */}
+      {!hasData && <text x={width/2} y={height/2} fontSize="12" fill="#ABABAB" textAnchor="middle" fontFamily="Plus Jakarta Sans">Недостаточно данных</text>}
+    </svg>
+  </div>;
+}
+
+// Metric tile — one card in the analytics grid
+function MetricTile({ icon, label, value, unit, status, sparkData, sparkColor, active, onClick }) {
+  return <button onClick={onClick} style={{display:'flex',flexDirection:'column',gap:6,padding:'14px 14px 12px',borderRadius:18,border:`2px solid ${active?C.accent:'transparent'}`,background:C.surface,cursor:'pointer',fontFamily:'inherit',textAlign:'left',boxShadow:active?'0 4px 16px rgba(45,95,63,.18)':C.shadowCard,transition:'all .15s',transform:active?'scale(1.02)':'scale(1)'}}>
+    <div style={{display:'flex',alignItems:'center',gap:6,fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.04em',textTransform:'uppercase'}}>
+      <span style={{fontSize:14}}>{icon}</span>
+      <span>{label}</span>
+    </div>
+    <div style={{display:'flex',alignItems:'baseline',gap:4}}>
+      <span style={{fontSize:22,fontWeight:700,color:C.text,fontFamily:'var(--fd)'}}>{value}</span>
+      {unit && <span style={{fontSize:12,color:C.muted}}>{unit}</span>}
+    </div>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6}}>
+      <div style={{fontSize:10,fontWeight:600,color:status.color,padding:'2px 8px',borderRadius:8,background:status.color+'15'}}>{status.label}</div>
+      <Sparkline data={sparkData} color={sparkColor||C.accent} width={68} height={22}/>
+    </div>
+  </button>;
+}
+
+// Fomat a number to 1 decimal, or empty
+const fmt1 = (v) => v == null || isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
+
+// Main analytics screen. Shared between client and nutritionist (their own data).
+function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm }) {
+  const [activeMetric, setActiveMetric] = useState('water');
+
+  const loading = !analytics || analytics.loading;
+  const { summary, series } = (!loading && analytics ? buildAnalytics(analytics.days, analytics.meals, waterNorm || 2200) : { summary: null, series: null });
+
+  const METRICS = [
+    { key: 'water',   icon: '💧', label: 'Вода',        color: '#2D5F3F', norm: waterNorm||2200 },
+    { key: 'sleep',   icon: '😴', label: 'Сон',         color: '#6B5CA5', norm: null },
+    { key: 'meals',   icon: '🍽️', label: 'Приёмы пищи', color: '#C98B5F', norm: null },
+    { key: 'energy',  icon: '⚡', label: 'Энергия',     color: '#E3A23C', norm: null },
+    { key: 'mood',    icon: '😊', label: 'Настроение',  color: '#34C759', norm: null },
+    { key: 'stress',  icon: '🧠', label: 'Стресс',      color: '#B8453A', norm: null },
+    { key: 'movement',icon: '🏃', label: 'Движение',    color: '#7BC8E8', norm: null },
+  ];
+
+  const tileValue = (key) => {
+    if (!summary) return '—';
+    const s = summary[key];
+    if (!s) return '—';
+    if (key === 'water') return s.avg.toLocaleString('ru');
+    if (key === 'sleep') return fmt1(s.avg);
+    if (key === 'meals') return fmt1(s.avg);
+    if (key === 'energy' || key === 'mood') return fmt1(s.avg);
+    if (key === 'stress') return fmt1(s.avg);
+    if (key === 'movement') return s.pct + '%';
+    return '—';
+  };
+  const tileUnit = (key) => {
+    if (!summary) return '';
+    const s = summary[key];
+    if (!s) return '';
+    if (key === 'water') return 'мл в среднем';
+    if (key === 'sleep') return 'ч/ночь';
+    if (key === 'meals') return 'в день';
+    if (key === 'movement') return 'дней активных';
+    return s.unit || '';
+  };
+
+  const activeMeta = METRICS.find(m => m.key === activeMetric);
+  const activeSeries = series ? series[activeMetric] : [];
+  const activeInfo = summary ? summary[activeMetric] : null;
+
+  // Insights text per metric
+  const insight = (() => {
+    if (!summary || !series) return '';
+    const s = summary[activeMetric];
+    const arr = series[activeMetric] || [];
+    const valid = arr.filter(x => x.value != null && !isNaN(x.value));
+    if (!valid.length) return 'Недостаточно данных. Заполни дневник за несколько дней, чтобы увидеть статистику.';
+    if (activeMetric === 'water') {
+      const normVal = waterNorm || 2200;
+      return `В среднем ${s.avg.toLocaleString('ru')} мл/день — это ${s.pct}% от нормы (${normVal} мл). Лучший день: ${valid.reduce((a,b)=>a.value>b.value?a:b).value.toLocaleString('ru')} мл.`;
+    }
+    if (activeMetric === 'sleep') {
+      return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
+    }
+    if (activeMetric === 'meals') {
+      return `В среднем ${fmt1(s.avg)} приёмов пищи в день из ${arr.length} дней наблюдения.`;
+    }
+    if (activeMetric === 'movement') {
+      return `Активность заполнена в ${s.pct}% дней за период.`;
+    }
+    return `В среднем ${fmt1(s.avg)}${s.unit||''}.`;
+  })();
+
+  return <div style={{animation:'slideRight .3s ease'}}>
+    <TopBar left={<BackBtn onClick={onBack}/>} title="Аналитика" right={null}/>
+
+    {/* Period tabs */}
+    <div style={{display:'flex',gap:6,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
+      {[['week','Неделя'],['month','Месяц'],['year','Год']].map(([k,l]) =>
+        <button key={k} onClick={()=>onRangeChange(k)} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',background:range===k?C.surface:'transparent',color:range===k?C.accent:C.soft,fontSize:13,fontWeight:range===k?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:range===k?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{l}</button>
+      )}
+    </div>
+
+    {loading && <div style={{textAlign:'center',padding:'48px 0',color:C.muted,fontSize:14}}>Загружаем данные...</div>}
+
+    {!loading && <>
+      {/* Tile grid */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+        {METRICS.map(m => <MetricTile
+          key={m.key}
+          icon={m.icon}
+          label={m.label}
+          value={tileValue(m.key)}
+          unit={tileUnit(m.key)}
+          status={summary?.[m.key]?.status || {label:'—',color:'#999'}}
+          sparkData={series?.[m.key] || []}
+          sparkColor={m.color}
+          active={activeMetric===m.key}
+          onClick={()=>setActiveMetric(m.key)}
+        />)}
+      </div>
+
+      {/* Detail section */}
+      <div style={{background:C.surface,borderRadius:20,padding:'18px',marginBottom:16,boxShadow:C.shadowCard}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+          <span style={{fontSize:18}}>{activeMeta?.icon}</span>
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:C.text}}>{activeMeta?.label}</div>
+            <div style={{fontSize:11,color:C.muted}}>{range==='week'?'за неделю':range==='month'?'за месяц':'за год'}</div>
+          </div>
+          {activeInfo && <div style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:activeInfo.status.color,padding:'4px 10px',borderRadius:10,background:activeInfo.status.color+'15'}}>{activeInfo.status.label}</div>}
+        </div>
+        <DetailLineChart
+          data={activeSeries}
+          color={activeMeta?.color||C.accent}
+          norm={activeMeta?.norm}
+        />
+        <div style={{fontSize:12,color:C.soft,marginTop:10,lineHeight:1.5}}>{insight}</div>
+      </div>
+    </>}
+  </div>;
+}
+
 function Login({onLogin}){
   const[mode,setMode]=useState('auth'); // auth | register | doc | reset | docReg
   const[email,setEmail]=useState('');
@@ -2347,6 +2648,17 @@ export default function App(){
   // Scroll to top on screen change
   useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
 
+  // Load analytics when screen switches to 'analytics' or range changes
+  useEffect(() => {
+    if (screen !== 'analytics' || !user?.id) return;
+    const daysBack = analyticsRange === 'week' ? 7 : analyticsRange === 'month' ? 30 : 365;
+    setAnalytics(prev => ({ range: analyticsRange, days: [], meals: [], loading: true }));
+    loadAnalyticsRange(user.id, daysBack).then(({ days, meals }) => {
+      setAnalytics({ range: analyticsRange, days, meals, loading: false });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, analyticsRange, user?.id]);
+
   // Pull-to-refresh (mobile)
   const[pullDist,setPullDist]=useState(0);
   const[refreshing,setRefreshing]=useState(false);
@@ -2412,6 +2724,9 @@ export default function App(){
   const[chatModal,setChatModal]=useState(null);
   // Doc-side chat list (list of all chats with clients)
   const[showChatList,setShowChatList]=useState(false);
+  // Analytics screen data: { userId, range: 'week'|'month'|'year', days: [...], meals: [...], loading }
+  const[analytics,setAnalytics]=useState(null);
+  const[analyticsRange,setAnalyticsRange]=useState('week');
   // When the user clicks a day-tag in the chat, we close the modal,
   // navigate to that day, and remember the chat context here so a
   // floating "back to chat" button can reopen it.
@@ -2746,6 +3061,34 @@ export default function App(){
         _dayId: day.id,
       };
     } catch(e) { return {}; }
+  };
+
+  // ── Database: load a range of days + their meals for analytics ──
+  // Returns { days: [diary_days...], meals: [...] } filtered to the
+  // requested date range (inclusive). Meals are grouped by diary_day_id.
+  const loadAnalyticsRange = async (pid, daysBack) => {
+    if (!supabase || !pid) return { days: [], meals: [] };
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - daysBack + 1);
+    const startStr = dk(start), endStr = dk(end);
+    try {
+      const { data: days } = await supabase.from('diary_days')
+        .select('*')
+        .eq('user_id', pid)
+        .gte('date', startStr)
+        .lte('date', endStr)
+        .order('date', { ascending: true });
+      const dayIds = (days || []).map(d => d.id);
+      let meals = [];
+      if (dayIds.length) {
+        const { data: m } = await supabase.from('meals')
+          .select('diary_day_id,meal_type,description,time,liked')
+          .in('diary_day_id', dayIds);
+        meals = m || [];
+      }
+      return { days: days || [], meals };
+    } catch (e) { console.error('loadAnalyticsRange:', e); return { days: [], meals: [] }; }
   };
 
   // ── Database: save day ──
@@ -3193,7 +3536,15 @@ export default function App(){
   </div>;
 
   // ═══ PROFILE ═══
-  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb}/>);
+  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb} onOpenAnalytics={()=>setScreen('analytics')}/>);
+
+  if(screen==='analytics') return shell(<AnalyticsScreen
+    analytics={analytics}
+    range={analyticsRange}
+    onRangeChange={setAnalyticsRange}
+    onBack={()=>setScreen('profile')}
+    waterNorm={waterNorm}
+  />);
 
   // ═══ CLIENT — MEAL DETAIL ═══
   if(!isDoc&&selMeal)return shell(<>
