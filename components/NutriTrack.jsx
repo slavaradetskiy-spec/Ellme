@@ -97,6 +97,7 @@ const I={
   link:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
   logout:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
   support:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>,
+  chat:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>,
   fork:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>,
   stool:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 2h6l1 7H8L9 2z"/><path d="M8 9l-2 13M16 9l2 13M12 9v13"/></svg>,
   steth:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4.8 2.3A.3.3 0 105 2H4a2 2 0 00-2 2v5a6 6 0 006 6 6 6 0 006-6V4a2 2 0 00-2-2h-1a.2.2 0 10.3.3"/><path d="M8 15v1a6 6 0 006 6 6 6 0 006-6v-4"/><circle cx="20" cy="10" r="2"/></svg>,
@@ -1298,41 +1299,281 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
   </div>;
 }
 
-// Self-contained chat component with its own DB lifecycle.
-// Props: clientId (whose day it is), docId (nutritionist id), currentUserId, currentUserName, dateKey
-function ChatSection({ clientId, docId, currentUserId, currentUserName, dateKey, readOnly=false }) {
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState('');
-  const [showEmoji, setShowEmoji] = useState(false);
-  const [sending, setSending] = useState(false);
-  const scrollRef = useRef(null);
+// ═══ CHAT: helpers ═══
 
-  // Load messages for this specific day + subscribe to realtime.
-  // Uses empty deps — lifecycle tied to mount/unmount, not to any state.
+const REACTION_SET = ['❤️','🔥','👏','😊','💪','✅'];
+
+const fmtDateTag = (dateKey) => {
+  // "2026-04-12" → "12 апреля"
+  if (!dateKey) return '';
+  const parts = dateKey.split('-');
+  if (parts.length < 3) return dateKey;
+  const d = parseInt(parts[2], 10);
+  const m = parseInt(parts[1], 10) - 1;
+  if (isNaN(d) || isNaN(m) || !MO_R[m]) return dateKey;
+  return d + ' ' + MO_R[m];
+};
+
+const fmtChatTime = (iso) => {
+  try { return new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }); }
+  catch(e) { return ''; }
+};
+
+// Day-chat feedback block with three states:
+//  1. No messages yet → CTA to start the conversation
+//  2. Exactly one message → show it with a "reply" button
+//  3. Two or more messages → show count with "open chat" button
+// Props: clientId, docId (optional), currentUserId, dateKey, role ('doc'|'client'), clientName, onOpenChat
+function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientName, onOpenChat }) {
+  const [dayMessages, setDayMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeDocId, setActiveDocId] = useState(docId || null);
+
+  // Resolve the active (most recent) doc for this client if not passed.
   useEffect(() => {
-    if (!supabase || !clientId || !dateKey) return;
+    if (activeDocId || !supabase || !clientId) return;
     let mounted = true;
+    supabase.from('doc_clients')
+      .select('doc_id,created_at')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (mounted && data?.doc_id) setActiveDocId(data.doc_id);
+      });
+    return () => { mounted = false; };
+  }, [clientId, activeDocId]);
 
+  useEffect(() => {
+    if (!supabase || !clientId || !dateKey) { setLoading(false); return; }
+    let mounted = true;
     (async () => {
       try {
-        const { data } = await supabase.from('doc_comments')
-          .select('*')
+        let q = supabase.from('doc_comments')
+          .select('id,doc_id,sender_id,sender_name,text,date,created_at,kind')
           .eq('client_id', clientId)
           .eq('date', dateKey)
-          .eq('kind', 'comment')
-          .order('created_at', { ascending: true });
-        if (mounted && data) setMessages(data);
-      } catch (e) { console.error('load chat:', e); }
+          .eq('kind', 'comment');
+        if (activeDocId) q = q.eq('doc_id', activeDocId);
+        const { data } = await q.order('created_at', { ascending: true });
+        if (mounted) {
+          setDayMessages(data || []);
+          setLoading(false);
+        }
+      } catch (e) { if (mounted) setLoading(false); }
     })();
 
-    const channel = supabase.channel('chat_' + clientId + '_' + dateKey + '_' + Date.now())
+    // Listen to new messages for this day to refresh the preview
+    const filter = activeDocId ? `doc_id=eq.${activeDocId}` : `client_id=eq.${clientId}`;
+    const channel = supabase.channel('day_preview_' + clientId + '_' + (activeDocId||'?') + '_' + dateKey + '_' + Date.now())
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `client_id=eq.${clientId}` },
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter },
         (payload) => {
           if (!mounted) return;
           const m = payload.new;
           if (m.date !== dateKey || m.kind !== 'comment') return;
+          if (m.client_id !== clientId) return;
+          if (activeDocId && m.doc_id !== activeDocId) return;
+          setDayMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m]);
+        })
+      .subscribe();
+
+    return () => { mounted = false; try { supabase.removeChannel(channel); } catch(e){} };
+  }, [clientId, dateKey, activeDocId]); // eslint-disable-line
+
+  const count = dayMessages.length;
+  const single = count === 1 ? dayMessages[0] : null;
+
+  // Who is the *other* party from the single message's perspective
+  const singleFromOther = single && single.sender_id !== currentUserId;
+
+  // State-specific copy
+  let ctaText, hintText;
+  if (count === 0) {
+    hintText = role === 'doc'
+      ? 'Хотите прокомментировать этот день?'
+      : 'Есть вопрос по этому дню?';
+    ctaText = role === 'doc' ? 'Написать клиенту' : 'Написать нутрициологу';
+  } else if (count === 1) {
+    ctaText = 'Ответить в чате';
+  } else {
+    ctaText = 'Перейти в чат';
+  }
+
+  const heart = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>;
+
+  // Colored dot indicator: green for doc messages (on client view),
+  // amber for client messages (on doc view)
+  const dotColor = role === 'client' ? '#2D5F3F' : '#E3A23C';
+
+  return <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden',padding:'16px 18px'}}>
+    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:12,fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>
+      <span style={{display:'inline-flex',color:C.accent}}>{heart}</span>
+      Обратная связь
+    </div>
+
+    {loading && <div style={{fontSize:13,color:C.muted,marginBottom:12}}>Загрузка...</div>}
+
+    {/* State 1 — no messages */}
+    {!loading && count === 0 && <div style={{fontSize:14,color:C.soft,marginBottom:14,lineHeight:1.5}}>
+      «{hintText}»
+    </div>}
+
+    {/* State 2 — exactly one message */}
+    {!loading && count === 1 && <div style={{background:C.accentSoft,borderRadius:14,padding:'12px 14px',marginBottom:14}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5,fontSize:12,fontWeight:600,color:C.text}}>
+        <span style={{width:8,height:8,borderRadius:'50%',background:singleFromOther?dotColor:C.muted,flexShrink:0}}/>
+        <span>{single.sender_name || (singleFromOther ? (role==='client'?'Нутрициолог':'Клиент') : 'Вы')}</span>
+        <span style={{color:C.muted,fontWeight:400,fontSize:11}}>· {fmtChatTime(single.created_at)}</span>
+      </div>
+      <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{single.text}»</div>
+    </div>}
+
+    {/* State 3 — 2+ messages */}
+    {!loading && count >= 2 && <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:C.accentSoft,borderRadius:14,marginBottom:14}}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <div style={{fontSize:14,color:C.text,fontWeight:500}}>{count} {count%10===1&&count!==11?'сообщение':count%10>=2&&count%10<=4&&(count<10||count>20)?'сообщения':'сообщений'} за этот день</div>
+    </div>}
+
+    <button onClick={onOpenChat} style={{width:'100%',padding:'13px 16px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 2px 8px rgba(45,95,63,.2)',transition:'all .2s'}}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      {ctaText}
+    </button>
+  </div>;
+}
+
+// Full-screen chat modal. Single thread per (doc, client) pair.
+// Props: clientId, docId (nullable — resolved on demand), currentUserId, currentUserName,
+//        clientName, initialTagDate, onClose, uploadAttachment(file)
+function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName, initialTagDate, onClose, uploadAttachment, onTagClick }) {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState('');
+  const [tagDate, setTagDate] = useState(initialTagDate || null);
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [resolvedDocId, setResolvedDocId] = useState(docId || null);
+  const [otherParty, setOtherParty] = useState({ name: '', photo: null });
+  const [photoBroken, setPhotoBroken] = useState(false);
+  // iOS keyboard awareness: track keyboard height via visualViewport so
+  // the modal's inner padding-bottom lifts the input above the keyboard.
+  const [kbHeight, setKbHeight] = useState(0);
+  const scrollRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  // Auto-grow the textarea as the user types — height follows content
+  // up to a max, like Telegram's composer.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }, [text]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => {
+      const h = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0));
+      setKbHeight(h);
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
+
+  // Lock body scroll while the chat is open so iOS doesn't scroll the
+  // underlying page when the textarea is focused, and restore the exact
+  // scroll position on close.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    const body = document.body;
+    const prev = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      body.style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
+  // Resolve docId if not provided (client opens chat, needs to find
+  // their doc). We pick the MOST RECENTLY created doc_clients link so
+  // that if the client has history with both an old test account and a
+  // real one, we always land on the real (most recent) nutritionist.
+  useEffect(() => {
+    if (resolvedDocId || !supabase || !clientId) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('doc_clients')
+          .select('doc_id,created_at')
+          .eq('client_id', clientId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (mounted && data?.doc_id) setResolvedDocId(data.doc_id);
+      } catch (e) { /* ignore */ }
+    })();
+    return () => { mounted = false; };
+  }, [clientId, resolvedDocId]);
+
+  // Load full thread + realtime subscribe. Scope by doc_id when known
+  // so old threads from a different (stale) doc account don't leak in.
+  useEffect(() => {
+    if (!supabase || !clientId) return;
+    let mounted = true;
+
+    (async () => {
+      try {
+        let q = supabase.from('doc_comments')
+          .select('*')
+          .eq('client_id', clientId)
+          .eq('kind', 'comment');
+        if (resolvedDocId) q = q.eq('doc_id', resolvedDocId);
+        const { data } = await q.order('created_at', { ascending: true });
+        if (mounted && data) setMessages(data);
+      } catch (e) { console.error('load chat:', e); }
+    })();
+
+    const channelFilter = resolvedDocId
+      ? `doc_id=eq.${resolvedDocId}`
+      : `client_id=eq.${clientId}`;
+    const channel = supabase.channel('chat_full_' + clientId + '_' + (resolvedDocId||'?') + '_' + Date.now())
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: channelFilter },
+        (payload) => {
+          if (!mounted) return;
+          const m = payload.new;
+          if (m.kind !== 'comment') return;
+          if (resolvedDocId && m.doc_id !== resolvedDocId) return;
+          if (m.client_id !== clientId) return;
           setMessages(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m]);
+        })
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'doc_comments', filter: channelFilter },
+        (payload) => {
+          if (!mounted) return;
+          const m = payload.new;
+          if (resolvedDocId && m.doc_id !== resolvedDocId) return;
+          if (m.client_id !== clientId) return;
+          setMessages(prev => prev.map(x => x.id === m.id ? Object.assign({}, x, m) : x));
         })
       .subscribe();
 
@@ -1340,95 +1581,254 @@ function ChatSection({ clientId, docId, currentUserId, currentUserName, dateKey,
       mounted = false;
       try { supabase.removeChannel(channel); } catch (e) {}
     };
-  }, [clientId, dateKey]); // eslint-disable-line
+  }, [clientId, resolvedDocId]); // eslint-disable-line
 
-  // Auto-scroll chat container on new messages
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
-  const send = async () => {
-    const t = text.trim();
-    if (!t || !supabase || !currentUserId || sending) return;
-    setSending(true);
-    // Resolve docId if not passed (e.g. client opens chat, needs to find their doc)
-    let actualDocId = docId;
-    if (!actualDocId) {
-      try {
-        const { data: link } = await supabase.from('doc_clients')
-          .select('doc_id').eq('client_id', clientId).limit(1).maybeSingle();
-        if (link) actualDocId = link.doc_id;
-      } catch (e) {}
+  // Mark unread doc messages as read when the modal opens
+  useEffect(() => {
+    if (!supabase || !clientId || !currentUserId) return;
+    supabase.from('doc_comments')
+      .update({ read: true })
+      .eq('client_id', clientId)
+      .eq('read', false)
+      .neq('sender_id', currentUserId)
+      .then(()=>{}, ()=>{});
+  }, [clientId, currentUserId]);
+
+  // Load the other party's profile (name + avatar) so the header shows
+  // who you're talking to. For the client, it's the nutritionist; for
+  // the nutritionist, it's the client. If the direct profiles select is
+  // blocked by RLS or photo_url is empty, we also fall back to the
+  // predictable public storage URL and the sender_name from messages.
+  useEffect(() => {
+    if (!supabase || !currentUserId) return;
+    const otherId = currentUserId === clientId ? resolvedDocId : clientId;
+    if (!otherId) return;
+    let mounted = true;
+    // Default guess: the profile avatar lives at photos/<uid>/avatar.jpg
+    const storageGuess = sbUrl
+      ? sbUrl + '/storage/v1/object/public/photos/' + otherId + '/avatar.jpg'
+      : null;
+    setPhotoBroken(false);
+    setOtherParty(prev => ({ ...prev, photo: prev.photo || storageGuess }));
+    supabase.from('profiles')
+      .select('id,name,nick,photo_url')
+      .eq('id', otherId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!mounted || !data) return;
+        setOtherParty(prev => ({
+          name: data.nick || data.name || prev.name || '',
+          photo: data.photo_url || prev.photo || storageGuess || null,
+        }));
+      }, () => {});
+    return () => { mounted = false; };
+  }, [currentUserId, clientId, resolvedDocId]); // eslint-disable-line
+
+  // Fallback: when profiles read is blocked by RLS, at least fill the
+  // display name from the latest message sent by the other party.
+  useEffect(() => {
+    if (otherParty.name) return;
+    const other = [...messages].reverse().find(m => m.sender_id && m.sender_id !== currentUserId);
+    if (other && other.sender_name) {
+      setOtherParty(prev => ({ ...prev, name: other.sender_name }));
     }
-    if (!actualDocId) { setSending(false); return; }
-    // Optimistic UI
+  }, [messages, currentUserId, otherParty.name]);
+
+  const send = async (overrides = {}) => {
+    const t = (overrides.text !== undefined ? overrides.text : text).trim();
+    const atts = overrides.attachments || [];
+    if ((!t && atts.length === 0) || !supabase || !currentUserId || sending) return;
+    if (!resolvedDocId) return;
+    setSending(true);
     const tempId = 'tmp-' + Date.now();
     const tempMsg = {
-      id: tempId, doc_id: actualDocId, client_id: clientId,
+      id: tempId, doc_id: resolvedDocId, client_id: clientId,
       sender_id: currentUserId, sender_name: currentUserName || '',
-      date: dateKey, text: t, kind: 'comment', read: false,
+      date: tagDate || null, text: t, kind: 'comment', read: false,
+      attachments: atts, reactions: {},
       created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, tempMsg]);
-    setText('');
+    if (overrides.text === undefined) setText('');
     try {
       const { data, error } = await supabase.from('doc_comments').insert({
-        doc_id: actualDocId, client_id: clientId,
+        doc_id: resolvedDocId, client_id: clientId,
         sender_id: currentUserId, sender_name: currentUserName || '',
-        date: dateKey, text: t, kind: 'comment', read: false,
+        date: tagDate || null, text: t, kind: 'comment', read: false,
+        attachments: atts,
       }).select().maybeSingle();
       if (error) throw error;
-      if (data) {
-        setMessages(prev => prev.map(m => m.id === tempId ? data : m));
-      }
+      if (data) setMessages(prev => prev.map(m => m.id === tempId ? data : m));
     } catch (e) {
       console.error('send chat:', e);
-      // Roll back optimistic message
       setMessages(prev => prev.filter(m => m.id !== tempId));
-      setText(t);
+      if (overrides.text === undefined) setText(t);
     }
     setSending(false);
   };
 
-  const fmtTime = (iso) => {
+  const toggleReaction = async (msg, emoji) => {
+    if (!supabase || !currentUserId) return;
+    const reactions = Object.assign({}, msg.reactions || {});
+    const list = Array.isArray(reactions[emoji]) ? reactions[emoji].slice() : [];
+    const idx = list.indexOf(currentUserId);
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push(currentUserId);
+    if (list.length === 0) delete reactions[emoji];
+    else reactions[emoji] = list;
+    // Optimistic local update
+    setMessages(prev => prev.map(m => m.id === msg.id ? Object.assign({}, m, { reactions }) : m));
     try {
-      return new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-    } catch (e) { return ''; }
+      await supabase.from('doc_comments').update({ reactions }).eq('id', msg.id);
+    } catch (e) { console.error('react:', e); }
   };
 
-  return <div id="chat-section" style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:16,overflow:'hidden',scrollMarginTop:16}}>
-    <div style={{padding:'14px 18px 8px',fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase'}}>Комментарий нутрициолога</div>
-    <div ref={scrollRef} style={{maxHeight:300,overflowY:'auto',padding:'0 18px 8px'}}>
-      {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'16px 0'}}>Нет сообщений за этот день</div>}
-      {messages.map(m => {
+  const onPickFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file || !uploadAttachment) return;
+    try {
+      const url = await uploadAttachment(file);
+      if (url) await send({ text: '', attachments: [{ type: file.type.startsWith('image/') ? 'image' : 'file', url, name: file.name }] });
+    } catch (err) { console.error('upload att:', err); }
+  };
+
+  // Group messages by calendar day for "сегодня / вчера / дата" separators
+  const grouped = [];
+  let lastDayLabel = null;
+  messages.forEach(m => {
+    const d = new Date(m.created_at);
+    const today = new Date();
+    const yest = new Date(); yest.setDate(yest.getDate()-1);
+    const sameDayAs = (a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
+    let label;
+    if (sameDayAs(d, today)) label = 'сегодня';
+    else if (sameDayAs(d, yest)) label = 'вчера';
+    else label = d.getDate() + ' ' + MO_R[d.getMonth()];
+    if (label !== lastDayLabel) { grouped.push({ sep: label, key: 's' + m.id }); lastDayLabel = label; }
+    grouped.push({ msg: m, key: m.id });
+  });
+
+  const iAmClient = currentUserId === clientId;
+  const partyLabel = iAmClient ? 'нутрициолог' : 'клиент';
+  // For the client the "clientName" prop is their OWN name, so we prefer
+  // the loaded other-party name and only use clientName when the viewer
+  // is the doc (clientName is then the client's display name).
+  const displayName = otherParty.name || (iAmClient ? 'Нутрициолог' : (clientName || 'Клиент'));
+  const avatarInitial = (displayName || '').trim().slice(0,2).toUpperCase() || '—';
+
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':0,overflow:'hidden'}}>
+    {/* Header */}
+    <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
+      <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      {otherParty.photo && !photoBroken
+        ? <img src={otherParty.photo} alt="" onError={() => setPhotoBroken(true)} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
+        : <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
+      }
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayName}</div>
+        <div style={{fontSize:11,color:C.muted}}>{partyLabel} · онлайн</div>
+      </div>
+    </div>
+
+    {/* Messages */}
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0}}>
+      {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
+      {grouped.map(g => {
+        if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
+        const m = g.msg;
         const isMine = m.sender_id === currentUserId;
-        return <div key={m.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',marginBottom:6}}>
-          <div style={{maxWidth:'80%',padding:'10px 14px',borderRadius:isMine?'14px 14px 4px 14px':'14px 14px 14px 4px',background:isMine?C.accentSoft:C.surfaceAlt,fontSize:13,lineHeight:1.6}}>
-            <div style={{fontSize:10,fontWeight:600,color:isMine?C.accent:C.warm,marginBottom:2}}>{m.sender_name || '—'}</div>
-            <div style={{whiteSpace:'pre-wrap'}}>{m.text}</div>
-            <div style={{fontSize:10,color:C.muted,textAlign:'right',marginTop:2}}>{fmtTime(m.created_at)}</div>
+        const reactions = m.reactions || {};
+        const reactionEntries = Object.entries(reactions).filter(([,users]) => Array.isArray(users) && users.length > 0);
+        const atts = Array.isArray(m.attachments) ? m.attachments : [];
+        return <div key={g.key} style={{display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',marginBottom:8}}>
+          <div style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere'}}>
+            {atts.map((a, i) => a.type === 'image'
+              ? <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>
+              : <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
+                </div>)}
+            {m.text && <div style={{whiteSpace:'pre-wrap'}}>{m.text}</div>}
+            {m.date && <button type="button" onClick={() => onTagClick && onTagClick(m.date)} style={{display:'inline-flex',alignItems:'center',gap:4,marginTop:6,padding:'4px 9px',borderRadius:10,background:isMine?'rgba(255,255,255,.18)':C.accentSoft,color:isMine?'#fff':C.accent,fontSize:11,fontWeight:600,border:'none',cursor:'pointer',fontFamily:'inherit',textDecoration:'underline',textUnderlineOffset:2}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              {fmtDateTag(m.date)} →
+            </button>}
           </div>
+          <div style={{fontSize:10,color:C.muted,marginTop:3,padding:'0 4px'}}>{fmtChatTime(m.created_at)}</div>
+          {/* Reactions — always show row for doc messages so clients can react;
+              for own messages, show only if there are reactions */}
+          {(!isMine || reactionEntries.length > 0) && <div style={{display:'flex',gap:4,marginTop:3,flexWrap:'wrap',maxWidth:'82%'}}>
+            {reactionEntries.map(([emoji, users]) => {
+              const mine = users.includes(currentUserId);
+              return <button key={emoji} onClick={() => toggleReaction(m, emoji)} style={{background:mine?C.accentSoft:C.surfaceAlt,border:`1px solid ${mine?C.accent:'transparent'}`,borderRadius:12,padding:'2px 8px',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontFamily:'inherit'}}>
+                <span>{emoji}</span><span style={{fontSize:10,color:mine?C.accent:C.muted,fontWeight:600}}>{users.length}</span>
+              </button>;
+            })}
+            {!isMine && <ReactionPicker onPick={(e) => toggleReaction(m, e)} active={reactionEntries.map(([e])=>e)}/>}
+          </div>}
         </div>;
       })}
     </div>
-    {!readOnly&&<>
-      {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>
-        {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8,transition:'all .15s'}}
-          onMouseOver={ev => ev.currentTarget.style.background = C.surfaceAlt} onMouseOut={ev => ev.currentTarget.style.background = 'none'}>{e}</button>)}
-      </div>}
-      <div style={{display:'flex',gap:6,padding:'8px 12px 12px',alignItems:'flex-end'}}>
-        <button onClick={() => setShowEmoji(!showEmoji)} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:'6px',color:C.muted,flexShrink:0}}>😊</button>
-        <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение..." rows={1}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-          style={{flex:1,padding:'10px 14px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.5,maxHeight:100}}
-          onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
-        <button disabled={!text.trim() || sending} onClick={send} style={{width:38,height:38,borderRadius:'50%',border:'none',background:text.trim() && !sending ? C.accent : '#ddd',color:'#fff',fontSize:16,cursor:text.trim() && !sending ? 'pointer' : 'default',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+
+    {/* Tag pill above input */}
+    {tagDate && <div style={{padding:'8px 14px 0',flexShrink:0}}>
+      <div style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:14,background:C.accentSoft,color:C.accent,fontSize:12,fontWeight:600}}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        {fmtDateTag(tagDate)}
+        <button onClick={() => setTagDate(null)} style={{background:'none',border:'none',cursor:'pointer',color:C.accent,padding:0,display:'flex'}}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
+        <span style={{fontWeight:400,color:C.soft,marginLeft:4}}>ответ про этот день</span>
       </div>
-    </>}
-    {readOnly&&messages.length===0&&<div style={{padding:'8px 18px 14px',fontSize:12,color:C.muted,textAlign:'center'}}>Нутрициолог пока не оставил комментарий</div>}
+    </div>}
+
+    {/* Emoji row */}
+    {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 14px',background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,flexShrink:0}}>
+      {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8}}>{e}</button>)}
+    </div>}
+
+    {/* Input toolbar — extends all the way to the bottom edge so no
+        background-color strip shows under it on iOS */}
+    <div style={{background:C.surface,padding:`14px 18px calc(env(safe-area-inset-bottom) + 23px)`,flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
+      <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
+        <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
+        <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <textarea ref={textareaRef} value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение" rows={1}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          style={{flex:1,minWidth:0,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:16,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.4,maxHeight:120,minHeight:40,overflowY:'auto'}}
+          onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
+        {!text.trim() && <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>}
+        {text.trim()
+          ? <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>
+          : <MicButton onResult={(t) => setText(t)} onStart={() => {}} style={{width:40,height:40,borderRadius:'50%',padding:0,background:C.accent,color:'#fff',flexShrink:0}}/>
+        }
+      </div>
+    </div>
+  </div>;
+}
+
+// Small picker shown as a "+" button next to existing reactions; opens a
+// horizontal row of quick emojis.
+function ReactionPicker({ onPick, active }) {
+  const [open, setOpen] = useState(false);
+  return <div style={{position:'relative',display:'inline-block'}}>
+    <button onClick={() => setOpen(!open)} style={{background:C.surfaceAlt,border:'1px dashed '+C.tileBorder,borderRadius:12,padding:'2px 8px',fontSize:12,cursor:'pointer',color:C.muted,fontFamily:'inherit'}}>+</button>
+    {open && <div style={{position:'absolute',bottom:'100%',left:0,marginBottom:4,background:C.surface,borderRadius:16,boxShadow:C.shadowHover,padding:'6px 8px',display:'flex',gap:4,zIndex:2}}>
+      {REACTION_SET.map(e => <button key={e} onClick={() => { onPick(e); setOpen(false); }} style={{fontSize:20,background:active.includes(e)?C.accentSoft:'none',border:'none',cursor:'pointer',padding:'4px 6px',borderRadius:8}}>{e}</button>)}
+    </div>}
   </div>;
 }
 
@@ -1798,9 +2198,19 @@ export default function App(){
   const[showNotif,setShowNotif]=useState(false);
   const[docUnread,setDocUnread]=useState(0);
   const[clientUnread,setClientUnread]=useState(0);
+  // Unread chat messages (kind='comment' only, for the chat-icon badge)
+  const[clientChatUnread,setClientChatUnread]=useState(0);
+  // Per-client unread count for the doc, keyed by client_id
+  const[docChatUnreadByClient,setDocChatUnreadByClient]=useState({});
   const[inv,setInv]=useState(false);
   const[invCode,setInvCode]=useState('');
   const[copied,setCopied]=useState(false);
+  // Chat modal: {clientId, docId, clientName, tagDate} | null
+  const[chatModal,setChatModal]=useState(null);
+  // When the user clicks a day-tag in the chat, we close the modal,
+  // navigate to that day, and remember the chat context here so a
+  // floating "back to chat" button can reopen it.
+  const[returnToChat,setReturnToChat]=useState(null);
 
   // ═══ SAVE TIMERS (per-pid to avoid cross-client data loss) ═══
   const saveTimers=useRef({});
@@ -1906,6 +2316,19 @@ export default function App(){
           .eq('read',false)
           .neq('sender_id',user.id);
         if(mounted)setDocUnread(count||0);
+        // Also load per-client chat unread (kind='comment') so we can show a
+        // badge on the chat icon when the doc is inside a specific client.
+        const{data:rows}=await supabase.from('doc_comments')
+          .select('client_id')
+          .eq('doc_id',user.id)
+          .eq('read',false)
+          .eq('kind','comment')
+          .neq('sender_id',user.id);
+        if(mounted){
+          const map={};
+          (rows||[]).forEach(r=>{map[r.client_id]=(map[r.client_id]||0)+1});
+          setDocChatUnreadByClient(map);
+        }
       }catch(e){}
     };
     loadCount();
@@ -1927,6 +2350,14 @@ export default function App(){
           .eq('read',false)
           .neq('sender_id',user.id);
         if(mounted)setClientUnread(count||0);
+        // Chat-only unread (kind='comment')
+        const{count:chatCount}=await supabase.from('doc_comments')
+          .select('id',{count:'exact',head:true})
+          .eq('client_id',user.id)
+          .eq('read',false)
+          .eq('kind','comment')
+          .neq('sender_id',user.id);
+        if(mounted)setClientChatUnread(chatCount||0);
       }catch(e){}
     };
     loadCount();
@@ -2176,8 +2607,8 @@ export default function App(){
         r.readAsDataURL(file);
       });
     }
-    // Compress image before upload (max 1200px, quality 0.82)
-    const compressed = await compressImage(file, 1200, 0.82);
+    // Compress image before upload (max 1200px, quality 0.80)
+    const compressed = await compressImage(file, 1200, 0.80);
     const ext = file.type === 'image/png' ? 'png' : 'jpg';
     const path = `${pid}/meals/${dateStr}/${mealId}_${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from('photos').upload(path, compressed, {
@@ -2400,6 +2831,39 @@ export default function App(){
   const goHome = () => { setScreen('home'); setSelMeal(null); setSelClient(null); };
   const openSupport = () => { window.open('https://t.me/ellme_support','_blank'); };
 
+  // Upload a chat attachment to the `photos` bucket and return its public URL.
+  // Images are compressed like meal photos; other files are uploaded as-is.
+  const uploadChatAttachment = async (file) => {
+    if (!supabase || !user?.id) return null;
+    const safeName = (file.name || 'file').replace(/[^\w.\-]/g, '_');
+    const ts = Date.now();
+    const path = `${user.id}/chat/${ts}_${safeName}`;
+    let body = file;
+    let contentType = file.type || 'application/octet-stream';
+    if (file.type && file.type.startsWith('image/')) {
+      try {
+        // Same hard economy as meal photos: max 1200px, 80% JPEG
+        body = await compressImage(file, 1200, 0.80);
+        contentType = body.type || 'image/jpeg';
+      } catch (e) { /* fall back to original */ }
+    }
+    const { error } = await supabase.storage.from('photos').upload(path, body, { upsert: true, contentType });
+    if (error) { console.error('chat upload:', error); return null; }
+    const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path);
+    return urlData?.publicUrl ? urlData.publicUrl + '?t=' + ts : null;
+  };
+
+  // Helper to open the chat modal with the given target
+  const openChat = (targetClientId, targetClientName, targetDocId, tagDate) => {
+    setReturnToChat(null);
+    setChatModal({
+      clientId: targetClientId,
+      docId: targetDocId || null,
+      clientName: targetClientName || '',
+      tagDate: tagDate || null,
+    });
+  };
+
   const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)',overscrollBehavior:'none'}}>
     <style>{CSS}</style>
     {/* Pull-to-refresh indicator */}
@@ -2413,6 +2877,47 @@ export default function App(){
     </div>}
     {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
     {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}
+    {chatModal && <ChatModal
+      clientId={chatModal.clientId}
+      docId={chatModal.docId}
+      currentUserId={user?.id}
+      currentUserName={user?.name||''}
+      clientName={chatModal.clientName}
+      initialTagDate={chatModal.tagDate}
+      onClose={()=>setChatModal(null)}
+      uploadAttachment={uploadChatAttachment}
+      onTagClick={(tagDate)=>{
+        if(!tagDate)return;
+        const ps=tagDate.split('-');
+        if(ps.length>=3){
+          const d=new Date(+ps[0],+ps[1]-1,+ps[2]);
+          if(!isNaN(d))setDate(d);
+        }
+        // Remember how to reopen the chat from the day view
+        setReturnToChat({
+          clientId:chatModal.clientId,
+          docId:chatModal.docId,
+          clientName:chatModal.clientName,
+          tagDate:tagDate,
+        });
+        setChatModal(null);
+        // Make sure the right screen is visible (client stays on home;
+        // doc needs to be on the specific client view)
+        if(user?.role==='doc'){
+          const cl=clients.find(c=>c.id===chatModal.clientId);
+          if(cl){setSelClient(cl);setScreen('clientView');}
+        }else{
+          setScreen('home');setSelMeal(null);
+        }
+      }}
+    />}
+    {/* Floating "back to chat" button shown after navigating from a tag */}
+    {returnToChat && !chatModal && <button
+      onClick={()=>{setChatModal(returnToChat);setReturnToChat(null);}}
+      style={{position:'fixed',right:16,bottom:'calc(20px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 14l-4-4 4-4M5 10h11a4 4 0 014 4v0a4 4 0 01-4 4H9"/></svg>
+      Вернуться в чат
+    </button>}
     {renaming && <div style={{position:'fixed',inset:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',animation:'fadeIn .15s'}}>
       <div onClick={()=>setRenaming(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.25)',backdropFilter:'blur(4px)'}}/>
       <div style={{position:'relative',background:C.surface,borderRadius:24,padding:28,width:'min(400px,90vw)',boxShadow:C.shadowHover,animation:'scaleIn .25s cubic-bezier(.16,1,.3,1)'}}>
@@ -2450,12 +2955,16 @@ export default function App(){
           if(item.meal_type&&!isComment)setSelMeal(item.meal_type);
           else setSelMeal(null);
         }
-        // Scroll to chat section if it's a comment-type notification
+        // Open the chat modal directly for comment-type notifications
         if(isComment){
           setTimeout(()=>{
-            const el=typeof document!=='undefined'?document.getElementById('chat-section'):null;
-            if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
-          },250);
+            if(user.role==='doc'){
+              const cl=clients.find(c=>c.id===item.client_id);
+              if(cl)openChat(cl.id, cl.nick||cl.name, user.id, item.date||null);
+            }else{
+              openChat(user.id, user.name||'Нутрициолог', null, item.date||null);
+            }
+          },200);
         }
       }}
     />}
@@ -2481,7 +2990,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={<IcoBtn icon={I.support} onClick={openSupport}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+    <TopBar left={<IcoBtn icon={I.chat} badge={clientChatUnread} onClick={()=>openChat(user.id, user.name||'Нутрициолог', null, null)}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <WeeklyGoalWidget goal={user.weeklyGoal} goalDays={user.weeklyGoalDays} goalStarted={user.weeklyGoalStarted} goalSetBy={user.weeklyGoalSetBy} daysDone={goalDays} onToggleDay={toggleGoalDay}/>
@@ -2493,7 +3002,13 @@ export default function App(){
     </SecCard>
 
     <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
-    {!isDoc&&<ChatSection clientId={user.id} docId={null} currentUserId={user.id} currentUserName={user.name} dateKey={key} readOnly/>}
+    {!isDoc&&<DayChatPreview
+      clientId={user.id}
+      currentUserId={user.id}
+      dateKey={key}
+      role="client"
+      onOpenChat={()=>openChat(user.id, user.name||'Нутрициолог', null, key)}
+    />}
   </>);
 
   // ═══ DOCTOR ═══
@@ -2543,7 +3058,7 @@ export default function App(){
   if(isDoc&&screen==='clientView'&&selClient){
     const cd=getDay(selClient.id),cm=cd.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('profile');window.scrollTo(0,0)}}/>}/>
+      <TopBar left={<div style={{display:'flex',gap:4,alignItems:'center'}}><BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/><IcoBtn icon={I.chat} badge={docChatUnreadByClient[selClient.id]||0} onClick={()=>openChat(selClient.id, selClient.nick||selClient.name, user.id, null)}/></div>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('profile');window.scrollTo(0,0)}}/>}/>
       <div style={{background:C.surface,borderRadius:16,padding:'12px 16px',marginBottom:12,boxShadow:C.shadowCard,display:'flex',alignItems:'center',gap:12}}>
         <div style={{position:'relative',flexShrink:0}}>
           {selClient.photo?<img src={selClient.photo} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>}
@@ -2566,7 +3081,15 @@ export default function App(){
       </SecCard>
       <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm}/>
 
-      <ChatSection clientId={selClient.id} docId={user.id} currentUserId={user.id} currentUserName={user.name} dateKey={key}/>
+      <DayChatPreview
+        clientId={selClient.id}
+        docId={user.id}
+        currentUserId={user.id}
+        dateKey={key}
+        role="doc"
+        clientName={selClient.nick||selClient.name}
+        onOpenChat={()=>openChat(selClient.id, selClient.nick||selClient.name, user.id, key)}
+      />
     </>);
   }
 
@@ -2667,7 +3190,7 @@ export default function App(){
 }
 
 // ═══ IMAGE COMPRESSION UTILITY ═══
-function compressImage(file, maxDim = 1200, quality = 0.82) {
+function compressImage(file, maxDim = 1200, quality = 0.80) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
