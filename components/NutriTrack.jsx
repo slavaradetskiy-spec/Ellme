@@ -1586,8 +1586,13 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const [showEmoji, setShowEmoji] = useState(false);
   const [sending, setSending] = useState(false);
   const [resolvedDocId, setResolvedDocId] = useState(docId || null);
-  const [otherParty, setOtherParty] = useState({ name: '', photo: null });
+  const [otherParty, setOtherParty] = useState({ name: '', photo: null, lastSeen: null });
   const [photoBroken, setPhotoBroken] = useState(false);
+  // "Typing" indicator state. True while the other party is typing.
+  const [otherTyping, setOtherTyping] = useState(false);
+  const typingChannelRef = useRef(null);
+  const typingClearTimerRef = useRef(null);
+  const typingLastSentRef = useRef(0);
   // iOS keyboard awareness: track keyboard height via visualViewport so
   // the modal's inner padding-bottom lifts the input above the keyboard.
   const [kbHeight, setKbHeight] = useState(0);
@@ -1722,6 +1727,42 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
+  // Typing indicator: join a broadcast channel keyed by the pair so
+  // both sides hear each other's "I'm typing" events. The other party
+  // is shown as typing until 3s after the last event.
+  useEffect(() => {
+    if (!supabase || !clientId || !resolvedDocId || !currentUserId) return;
+    const key = 'typing_' + resolvedDocId + '_' + clientId;
+    const ch = supabase.channel(key, { config: { broadcast: { self: false } } });
+    ch.on('broadcast', { event: 'typing' }, (payload) => {
+      const uid = payload && payload.payload && payload.payload.userId;
+      if (!uid || uid === currentUserId) return;
+      setOtherTyping(true);
+      if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
+      typingClearTimerRef.current = setTimeout(() => setOtherTyping(false), 3500);
+    });
+    ch.subscribe();
+    typingChannelRef.current = ch;
+    return () => {
+      if (typingClearTimerRef.current) clearTimeout(typingClearTimerRef.current);
+      try { supabase.removeChannel(ch); } catch (e) {}
+      typingChannelRef.current = null;
+    };
+  }, [clientId, resolvedDocId, currentUserId]);
+
+  // Send a typing ping through the broadcast channel (rate-limited to
+  // at most once per 1.5s so we don't flood realtime).
+  const sendTypingPing = () => {
+    const ch = typingChannelRef.current;
+    if (!ch) return;
+    const now = Date.now();
+    if (now - typingLastSentRef.current < 1500) return;
+    typingLastSentRef.current = now;
+    try {
+      ch.send({ type: 'broadcast', event: 'typing', payload: { userId: currentUserId } });
+    } catch (e) { /* ignore */ }
+  };
+
   // Mark unread doc messages as read when the modal opens
   useEffect(() => {
     if (!supabase || !clientId || !currentUserId) return;
@@ -1733,11 +1774,11 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       .then(()=>{}, ()=>{});
   }, [clientId, currentUserId]);
 
-  // Load the other party's profile (name + avatar) so the header shows
-  // who you're talking to. For the client, it's the nutritionist; for
-  // the nutritionist, it's the client. If the direct profiles select is
-  // blocked by RLS or photo_url is empty, we also fall back to the
-  // predictable public storage URL and the sender_name from messages.
+  // Load the other party's profile (name + avatar + last_seen) so the
+  // header shows who you're talking to and whether they're online. If
+  // the direct profiles select is blocked by RLS or photo_url is empty,
+  // we also fall back to the predictable public storage URL and the
+  // sender_name from messages.
   useEffect(() => {
     if (!supabase || !currentUserId) return;
     const otherId = currentUserId === clientId ? resolvedDocId : clientId;
@@ -1750,7 +1791,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     setPhotoBroken(false);
     setOtherParty(prev => ({ ...prev, photo: prev.photo || storageGuess }));
     supabase.from('profiles')
-      .select('id,name,nick,photo_url')
+      .select('id,name,nick,photo_url,last_seen')
       .eq('id', otherId)
       .maybeSingle()
       .then(({ data }) => {
@@ -1758,10 +1799,28 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         setOtherParty(prev => ({
           name: data.nick || data.name || prev.name || '',
           photo: data.photo_url || prev.photo || storageGuess || null,
+          lastSeen: data.last_seen || null,
         }));
       }, () => {});
     return () => { mounted = false; };
   }, [currentUserId, clientId, resolvedDocId]); // eslint-disable-line
+
+  // Periodically refresh the other party's last_seen so the header
+  // transitions from "онлайн" to "была недавно" without reloading.
+  useEffect(() => {
+    if (!supabase || !currentUserId) return;
+    const otherId = currentUserId === clientId ? resolvedDocId : clientId;
+    if (!otherId) return;
+    const tick = () => {
+      supabase.from('profiles').select('last_seen').eq('id', otherId).maybeSingle()
+        .then(({ data }) => {
+          if (!data) return;
+          setOtherParty(prev => ({ ...prev, lastSeen: data.last_seen || prev.lastSeen }));
+        }, () => {});
+    };
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [currentUserId, clientId, resolvedDocId]);
 
   // Fallback: when profiles read is blocked by RLS, at least fill the
   // display name from the latest message sent by the other party.
@@ -1855,6 +1914,22 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // is the doc (clientName is then the client's display name).
   const displayName = otherParty.name || (iAmClient ? 'Нутрициолог' : (clientName || 'Клиент'));
   const avatarInitial = (displayName || '').trim().slice(0,2).toUpperCase() || '—';
+  // Online = last_seen within 2 min. Otherwise show "была/был N мин назад".
+  const isOnline = (() => {
+    if (!otherParty.lastSeen) return false;
+    const dt = new Date(otherParty.lastSeen).getTime();
+    return Date.now() - dt < 120000;
+  })();
+  const seenAgo = otherParty.lastSeen ? formatLastSeen(otherParty.lastSeen) : '';
+  // Grammatical gender for "был/была" — nutritionists in this product
+  // are mostly women, clients mixed. Default feminine for doc, neutral
+  // "был(а)" for others.
+  const seenVerb = iAmClient ? 'была' : 'был(а)';
+  let statusLine, statusColor;
+  if (otherTyping) { statusLine = 'печатает...'; statusColor = '#34C759'; }
+  else if (isOnline) { statusLine = partyLabel + ' · онлайн'; statusColor = '#34C759'; }
+  else if (seenAgo) { statusLine = partyLabel + ' · ' + seenVerb + ' ' + seenAgo; statusColor = C.muted; }
+  else { statusLine = partyLabel; statusColor = C.muted; }
 
   return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':0,overflow:'hidden'}}>
     {/* Header */}
@@ -1868,7 +1943,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       }
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayName}</div>
-        <div style={{fontSize:11,color:C.muted}}>{partyLabel} · онлайн</div>
+        <div style={{fontSize:11,color:statusColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{statusLine}</div>
       </div>
     </div>
 
@@ -1937,7 +2012,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
-        <textarea ref={textareaRef} value={text} onChange={e => setText(e.target.value)} placeholder="Сообщение" rows={1}
+        <textarea ref={textareaRef} value={text} onChange={e => { setText(e.target.value); sendTypingPing(); }} placeholder="Сообщение" rows={1}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           style={{flex:1,minWidth:0,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:16,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.4,maxHeight:120,minHeight:40,overflowY:'auto'}}
           onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
