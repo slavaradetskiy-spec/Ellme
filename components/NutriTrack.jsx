@@ -2354,6 +2354,11 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
       Не получилось построить аналитику<br/><span style={{color:C.muted,fontSize:12}}>{renderError}</span>
     </div>}
 
+    {!loading && analytics?.debug && <details style={{background:C.surface,borderRadius:12,padding:10,marginBottom:12,fontSize:11,color:C.muted}}>
+      <summary style={{cursor:'pointer',fontWeight:600}}>debug: загружено дней — {analytics.debug.daysCount ?? '?'}</summary>
+      <pre style={{margin:'8px 0 0',fontSize:10,whiteSpace:'pre-wrap',wordBreak:'break-all'}}>{JSON.stringify(analytics.debug, null, 2)}</pre>
+    </details>}
+
     {!loading && !renderError && <>
       {/* Tile grid */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
@@ -2727,12 +2732,14 @@ export default function App(){
         const start = new Date();
         start.setDate(start.getDate() - daysBack + 1);
         const startStr = dk(start), endStr = dk(end);
+        console.log('[analytics] query range', startStr, '→', endStr, 'user.id=', user.id);
         const { data: days, error: dayErr } = await supabase.from('diary_days')
           .select('*')
           .eq('user_id', user.id)
           .gte('date', startStr)
           .lte('date', endStr)
           .order('date', { ascending: true });
+        console.log('[analytics] diary_days rows:', days?.length || 0, 'err:', dayErr);
         if (dayErr) console.error('analytics days error:', dayErr);
         const dayIds = (days || []).map(d => d.id).filter(Boolean);
         let meals = [];
@@ -2740,13 +2747,20 @@ export default function App(){
           const { data: m, error: mealErr } = await supabase.from('meals')
             .select('diary_day_id,meal_type,time,liked')
             .in('diary_day_id', dayIds);
+          console.log('[analytics] meals rows:', m?.length || 0, 'err:', mealErr);
           if (mealErr) console.error('analytics meals error:', mealErr);
           meals = m || [];
         }
-        if (!cancelled) setAnalytics({ range: analyticsRange, days: days || [], meals, loading: false });
+        if (!cancelled) setAnalytics({
+          range: analyticsRange,
+          days: days || [],
+          meals,
+          loading: false,
+          debug: { startStr, endStr, userId: user.id, daysCount: (days||[]).length, dayErr: dayErr?.message, sampleDay: days?.[0] },
+        });
       } catch (e) {
         console.error('analytics load error:', e);
-        if (!cancelled) setAnalytics({ range: analyticsRange, days: [], meals: [], loading: false });
+        if (!cancelled) setAnalytics({ range: analyticsRange, days: [], meals: [], loading: false, debug: { error: e.message } });
       }
     })();
 
