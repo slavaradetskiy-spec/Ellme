@@ -2077,8 +2077,13 @@ function buildAnalytics(days, meals, waterNorm) {
   };
   safeDays.forEach(d => {
     if (!d) return;
-    series.water.push({ date: d.date, value: Number(d.water_ml) || 0 });
-    // Sleep hours computed from bed/wake (handles midnight wrap)
+    // Water: our save path defaults water_ml to 0, so treat 0 as "not
+    // tracked" for the average (otherwise a day where the user only
+    // touched sleep drags water avg down to nothing).
+    const waterVal = Number(d.water_ml);
+    series.water.push({ date: d.date, value: waterVal > 0 ? waterVal : null });
+    // Sleep hours from bed/wake times (handles midnight wrap). Null if
+    // either side missing.
     let hours = null;
     const bedMin = parseTime(d.sleep_bed);
     const wakeMin = parseTime(d.sleep_wake);
@@ -2088,11 +2093,15 @@ function buildAnalytics(days, meals, waterNorm) {
       hours = mins / 60;
     }
     series.sleep.push({ date: d.date, value: hours });
-    series.meals.push({ date: d.date, value: (mealsByDate[d.date] || []).length });
+    // Meals: count meals for this diary_day; 0 meals usually means
+    // "not tracked" (same rationale as water).
+    const mealCount = (mealsByDate[d.date] || []).length;
+    series.meals.push({ date: d.date, value: mealCount > 0 ? mealCount : null });
     series.energy.push({ date: d.date, value: d.energy != null ? Number(d.energy) : null });
     series.mood.push({ date: d.date, value: d.mood != null ? Number(d.mood) + 1 : null }); // mood 0-4 → 1-5
     series.stress.push({ date: d.date, value: d.stress_level != null ? Number(d.stress_level) : null });
-    // Movement is a free-text field; count as "active day" = 1 if filled
+    // Movement: 1 if filled, 0 otherwise (kept numeric so pct has a
+    // meaningful denominator = number of tracked days).
     series.movement.push({ date: d.date, value: (typeof d.movement === 'string' && d.movement.trim()) ? 1 : 0 });
   });
 
@@ -2102,13 +2111,15 @@ function buildAnalytics(days, meals, waterNorm) {
     return nums.reduce((a,b)=>a+b,0) / nums.length;
   };
   const pct = (arr) => {
+    const present = arr.filter(x => x.value != null).length;
+    if (!present) return null;
     const vals = arr.filter(x => x.value != null && x.value > 0).length;
-    return arr.length ? Math.round(vals / arr.length * 100) : 0;
+    return Math.round(vals / present * 100);
   };
 
-  const waterAvg = avg(series.water) || 0;
+  const waterAvg = avg(series.water);
   const sleepAvg = avg(series.sleep);
-  const mealsAvg = avg(series.meals) || 0;
+  const mealsAvg = avg(series.meals);
   const energyAvg = avg(series.energy);
   const moodAvg = avg(series.mood);
   const stressAvg = avg(series.stress);
@@ -2129,7 +2140,13 @@ function buildAnalytics(days, meals, waterNorm) {
   };
 
   const summary = {
-    water: { avg: Math.round(waterAvg), unit: 'мл', norm: waterNorm, pct: Math.min(100, Math.round(waterAvg/waterNorm*100)), status: status(waterAvg/waterNorm*100, 90, 70) },
+    water: {
+      avg: waterAvg == null ? null : Math.round(waterAvg),
+      unit: 'мл',
+      norm: waterNorm,
+      pct: waterAvg == null ? null : Math.min(100, Math.round(waterAvg/waterNorm*100)),
+      status: waterAvg == null ? { label: 'Нет данных', color: '#999' } : status(waterAvg/waterNorm*100, 90, 70),
+    },
     sleep: { avg: sleepAvg, unit: 'ч', status: (() => {
       if (sleepAvg == null) return { label: 'Нет данных', color: '#999' };
       if (sleepAvg >= 7 && sleepAvg <= 9) return { label: 'Отлично', color: '#2D5F3F' };
@@ -2265,14 +2282,14 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
     const s = summary[key];
     if (!s) return '—';
     if (key === 'water') {
-      const n = Number(s.avg);
-      return (isNaN(n) ? 0 : n).toLocaleString('ru');
+      if (s.avg == null) return '—';
+      return Number(s.avg).toLocaleString('ru');
     }
     if (key === 'sleep') return fmt1(s.avg);
     if (key === 'meals') return fmt1(s.avg);
     if (key === 'energy' || key === 'mood') return fmt1(s.avg);
     if (key === 'stress') return fmt1(s.avg);
-    if (key === 'movement') return (s.pct != null ? s.pct : 0) + '%';
+    if (key === 'movement') return s.pct == null ? '—' : s.pct + '%';
     return '—';
   };
   const tileUnit = (key) => {
@@ -2340,18 +2357,21 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
     {!loading && !renderError && <>
       {/* Tile grid */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
-        {METRICS.map(m => <MetricTile
-          key={m.key}
-          icon={m.icon}
-          label={m.label}
-          value={tileValue(m.key)}
-          unit={tileUnit(m.key)}
-          status={summary?.[m.key]?.status || {label:'—',color:'#999'}}
-          sparkData={series?.[m.key] || []}
-          sparkColor={m.color}
-          active={activeMetric===m.key}
-          onClick={()=>setActiveMetric(m.key)}
-        />)}
+        {METRICS.map(m => {
+          const v = tileValue(m.key);
+          return <MetricTile
+            key={m.key}
+            icon={m.icon}
+            label={m.label}
+            value={v}
+            unit={v === '—' ? '' : tileUnit(m.key)}
+            status={summary?.[m.key]?.status || {label:'—',color:'#999'}}
+            sparkData={series?.[m.key] || []}
+            sparkColor={m.color}
+            active={activeMetric===m.key}
+            onClick={()=>setActiveMetric(m.key)}
+          />;
+        })}
       </div>
 
       {/* Detail section */}
