@@ -364,6 +364,7 @@ function Mood({value:v,onChange,dis}){
 function MicButton({onResult,onStart,style:st}){
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
+  const finalBufferRef=useRef('');
   const toggle=()=>{
     if(listening&&recRef.current){recRef.current.stop();return;}
     const SR=typeof window!=='undefined'&&(window.SpeechRecognition||window.webkitSpeechRecognition);
@@ -372,17 +373,25 @@ function MicButton({onResult,onStart,style:st}){
     rec.lang='ru-RU';
     rec.continuous=true;
     rec.interimResults=true;
+    finalBufferRef.current='';
     onStart&&onStart();
     rec.onresult=(e)=>{
-      let final='',interim='';
-      for(let i=0;i<e.results.length;i++){
-        if(e.results[i].isFinal)final+=e.results[i][0].transcript+' ';
-        else interim+=e.results[i][0].transcript;
+      let interim='';
+      // Use resultIndex to only process NEW results since last event
+      // This prevents duplication on Android where results may persist
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const result=e.results[i];
+        const transcript=result[0].transcript;
+        if(result.isFinal){
+          finalBufferRef.current+=transcript+' ';
+        }else{
+          interim+=transcript+' ';
+        }
       }
-      onResult&&onResult((final+interim).trim());
+      onResult&&onResult((finalBufferRef.current+interim).trim());
     };
-    rec.onend=()=>{setListening(false);recRef.current=null;};
-    rec.onerror=()=>{setListening(false);recRef.current=null;};
+    rec.onend=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';};
+    rec.onerror=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';};
     recRef.current=rec;
     rec.start();
     setListening(true);
@@ -428,12 +437,13 @@ function Lightbox({src,onClose}){
 }
 
 // ═══ MEAL TILE (2×3 grid) ═══
-function MealTile({meal,data,onClick,delay=0}){
+function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
   const d=data||{};
   const photos=Array.isArray(d.photo)?d.photo:(d.photo?[d.photo]:[]);
   const firstPhoto=photos[0]||null;
   const has=d.text||firstPhoto;
-  return <button onClick={onClick} className="tile3d" style={{
+  const handleLike=(e)=>{e.stopPropagation();e.preventDefault();onToggleLike&&onToggleLike()};
+  return <div onClick={onClick} className="tile3d" style={{
     aspectRatio:'1',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',
     background:firstPhoto?`url(${firstPhoto}) center/cover`:C.tile,
     display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:14,
@@ -448,15 +458,18 @@ function MealTile({meal,data,onClick,delay=0}){
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
     {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none'}}/>}
     {photos.length>1&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:8,padding:'2px 8px',fontSize:11,fontWeight:600,zIndex:2,backdropFilter:'blur(4px)'}}>{photos.length} фото</div>}
-    {d.liked&&<div style={{position:'absolute',top:10,right:10,width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,.92)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(0,0,0,.15)',zIndex:2}}>
+    {/* Like button: clickable for doc (canLike), decorative for client when liked */}
+    {(canLike&&has)?<button onClick={handleLike} style={{position:'absolute',top:8,right:8,width:32,height:32,borderRadius:'50%',background:d.liked?'rgba(255,255,255,.95)':'rgba(255,255,255,.25)',backdropFilter:'blur(8px)',border:'none',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:d.liked?'0 2px 8px rgba(0,0,0,.15)':'none',zIndex:3,cursor:'pointer',padding:0,transition:'all .15s'}}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill={d.liked?'#E74C3C':'none'} stroke={d.liked?'#E74C3C':'#fff'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+    </button>:d.liked?<div style={{position:'absolute',top:10,right:10,width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,.92)',backdropFilter:'blur(6px)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(0,0,0,.15)',zIndex:2}}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="#E74C3C" stroke="#E74C3C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-    </div>}
+    </div>:null}
     <div style={{position:'relative',zIndex:1}}>
       {!has&&<div style={{fontSize:13,color:C.muted,marginBottom:2}}>Добавить</div>}
       <div style={{fontSize:15,fontWeight:700,color:firstPhoto?'#fff':C.text}}>{meal.label}</div>
       {d.time&&<div style={{fontSize:12,color:firstPhoto?'rgba(255,255,255,.8)':C.soft,marginTop:2}}>{d.time}</div>}
     </div>
-  </button>;
+  </div>;
 }
 
 // ═══ MEAL DETAIL ═══
@@ -493,10 +506,14 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
 
     {/* Photos gallery */}
     {photos.length>0&&<div style={{display:'flex',gap:8,overflowX:'auto',marginBottom:16,paddingBottom:4,WebkitOverflowScrolling:'touch'}}>
-      {photos.map((p,i)=><div key={i} style={{position:'relative',borderRadius:16,overflow:'hidden',boxShadow:C.shadow3d,flexShrink:0,width:photos.length===1?'100%':'75%',aspectRatio:'16/10'}}>
-        <img src={p} alt="" onClick={()=>onZoom(p)} style={{width:'100%',height:'100%',objectFit:'cover',cursor:'zoom-in',display:'block'}}/>
-        {!dis&&<button onClick={()=>removePhoto(i)} style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.5)',backdropFilter:'blur(6px)',border:'none',color:'#fff',width:28,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>✕</button>}
-        {photos.length>1&&<div style={{position:'absolute',bottom:8,left:8,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:6,padding:'2px 8px',fontSize:11,backdropFilter:'blur(4px)'}}>{i+1}/{photos.length}</div>}
+      {photos.map((p,i)=><div key={i} onClick={()=>onZoom&&onZoom(p)} style={{position:'relative',borderRadius:16,overflow:'hidden',boxShadow:C.shadow3d,flexShrink:0,width:photos.length===1?'100%':'75%',aspectRatio:'16/10',cursor:'zoom-in'}}>
+        <img src={p} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',pointerEvents:'none'}}/>
+        {/* Visible zoom button */}
+        <div style={{position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,.55)',backdropFilter:'blur(8px)',color:'#fff',width:36,height:36,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none',boxShadow:'0 2px 8px rgba(0,0,0,.2)'}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </div>
+        {!dis&&<button onClick={(e)=>{e.stopPropagation();removePhoto(i)}} style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.5)',backdropFilter:'blur(6px)',border:'none',color:'#fff',width:28,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,zIndex:2}}>✕</button>}
+        {photos.length>1&&<div style={{position:'absolute',bottom:8,left:8,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:6,padding:'2px 8px',fontSize:11,backdropFilter:'blur(4px)',pointerEvents:'none'}}>{i+1}/{photos.length}</div>}
       </div>)}
     </div>}
     {/* Hidden file inputs */}
@@ -2540,7 +2557,7 @@ export default function App(){
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
-          {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={cm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('clientMealDetail')}} delay={i*0.05}/>)}
+          {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={cm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('clientMealDetail')}} delay={i*0.05} canLike={true} onToggleLike={()=>toggleMealLike(selClient.id,m.id)}/>)}
         </div>
       </SecCard>
       <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm}/>
