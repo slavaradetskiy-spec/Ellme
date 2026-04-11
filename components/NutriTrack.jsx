@@ -1685,7 +1685,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const displayName = otherParty.name || (iAmClient ? 'Нутрициолог' : (clientName || 'Клиент'));
   const avatarInitial = (displayName || '').trim().slice(0,2).toUpperCase() || '—';
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':'calc(env(safe-area-inset-bottom) + 8px)',overflow:'hidden'}}>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':'calc(env(safe-area-inset-bottom) + 28px)',overflow:'hidden'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
