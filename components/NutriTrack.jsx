@@ -2752,51 +2752,6 @@ export default function App(){
   // Scroll to top on screen change
   useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
 
-  // Load analytics when screen switches to 'analytics' (own) or
-  // 'clientAnalytics' (viewing a client). Uses user.id for own data,
-  // selClient.id for client data.
-  useEffect(() => {
-    const isOwn = screen === 'analytics';
-    const isClient = screen === 'clientAnalytics';
-    if (!isOwn && !isClient) return;
-    const targetId = isClient ? selClient?.id : user?.id;
-    if (!targetId || !supabase) return;
-    let cancelled = false;
-    const daysBack = analyticsRange === 'week' ? 7 : analyticsRange === 'month' ? 30 : 365;
-    setAnalytics({ range: analyticsRange, days: [], meals: [], loading: true });
-
-    (async () => {
-      try {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(start.getDate() - daysBack + 1);
-        const startStr = dk(start), endStr = dk(end);
-        const { data: days, error: dayErr } = await supabase.from('diary_days')
-          .select('*')
-          .eq('user_id', targetId)
-          .gte('date', startStr)
-          .lte('date', endStr)
-          .order('date', { ascending: true });
-        if (dayErr) console.error('analytics days error:', dayErr);
-        const dayIds = (days || []).map(d => d.id).filter(Boolean);
-        let meals = [];
-        if (dayIds.length) {
-          const { data: m, error: mealErr } = await supabase.from('meals')
-            .select('diary_day_id,meal_type,time,liked')
-            .in('diary_day_id', dayIds);
-          if (mealErr) console.error('analytics meals error:', mealErr);
-          meals = m || [];
-        }
-        if (!cancelled) setAnalytics({ range: analyticsRange, days: days || [], meals, loading: false });
-      } catch (e) {
-        console.error('analytics load error:', e);
-        if (!cancelled) setAnalytics({ range: analyticsRange, days: [], meals: [], loading: false });
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [screen, analyticsRange, user?.id, selClient?.id]);
-
   // Pull-to-refresh (mobile)
   const[pullDist,setPullDist]=useState(0);
   const[refreshing,setRefreshing]=useState(false);
@@ -2875,6 +2830,46 @@ export default function App(){
 
   // ═══ SAVE TIMERS (per-pid to avoid cross-client data loss) ═══
   const saveTimers=useRef({});
+
+  // Load analytics when screen switches to 'analytics' (own) or
+  // 'clientAnalytics' (viewing a client). Placed HERE after all
+  // useState declarations to avoid Temporal Dead Zone crashes — the
+  // deps array references selClient which is declared above.
+  useEffect(() => {
+    const isOwn = screen === 'analytics';
+    const isClient = screen === 'clientAnalytics';
+    if (!isOwn && !isClient) return;
+    const targetId = isClient ? selClient?.id : user?.id;
+    if (!targetId || !supabase) return;
+    let cancelled = false;
+    const daysBack = analyticsRange === 'week' ? 7 : analyticsRange === 'month' ? 30 : 365;
+    setAnalytics({ range: analyticsRange, days: [], meals: [], loading: true });
+    (async () => {
+      try {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(start.getDate() - daysBack + 1);
+        const startStr = dk(start), endStr = dk(end);
+        const { data: days, error: dayErr } = await supabase.from('diary_days')
+          .select('*').eq('user_id', targetId).gte('date', startStr).lte('date', endStr)
+          .order('date', { ascending: true });
+        if (dayErr) console.error('analytics days error:', dayErr);
+        const dayIds = (days || []).map(d => d.id).filter(Boolean);
+        let meals = [];
+        if (dayIds.length) {
+          const { data: m, error: mealErr } = await supabase.from('meals')
+            .select('diary_day_id,meal_type,time,liked').in('diary_day_id', dayIds);
+          if (mealErr) console.error('analytics meals error:', mealErr);
+          meals = m || [];
+        }
+        if (!cancelled) setAnalytics({ range: analyticsRange, days: days || [], meals, loading: false });
+      } catch (e) {
+        console.error('analytics load error:', e);
+        if (!cancelled) setAnalytics({ range: analyticsRange, days: [], meals: [], loading: false });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [screen, analyticsRange, user?.id, selClient?.id]);
 
   // Create invite and save to DB
   const createInvite=async()=>{
