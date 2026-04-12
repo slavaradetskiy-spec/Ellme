@@ -440,11 +440,39 @@ function Area({value:v,onChange,placeholder:ph,dis,rows=3,showMic=false}){
 
 function Lbl({children}){return <div style={{fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.06em',textTransform:'uppercase',marginBottom:8}}>{children}</div>;}
 
-function Lightbox({src,onClose}){
-  useEffect(()=>{const h=e=>{if(e.key==='Escape')onClose()};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)},[onClose]);
-  return <div onClick={onClose} style={{position:'fixed',inset:0,zIndex:9999,background:'rgba(10,10,10,.92)',backdropFilter:'blur(16px)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',animation:'fadeIn .2s'}}>
-    <img src={src} alt="" style={{maxWidth:'94vw',maxHeight:'92vh',objectFit:'contain',borderRadius:16,boxShadow:'0 32px 80px rgba(0,0,0,.4)',animation:'scaleIn .3s cubic-bezier(.16,1,.3,1)'}}/>
+function Lightbox({src,photos:galleryPhotos,initialIndex,onClose}){
+  const items = galleryPhotos && galleryPhotos.length > 0 ? galleryPhotos : (src ? [src] : []);
+  const [idx, setIdx] = useState(initialIndex || 0);
+  const touchRef = useRef(null);
+  const canPrev = idx > 0, canNext = idx < items.length - 1;
+  useEffect(()=>{
+    const h=e=>{
+      if(e.key==='Escape')onClose();
+      if(e.key==='ArrowLeft'&&canPrev)setIdx(i=>i-1);
+      if(e.key==='ArrowRight'&&canNext)setIdx(i=>i+1);
+    };
+    window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);
+  },[onClose,canPrev,canNext]);
+  const onTouchStart=(e)=>{touchRef.current=e.touches[0].clientX};
+  const onTouchEnd=(e)=>{
+    if(touchRef.current==null)return;
+    const dx=e.changedTouches[0].clientX-touchRef.current;
+    touchRef.current=null;
+    if(dx>50&&canPrev)setIdx(i=>i-1);
+    if(dx<-50&&canNext)setIdx(i=>i+1);
+  };
+  return <div onClick={onClose} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{position:'fixed',inset:0,zIndex:9999,background:'rgba(10,10,10,.92)',backdropFilter:'blur(16px)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',animation:'fadeIn .2s'}}>
+    <img src={items[idx]} alt="" style={{maxWidth:'94vw',maxHeight:'92vh',objectFit:'contain',borderRadius:16,boxShadow:'0 32px 80px rgba(0,0,0,.4)',animation:'scaleIn .3s cubic-bezier(.16,1,.3,1)'}} key={idx}/>
     <button onClick={onClose} style={{position:'absolute',top:20,right:20,background:'rgba(255,255,255,.1)',backdropFilter:'blur(8px)',border:'none',color:'#fff',width:44,height:44,borderRadius:12,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>{I.x}</button>
+    {items.length>1&&<div style={{position:'absolute',bottom:24,left:'50%',transform:'translateX(-50%)',display:'flex',alignItems:'center',gap:12}}>
+      {canPrev&&<button onClick={e=>{e.stopPropagation();setIdx(i=>i-1)}} style={{background:'rgba(255,255,255,.15)',backdropFilter:'blur(8px)',border:'none',color:'#fff',width:40,height:40,borderRadius:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>}
+      <span style={{color:'rgba(255,255,255,.7)',fontSize:13,fontWeight:500,minWidth:40,textAlign:'center'}}>{idx+1} / {items.length}</span>
+      {canNext&&<button onClick={e=>{e.stopPropagation();setIdx(i=>i+1)}} style={{background:'rgba(255,255,255,.15)',backdropFilter:'blur(8px)',border:'none',color:'#fff',width:40,height:40,borderRadius:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>}
+    </div>}
   </div>;
 }
 
@@ -504,7 +532,7 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
       const r=new FileReader();r.onload=ev=>upd('photo',[...photos,ev.target.result]);r.readAsDataURL(f);
     }
   };
-  const removePhoto=(idx)=>{ const next=photos.filter((_,i)=>i!==idx); upd('photo',next.length?next:null); };
+  const removePhoto=(idx)=>{ if(!window.confirm('Удалить фото?'))return; const next=photos.filter((_,i)=>i!==idx); upd('photo',next.length?next:null); };
 
   const toggleLike=()=>upd('liked',!d.liked);
   const heartBtn=<button onClick={dis?toggleLike:undefined} disabled={!dis&&!d.liked} style={{background:'none',border:'none',cursor:dis?'pointer':(d.liked?'default':'default'),padding:8,display:'flex',alignItems:'center',justifyContent:'center',opacity:(dis||d.liked)?1:0,transition:'all .2s'}}>
@@ -518,9 +546,9 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
 
     {/* Photos gallery */}
     {photos.length>0&&<div style={{display:'flex',gap:8,overflowX:'auto',marginBottom:16,paddingBottom:4,WebkitOverflowScrolling:'touch'}}>
-      {photos.map((p,i)=><div key={i} onClick={()=>onZoom&&onZoom(p)} style={{position:'relative',borderRadius:16,overflow:'hidden',boxShadow:C.shadow3d,flexShrink:0,width:photos.length===1?'100%':'75%',aspectRatio:'16/10',cursor:'zoom-in'}}>
+      {photos.map((p,i)=><div key={i} onClick={()=>onZoom&&onZoom(photos.length>1?{photos,index:i}:p)} style={{position:'relative',borderRadius:16,overflow:'hidden',boxShadow:C.shadow3d,flexShrink:0,width:photos.length===1?'100%':'75%',aspectRatio:'16/10',cursor:'zoom-in'}}>
         <img src={p} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',pointerEvents:'none'}}/>
-        {!dis&&<button onClick={(e)=>{e.stopPropagation();removePhoto(i)}} style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.5)',backdropFilter:'blur(6px)',border:'none',color:'#fff',width:28,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,zIndex:2}}>✕</button>}
+        {!dis&&<button onClick={(e)=>{e.stopPropagation();removePhoto(i)}} style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.5)',backdropFilter:'blur(6px)',border:'none',color:'#fff',width:28,height:28,borderRadius:8,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
         {photos.length>1&&<div style={{position:'absolute',bottom:8,left:8,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:6,padding:'2px 8px',fontSize:11,backdropFilter:'blur(4px)',pointerEvents:'none'}}>{i+1}/{photos.length}</div>}
       </div>)}
     </div>}
@@ -3873,7 +3901,7 @@ export default function App(){
         </svg>
       </div>
     </div>}
-    {lb && <Lightbox src={lb} onClose={()=>setLb(null)}/>}
+    {lb && <Lightbox src={typeof lb==='string'?lb:null} photos={lb?.photos||null} initialIndex={lb?.index||0} onClose={()=>setLb(null)}/>}
     {celebration && <Celebration type={celebration} onClose={()=>setCelebration(null)}/>}
     {showChatList && user?.role==='doc' && <ChatListModal
       docId={user.id}
