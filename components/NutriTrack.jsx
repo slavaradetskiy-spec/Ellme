@@ -1,7 +1,10 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react";
+import { Chart, registerables } from 'chart.js';
 import { createClient } from '@supabase/supabase-js';
+
+if (typeof window !== 'undefined') Chart.register(...registerables);
 
 // ═══ SUPABASE CLIENT ═══
 let supabase = null;
