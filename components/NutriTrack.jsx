@@ -632,6 +632,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
   const waterMl=d.water||0;
   const waterPct=Math.min(100,Math.round((waterMl/waterNorm)*100));
   const addWater=(ml)=>{if(dis)return;const nv=Math.min(waterNorm+500,waterMl+ml);upd('water',nv);if(waterMl<waterNorm&&nv>=waterNorm&&onCelebrate)onCelebrate('water')};
+  const subWater=(ml)=>{if(dis)return;upd('water',Math.max(0,waterMl-ml))};
   // Debounced sleep celebration — waits 2s after the last change so the
   // user has time to set BOTH hours AND minutes before the confetti
   // fires. Without this, picking hour "23" (intended "23:55") would
@@ -668,12 +669,21 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
             <div style={{fontSize:11,color:waterPct>=100?C.accent:C.muted,marginTop:4,fontWeight:waterPct>=100?600:400}}>{waterPct>=100?'Норма выполнена':'Осталось '+(waterNorm-waterMl)+' мл'}</div>
           </div>
         </div>
-        {!dis&&<div style={{display:'flex',gap:6}}>
-          {[100,200,250,330,500].map(ml=><button key={ml} onClick={()=>addWater(ml)} style={{flex:1,padding:'8px 4px',borderRadius:10,border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:12,fontWeight:500,color:C.soft,fontFamily:'inherit',transition:'all .15s'}}
-            onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent;e.currentTarget.style.background=C.accentSoft}}
-            onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.soft;e.currentTarget.style.background=C.surface}}>
-            +{ml}
-          </button>)}
+        {!dis&&<div style={{display:'flex',flexDirection:'column',gap:6}}>
+          <div style={{display:'flex',gap:6}}>
+            {[100,200,250,330,500].map(ml=><button key={ml} onClick={()=>addWater(ml)} style={{flex:1,padding:'8px 4px',borderRadius:10,border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:12,fontWeight:500,color:C.soft,fontFamily:'inherit',transition:'all .15s'}}
+              onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent;e.currentTarget.style.background=C.accentSoft}}
+              onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.soft;e.currentTarget.style.background=C.surface}}>
+              +{ml}
+            </button>)}
+          </div>
+          {waterMl>0&&<div style={{display:'flex',gap:6}}>
+            {[100,200,250,330,500].filter(ml=>ml<=waterMl).map(ml=><button key={ml} onClick={()=>subWater(ml)} style={{flex:1,padding:'8px 4px',borderRadius:10,border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:12,fontWeight:500,color:'#D85A30',fontFamily:'inherit',transition:'all .15s'}}
+              onMouseOver={e=>{e.currentTarget.style.borderColor='#D85A30';e.currentTarget.style.background='#FDEEEC'}}
+              onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.background=C.surface}}>
+              −{ml}
+            </button>)}
+          </div>}
         </div>}
       </div>
     </SecCard>
