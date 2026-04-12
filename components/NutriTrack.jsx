@@ -599,7 +599,23 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
   const waterMl=d.water||0;
   const waterPct=Math.min(100,Math.round((waterMl/waterNorm)*100));
   const addWater=(ml)=>{if(dis)return;const nv=Math.min(waterNorm+500,waterMl+ml);upd('water',nv);if(waterMl<waterNorm&&nv>=waterNorm&&onCelebrate)onCelebrate('water')};
-  const checkSleep=(s)=>{if(!s.bed||!s.wake||!onCelebrate)return;const[bh,bm]=s.bed.split(':').map(Number);const[wh,wm]=s.wake.split(':').map(Number);let hrs=wh-bh+(wm-bm)/60;if(hrs<=0)hrs+=24;if(hrs>=8&&hrs<=12)onCelebrate('sleep')};
+  // Debounced sleep celebration — waits 2s after the last change so the
+  // user has time to set BOTH hours AND minutes before the confetti
+  // fires. Without this, picking hour "23" (intended "23:55") would
+  // immediately trigger "Отличный сон!" because 23:00→wake = 8h.
+  const sleepTimerRef=useRef(null);
+  const checkSleep=(s)=>{
+    if(sleepTimerRef.current)clearTimeout(sleepTimerRef.current);
+    if(!s.bed||!s.wake||!onCelebrate)return;
+    sleepTimerRef.current=setTimeout(()=>{
+      const parts=(t)=>{const p=(t||'').split(':').map(Number);return p.length>=2?p:[NaN,NaN]};
+      const[bh,bm]=parts(s.bed);const[wh,wm]=parts(s.wake);
+      if(isNaN(bh)||isNaN(wh))return;
+      let hrs=wh-bh+(wm-bm)/60;if(hrs<=0)hrs+=24;
+      if(hrs>=8&&hrs<=12)onCelebrate('sleep');
+    },2000);
+  };
+  useEffect(()=>()=>{if(sleepTimerRef.current)clearTimeout(sleepTimerRef.current)},[]);
   return <>
     {/* Water — bottle style */}
     <SecCard icon={I.drop} title={`Вода · ${waterMl} мл`}>
@@ -1534,7 +1550,7 @@ function ChatListModal({ docId, clients, unreadByClient, onOpenChat, onClose }) 
     return '';
   };
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',overflow:'hidden'}}>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',overflow:'hidden',overscrollBehavior:'none'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
@@ -1934,7 +1950,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   else if (isOnline) { statusLine = 'онлайн'; statusColor = '#34C759'; }
   else if (seenAgo) { statusLine = 'был(а) ' + seenAgo; statusColor = C.muted; }
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':0,overflow:'hidden'}}>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':0,overflow:'hidden',overscrollBehavior:'none',touchAction:'pan-y'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
@@ -1951,7 +1967,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     </div>
 
     {/* Messages */}
-    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0}}>
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0,overscrollBehavior:'contain'}}>
       {messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
         if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
@@ -3464,8 +3480,11 @@ export default function App(){
     return urlData?.publicUrl ? urlData.publicUrl + '?t=' + ts : null;
   };
 
-  // Helper to open the chat modal with the given target
+  // Helper to open the chat modal with the given target.
+  // Guards against null clientId (can happen on first render after page
+  // reload when user state hasn't been restored yet from Supabase auth).
   const openChat = (targetClientId, targetClientName, targetDocId, tagDate) => {
+    if (!targetClientId) return;
     setReturnToChat(null);
     setChatModal({
       clientId: targetClientId,
