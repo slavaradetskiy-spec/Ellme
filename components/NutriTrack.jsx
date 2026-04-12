@@ -1,7 +1,10 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react";
+import { Chart, registerables } from 'chart.js';
 import { createClient } from '@supabase/supabase-js';
+
+if (typeof window !== 'undefined') Chart.register(...registerables);
 
 // ═══ SUPABASE CLIENT ═══
 let supabase = null;
@@ -2203,95 +2206,182 @@ function buildAnalytics(days, meals, waterNorm) {
   return { series, summary };
 }
 
-// Tiny SVG sparkline for metric tiles (inline, no deps)
-function Sparkline({ data, width = 100, height = 28, color = '#2D5F3F' }) {
-  const nums = (data || []).map(d => d.value);
-  const valid = nums.filter(v => v != null && !isNaN(v));
-  if (valid.length < 2) {
-    return <svg width={width} height={height}><line x1={0} y1={height/2} x2={width} y2={height/2} stroke="#ddd" strokeWidth="1" strokeDasharray="3 3"/></svg>;
-  }
-  const max = Math.max(...valid);
-  const min = Math.min(...valid);
-  const range = max - min || 1;
-  const points = nums.map((v, i) => {
-    const x = (i / (nums.length - 1 || 1)) * width;
-    if (v == null || isNaN(v)) return null;
-    const y = height - ((v - min) / range) * (height - 4) - 2;
-    return x + ',' + y;
-  }).filter(Boolean).join(' ');
-  return <svg width={width} height={height}>
-    <polyline points={points} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>;
+// ── Chart.js canvas wrapper ──
+function ChartCanvas({ config, width, height, style }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+    try { chartRef.current = new Chart(canvasRef.current, JSON.parse(JSON.stringify(config))); } catch(e) { console.error('ChartCanvas error',e); }
+    return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+  }, [JSON.stringify(config)]);
+  return <canvas ref={canvasRef} width={width} height={height} style={{display:'block',...(style||{})}}/>;
 }
 
-// Larger line chart for detail section
-function DetailLineChart({ data, color = '#2D5F3F', norm = null, unit = '' }) {
-  const width = 480;
-  const height = 160;
-  const padding = { t: 12, r: 12, b: 24, l: 36 };
-  const innerW = width - padding.l - padding.r;
-  const innerH = height - padding.t - padding.b;
-  const nums = (data || []).map(d => d.value);
-  const validNums = nums.filter(v => v != null && !isNaN(v));
-  const hasData = validNums.length > 0;
-  const max = hasData ? Math.max(...validNums, norm || 0) : 1;
-  const min = 0; // start from 0 for readability
-  const range = (max - min) || 1;
-  const x = (i) => padding.l + (i / (nums.length - 1 || 1)) * innerW;
-  const y = (v) => padding.t + innerH - ((v - min) / range) * innerH;
-  const gridLines = [0, 0.25, 0.5, 0.75, 1].map(t => padding.t + innerH * (1 - t));
-  const labels = [0, 0.5, 1].map(t => Math.round(min + range * t));
+// Metric color map
+const MC = {
+  water:    { color:'#378ADD', bg:'#e8f0fb', icon:'💧' },
+  sleep:    { color:'#7F77DD', bg:'#eeedfe', icon:'😴' },
+  energy:   { color:'#EF9F27', bg:'#fff8e0', icon:'⚡' },
+  meals:    { color:'#2a4a2a', bg:'#e8f0e8', icon:'🍽️' },
+  stress:   { color:'#D85A30', bg:'#faece7', icon:'🧠' },
+  movement: { color:'#0F6E56', bg:'#e1f5ee', icon:'🏃' },
+};
 
-  const points = nums.map((v, i) => v != null && !isNaN(v) ? (x(i) + ',' + y(v)) : null).filter(Boolean).join(' ');
-  const areaPoints = nums.map((v, i) => v != null && !isNaN(v) ? (x(i) + ',' + y(v)) : null).filter(Boolean);
-  const areaPath = areaPoints.length
-    ? `M ${areaPoints[0]} L ${areaPoints.join(' L ')} L ${x(nums.length-1)},${padding.t+innerH} L ${x(0)},${padding.t+innerH} Z`
-    : '';
+const BAR_METRICS = new Set(['water','meals','movement']);
 
-  return <div style={{width:'100%',overflow:'visible'}}>
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{display:'block'}}>
-      {/* Grid */}
-      {gridLines.map((gy, i) => <line key={i} x1={padding.l} y1={gy} x2={width-padding.r} y2={gy} stroke="#EDE9E1" strokeWidth="1" strokeDasharray={i===0||i===gridLines.length-1?'':'3 3'}/>)}
-      {/* Y-axis labels */}
-      {labels.map((v, i) => <text key={i} x={padding.l - 6} y={padding.t + innerH * (1 - i*0.5) + 3} fontSize="9" fill="#ABABAB" textAnchor="end" fontFamily="Plus Jakarta Sans">{v}</text>)}
-      {/* Norm line */}
-      {norm != null && norm > 0 && norm <= max && <line x1={padding.l} y1={y(norm)} x2={width-padding.r} y2={y(norm)} stroke="#C98B5F" strokeWidth="1.5" strokeDasharray="4 3"/>}
-      {/* Area fill */}
-      {areaPath && <path d={areaPath} fill={color} fillOpacity="0.08"/>}
-      {/* Line */}
-      {hasData && <polyline points={points} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>}
-      {/* Points */}
-      {nums.map((v, i) => v != null && !isNaN(v) && <circle key={i} cx={x(i)} cy={y(v)} r="3" fill={color}/>)}
-      {/* No data label */}
-      {!hasData && <text x={width/2} y={height/2} fontSize="12" fill="#ABABAB" textAnchor="middle" fontFamily="Plus Jakarta Sans">Недостаточно данных</text>}
-    </svg>
+// Sparkline — mini Chart.js canvas (28px height, no axes)
+function Sparkline({ data, metricKey, color }) {
+  const nums = (data || []).map(d => d.value == null || isNaN(d.value) ? 0 : d.value);
+  if (nums.length < 2) return <div style={{width:68,height:28,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:9,color:'#ccc'}}>—</span></div>;
+  const isBar = BAR_METRICS.has(metricKey);
+  const cfg = {
+    type: isBar ? 'bar' : 'line',
+    data: {
+      labels: nums.map((_,i) => i),
+      datasets: [{
+        data: nums,
+        backgroundColor: isBar ? (color || '#378ADD') + '66' : 'transparent',
+        borderColor: color || '#378ADD',
+        borderWidth: isBar ? 0 : 1.5,
+        pointRadius: 0,
+        tension: 0.4,
+        fill: !isBar,
+        ...(isBar ? { borderRadius: 2, barPercentage: 0.7 } : {}),
+      }]
+    },
+    options: {
+      responsive: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
+      layout: { padding: 0 },
+    }
+  };
+  return <ChartCanvas config={cfg} width={68} height={28} style={{width:68,height:28}}/>;
+}
+
+// Detail chart — full Chart.js with axes, gridlines, labels, optional norm line
+function DetailLineChart({ data, color, norm, metricKey, range }) {
+  const items = data || [];
+  const nums = items.map(d => d.value == null || isNaN(d.value) ? null : d.value);
+  const labels = items.map(d => { const p = (d.date||'').split('-'); return p.length===3 ? p[2]+'.'+p[1] : d.date; });
+  const hasData = nums.some(v => v !== null);
+  if (!hasData) return <div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:13}}>Недостаточно данных</div>;
+  const isBar = BAR_METRICS.has(metricKey);
+  const datasets = [{
+    data: nums,
+    backgroundColor: isBar ? color + '55' : color + '18',
+    borderColor: color,
+    borderWidth: isBar ? 0 : 2,
+    pointRadius: isBar ? 0 : 3,
+    pointBackgroundColor: color,
+    tension: 0.35,
+    fill: !isBar,
+    ...(isBar ? { borderRadius: 4, barPercentage: 0.6 } : {}),
+  }];
+  const plugins = [];
+  if (norm != null && norm > 0) {
+    plugins.push({ id:'normLine', afterDraw(chart) {
+      const yScale = chart.scales.y;
+      const ctx = chart.ctx;
+      const yPos = yScale.getPixelForValue(norm);
+      if (yPos >= yScale.top && yPos <= yScale.bottom) {
+        ctx.save(); ctx.beginPath(); ctx.setLineDash([5,4]); ctx.strokeStyle = C.warm; ctx.lineWidth = 1.5;
+        ctx.moveTo(chart.chartArea.left, yPos); ctx.lineTo(chart.chartArea.right, yPos);
+        ctx.stroke(); ctx.restore();
+        ctx.fillStyle = C.warm; ctx.font = '10px sans-serif'; ctx.fillText('норма', chart.chartArea.right - 35, yPos - 4);
+      }
+    }});
+  }
+  const cfg = {
+    type: isBar ? 'bar' : 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: true, mode:'index', intersect: false,
+        callbacks: { label: ctx => ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) : '' }
+      }},
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 9 }, color: C.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+        y: { beginAtZero: true, grid: { color: C.surfaceAlt, drawBorder: false }, ticks: { font: { size: 10 }, color: C.muted, maxTicksLimit: 5 } }
+      },
+      layout: { padding: { top: 4, bottom: 0, left: 0, right: 0 } },
+    },
+    plugins,
+  };
+  return <div style={{width:'100%',height:180}}><ChartCanvas config={cfg} width={400} height={180} style={{width:'100%',height:'100%'}}/></div>;
+}
+
+// Metric tile — card in the 2-column grid
+function MetricTile({ metricKey, label, value, unit, status, sparkData }) {
+  const mc = MC[metricKey] || { color: C.accent, bg: C.accentSoft, icon: '📊' };
+  const badgeStyle = (() => {
+    const l = (status?.label || '').toLowerCase();
+    if (l.includes('отлично')) return { background:'#e8f4e8', color:'#1a5a1a' };
+    if (l.includes('хорошо')) return { background:'#e8f0e8', color:'#2a6a2a' };
+    if (l.includes('внимание')) return { background:'#fff3e0', color:'#8a5000' };
+    return { background: (status?.color||'#999') + '15', color: status?.color||'#999' };
+  })();
+  return <div style={{background:C.surface,borderRadius:18,padding:'14px 14px 12px',boxShadow:C.shadowCard,display:'flex',flexDirection:'column',gap:6}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <span style={{fontSize:11,fontWeight:600,color:C.soft,letterSpacing:'.03em',textTransform:'uppercase'}}>{label}</span>
+      <div style={{width:30,height:30,borderRadius:10,background:mc.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15}}>{mc.icon}</div>
+    </div>
+    <div style={{display:'flex',alignItems:'baseline',gap:4}}>
+      <span style={{fontSize:24,fontWeight:700,color:C.text,fontFamily:'var(--fd)',lineHeight:1}}>{value}</span>
+      {unit && <span style={{fontSize:11,color:C.muted}}>{unit}</span>}
+    </div>
+    <Sparkline data={sparkData} metricKey={metricKey} color={mc.color}/>
+    <div style={{fontSize:10,fontWeight:600,padding:'3px 10px',borderRadius:8,alignSelf:'flex-start',...badgeStyle}}>{status?.label || '—'}</div>
   </div>;
 }
 
-// Metric tile — one card in the analytics grid
-function MetricTile({ icon, label, value, unit, status, sparkData, sparkColor, active, onClick }) {
-  return <button onClick={onClick} style={{display:'flex',flexDirection:'column',gap:6,padding:'14px 14px 12px',borderRadius:18,border:`2px solid ${active?C.accent:'transparent'}`,background:C.surface,cursor:'pointer',fontFamily:'inherit',textAlign:'left',boxShadow:active?'0 4px 16px rgba(45,95,63,.18)':C.shadowCard,transition:'all .15s',transform:active?'scale(1.02)':'scale(1)'}}>
-    <div style={{display:'flex',alignItems:'center',gap:6,fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.04em',textTransform:'uppercase'}}>
-      <span style={{fontSize:14}}>{icon}</span>
-      <span>{label}</span>
-    </div>
-    <div style={{display:'flex',alignItems:'baseline',gap:4}}>
-      <span style={{fontSize:22,fontWeight:700,color:C.text,fontFamily:'var(--fd)'}}>{value}</span>
-      {unit && <span style={{fontSize:12,color:C.muted}}>{unit}</span>}
-    </div>
-    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:6}}>
-      <div style={{fontSize:10,fontWeight:600,color:status.color,padding:'2px 8px',borderRadius:8,background:status.color+'15'}}>{status.label}</div>
-      <Sparkline data={sparkData} color={sparkColor||C.accent} width={68} height={22}/>
-    </div>
-  </button>;
-}
-
-// Fomat a number to 1 decimal, or empty
+// Format number to 1 decimal or dash
 const fmt1 = (v) => v == null || isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
 
-// Main analytics screen. Shared between client and nutritionist (their own data).
+// Compute health score (0-10) as weighted average
+function computeHealthScore(summary, waterNorm) {
+  if (!summary) return null;
+  const weights = { water: 0.25, sleep: 0.20, energy: 0.15, mood: 0.15, stress: 0.10, meals: 0.10, movement: 0.05 };
+  let total = 0, wSum = 0;
+  // water: pct of norm -> 0-10
+  if (summary.water?.avg != null) { const v = Math.min(10, (summary.water.avg / (waterNorm||2200)) * 10); total += v * weights.water; wSum += weights.water; }
+  // sleep: 6-10h -> 0-10 (peak at 7.5-8)
+  if (summary.sleep?.avg != null) { const h = summary.sleep.avg; const v = h >= 7 && h <= 9 ? 10 : h >= 6 && h <= 10 ? 7 : Math.max(0, 10 - Math.abs(h - 8) * 2.5); total += v * weights.sleep; wSum += weights.sleep; }
+  // energy: already 0-10
+  if (summary.energy?.avg != null) { total += summary.energy.avg * weights.energy; wSum += weights.energy; }
+  // mood: 0-5 -> 0-10
+  if (summary.mood?.avg != null) { total += (summary.mood.avg / 5 * 10) * weights.mood; wSum += weights.mood; }
+  // stress: inverted 0-10 -> 10-0
+  if (summary.stress?.avg != null) { total += (10 - summary.stress.avg) * weights.stress; wSum += weights.stress; }
+  // meals: 4+ is good -> cap at 10
+  if (summary.meals?.avg != null) { total += Math.min(10, summary.meals.avg / 4 * 10) * weights.meals; wSum += weights.meals; }
+  // movement: pct -> 0-10
+  if (summary.movement?.pct != null) { total += Math.min(10, summary.movement.pct / 10) * weights.movement; wSum += weights.movement; }
+  if (wSum === 0) return null;
+  return Math.round((total / wSum) * 10) / 10;
+}
+
+// Generate insights
+function generateInsights(summary, waterNorm) {
+  if (!summary) return [];
+  const out = [];
+  // Good
+  if (summary.water?.avg != null && summary.water.avg >= (waterNorm||2200)*0.9) out.push({ color:'#378ADD', title:'Водный баланс в норме', text:'Вы стабильно пьёте достаточно воды. Продолжайте в том же духе!' });
+  if (summary.sleep?.avg != null && summary.sleep.avg >= 7 && summary.sleep.avg <= 9) out.push({ color:'#7F77DD', title:'Отличный сон', text:'Средняя продолжительность сна в оптимальном диапазоне 7-9 часов.' });
+  if (summary.energy?.avg != null && summary.energy.avg >= 7) out.push({ color:'#EF9F27', title:'Высокая энергия', text:'Уровень энергии стабильно высокий, это здорово!' });
+  // Attention
+  if (summary.water?.avg != null && summary.water.avg < (waterNorm||2200)*0.7) out.push({ color:'#D85A30', title:'Мало воды', text:`Среднее потребление ниже 70% нормы. Попробуйте пить чаще маленькими порциями.` });
+  if (summary.sleep?.avg != null && (summary.sleep.avg < 6 || summary.sleep.avg > 10)) out.push({ color:'#D85A30', title:'Сон требует внимания', text:'Продолжительность сна выходит за рамки здорового диапазона.' });
+  if (summary.stress?.avg != null && summary.stress.avg >= 7) out.push({ color:'#D85A30', title:'Высокий стресс', text:'Средний уровень стресса повышен. Обратите внимание на отдых и восстановление.' });
+  if (summary.meals?.avg != null && summary.meals.avg < 3) out.push({ color:'#EF9F27', title:'Мало приёмов пищи', text:'Менее 3 приёмов пищи в день. Регулярное питание важно для метаболизма.' });
+  if (out.length === 0) out.push({ color:'#0F6E56', title:'Данных мало', text:'Заполняйте дневник каждый день, чтобы получить персональные инсайты.' });
+  return out.slice(0, 3);
+}
+
+// Main analytics screen
 function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title }) {
-  const [activeMetric, setActiveMetric] = useState('water');
   const [renderError, setRenderError] = useState(null);
 
   const loading = !analytics || analytics.loading;
@@ -2308,75 +2398,66 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
   }
 
   const METRICS = [
-    { key: 'water',   icon: '💧', label: 'Вода',        color: '#2D5F3F', norm: waterNorm||2200 },
-    { key: 'sleep',   icon: '😴', label: 'Сон',         color: '#6B5CA5', norm: null },
-    { key: 'meals',   icon: '🍽️', label: 'Приёмы пищи', color: '#C98B5F', norm: null },
-    { key: 'energy',  icon: '⚡', label: 'Энергия',     color: '#E3A23C', norm: null },
-    { key: 'mood',    icon: '😊', label: 'Настроение',  color: '#34C759', norm: null },
-    { key: 'stress',  icon: '🧠', label: 'Стресс',      color: '#B8453A', norm: null },
-    { key: 'movement',icon: '🏃', label: 'Движение',    color: '#7BC8E8', norm: null },
+    { key:'water',    label:'Вода',         norm: waterNorm||2200 },
+    { key:'sleep',    label:'Сон',          norm: null },
+    { key:'energy',   label:'Энергия',      norm: null },
+    { key:'meals',    label:'Приёмы пищи',  norm: null },
+    { key:'stress',   label:'Стресс',       norm: null },
+    { key:'movement', label:'Движение',     norm: null },
   ];
 
   const tileValue = (key) => {
     if (!summary) return '—';
     const s = summary[key];
     if (!s) return '—';
-    if (key === 'water') {
-      if (s.avg == null) return '—';
-      return Number(s.avg).toLocaleString('ru');
-    }
-    if (key === 'sleep') return fmt1(s.avg);
-    if (key === 'meals') return fmt1(s.avg);
-    if (key === 'energy' || key === 'mood') return fmt1(s.avg);
-    if (key === 'stress') return fmt1(s.avg);
+    if (key === 'water') return s.avg == null ? '—' : Number(s.avg).toLocaleString('ru');
     if (key === 'movement') return s.pct == null ? '—' : s.pct + '%';
-    return '—';
+    return fmt1(s.avg);
   };
   const tileUnit = (key) => {
     if (!summary) return '';
     const s = summary[key];
     if (!s) return '';
-    if (key === 'water') return 'мл в среднем';
+    if (key === 'water') return 'мл';
     if (key === 'sleep') return 'ч/ночь';
-    if (key === 'meals') return 'в день';
-    if (key === 'movement') return 'дней активных';
+    if (key === 'meals') return '/день';
+    if (key === 'movement') return 'дней';
     return s.unit || '';
   };
 
-  const activeMeta = METRICS.find(m => m.key === activeMetric);
-  const activeSeries = series ? series[activeMetric] : [];
-  const activeInfo = summary ? summary[activeMetric] : null;
+  const healthScore = computeHealthScore(summary, waterNorm || 2200);
+  const insights = generateInsights(summary, waterNorm || 2200);
 
-  // Insights text per metric
-  const insight = (() => {
-    try {
-      if (!summary || !series) return '';
-      const s = summary[activeMetric];
-      if (!s) return '';
-      const arr = series[activeMetric] || [];
-      const valid = arr.filter(x => x.value != null && !isNaN(x.value));
-      if (!valid.length) return 'Недостаточно данных. Заполни дневник за несколько дней, чтобы увидеть статистику.';
-      if (activeMetric === 'water') {
-        const normVal = waterNorm || 2200;
-        const avgN = Number(s.avg) || 0;
-        const bestVal = Number(valid.reduce((a,b)=>a.value>b.value?a:b).value) || 0;
-        return `В среднем ${avgN.toLocaleString('ru')} мл/день — ${s.pct || 0}% нормы (${normVal} мл). Лучший день: ${bestVal.toLocaleString('ru')} мл.`;
-      }
-      if (activeMetric === 'sleep') {
-        return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
-      }
-      if (activeMetric === 'meals') {
-        return `В среднем ${fmt1(s.avg)} приёмов пищи в день из ${arr.length} дней наблюдения.`;
-      }
-      if (activeMetric === 'movement') {
-        return `Активность заполнена в ${s.pct || 0}% дней за период.`;
-      }
-      return `В среднем ${fmt1(s.avg)}${s.unit||''}.`;
-    } catch (e) {
-      console.error('insight error:', e);
-      return '';
-    }
+  // Build hero sparkline from daily average of all metrics (simplified: use water pct as proxy)
+  const heroSpark = (() => {
+    if (!series?.water) return [];
+    return series.water.map(d => d.value == null ? 0 : Math.min(100, Math.round(d.value / (waterNorm||2200) * 100)));
   })();
+
+  const heroChartCfg = {
+    type:'line',
+    data:{ labels: heroSpark.map((_,i)=>i), datasets:[{ data:heroSpark, borderColor:'rgba(255,255,255,.7)', borderWidth:1.5, pointRadius:0, tension:0.4, fill:true, backgroundColor:'rgba(255,255,255,.1)' }] },
+    options:{ responsive:false, animation:false, plugins:{legend:{display:false},tooltip:{enabled:false}}, scales:{x:{display:false},y:{display:false,beginAtZero:true}}, layout:{padding:0} }
+  };
+
+  // Insight per-metric for detail cards
+  const getInsight = (key) => {
+    if (!summary || !series) return '';
+    const s = summary[key];
+    if (!s) return '';
+    const arr = series[key] || [];
+    const valid = arr.filter(x => x.value != null && !isNaN(x.value));
+    if (!valid.length) return 'Недостаточно данных. Заполни дневник за несколько дней.';
+    if (key === 'water') { const normVal = waterNorm||2200; const avgN = Number(s.avg)||0; return `В среднем ${avgN.toLocaleString('ru')} мл/день — ${s.pct||0}% нормы (${normVal} мл).`; }
+    if (key === 'sleep') return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
+    if (key === 'meals') return `В среднем ${fmt1(s.avg)} приёмов пищи в день.`;
+    if (key === 'movement') return `Активность заполнена в ${s.pct||0}% дней за период.`;
+    if (key === 'stress') return `В среднем ${fmt1(s.avg)}/10. Чем ниже, тем лучше.`;
+    if (key === 'energy') return `В среднем ${fmt1(s.avg)}/10.`;
+    return `В среднем ${fmt1(s.avg)}${s.unit||''}.`;
+  };
+
+  const periodLabel = range==='week'?'за неделю':range==='month'?'за месяц':'за год';
 
   return <div style={{animation:'slideRight .3s ease'}}>
     <TopBar left={<BackBtn onClick={onBack}/>} title={title||'Аналитика'} right={null}/>
@@ -2395,42 +2476,73 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     </div>}
 
     {!loading && !renderError && <>
-      {/* Tile grid */}
+      {/* Hero card — Health Score */}
+      <div style={{background:'#2a4a2a',borderRadius:20,padding:'20px 18px 16px',marginBottom:16,color:'#fff',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',bottom:0,left:0,right:0,height:50,opacity:0.3}}>
+          {heroSpark.length>=2 && <ChartCanvas config={heroChartCfg} width={360} height={50} style={{width:'100%',height:50}}/>}
+        </div>
+        <div style={{position:'relative',zIndex:1}}>
+          <div style={{fontSize:12,fontWeight:500,opacity:0.75,marginBottom:4}}>Балл здоровья</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+            <span style={{fontSize:40,fontWeight:800,lineHeight:1,fontFamily:'var(--fd)'}}>{healthScore != null ? fmt1(healthScore) : '—'}</span>
+            <span style={{fontSize:14,opacity:0.6}}>/10</span>
+          </div>
+          <div style={{fontSize:11,opacity:0.5,marginTop:4}}>{periodLabel} &middot; сравнение: —</div>
+        </div>
+      </div>
+
+      {/* 6 metric tiles — 2-column grid */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
         {METRICS.map(m => {
           const v = tileValue(m.key);
           return <MetricTile
             key={m.key}
-            icon={m.icon}
+            metricKey={m.key}
             label={m.label}
             value={v}
             unit={v === '—' ? '' : tileUnit(m.key)}
             status={summary?.[m.key]?.status || {label:'—',color:'#999'}}
             sparkData={series?.[m.key] || []}
-            sparkColor={m.color}
-            active={activeMetric===m.key}
-            onClick={()=>setActiveMetric(m.key)}
           />;
         })}
       </div>
 
-      {/* Detail section */}
-      <div style={{background:C.surface,borderRadius:20,padding:'18px',marginBottom:16,boxShadow:C.shadowCard}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-          <span style={{fontSize:18}}>{activeMeta?.icon}</span>
-          <div>
-            <div style={{fontSize:14,fontWeight:700,color:C.text}}>{activeMeta?.label}</div>
-            <div style={{fontSize:11,color:C.muted}}>{range==='week'?'за неделю':range==='month'?'за месяц':'за год'}</div>
+      {/* Detail chart cards — one per metric */}
+      {METRICS.map(m => {
+        const mc = MC[m.key] || { color: C.accent, icon:'📊' };
+        const info = summary?.[m.key];
+        const insightText = getInsight(m.key);
+        return <div key={m.key} style={{background:C.surface,borderRadius:20,padding:'18px',marginBottom:12,boxShadow:C.shadowCard}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <span style={{fontSize:18}}>{mc.icon}</span>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:C.text}}>{m.label}</div>
+              <div style={{fontSize:11,color:C.muted}}>{periodLabel}</div>
+            </div>
+            {info && <div style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:info.status?.color,padding:'4px 10px',borderRadius:10,background:(info.status?.color||'#999')+'15'}}>{info.status?.label}</div>}
           </div>
-          {activeInfo && <div style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:activeInfo.status.color,padding:'4px 10px',borderRadius:10,background:activeInfo.status.color+'15'}}>{activeInfo.status.label}</div>}
-        </div>
-        <DetailLineChart
-          data={activeSeries}
-          color={activeMeta?.color||C.accent}
-          norm={activeMeta?.norm}
-        />
-        <div style={{fontSize:12,color:C.soft,marginTop:10,lineHeight:1.5}}>{insight}</div>
-      </div>
+          <DetailLineChart
+            data={series?.[m.key]||[]}
+            color={mc.color}
+            norm={m.norm}
+            metricKey={m.key}
+            range={range}
+          />
+          {insightText && <div style={{fontSize:12,color:C.soft,marginTop:10,lineHeight:1.5}}>{insightText}</div>}
+        </div>;
+      })}
+
+      {/* Insights section */}
+      {insights.length > 0 && <div style={{background:C.surface,borderRadius:20,padding:'18px',marginBottom:16,boxShadow:C.shadowCard}}>
+        <div style={{fontSize:14,fontWeight:700,color:C.text,marginBottom:12}}>Инсайты</div>
+        {insights.map((ins, i) => <div key={i} style={{display:'flex',gap:10,marginBottom:i<insights.length-1?10:0,alignItems:'flex-start'}}>
+          <div style={{width:8,height:8,borderRadius:4,background:ins.color,marginTop:5,flexShrink:0}}/>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:C.text}}>{ins.title}</div>
+            <div style={{fontSize:12,color:C.soft,lineHeight:1.4,marginTop:2}}>{ins.text}</div>
+          </div>
+        </div>)}
+      </div>}
     </>}
   </div>;
 }
