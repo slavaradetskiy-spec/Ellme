@@ -1962,14 +1962,13 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         : <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
       }
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:16,fontWeight:600,color:displayName?C.text:C.muted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{displayName||'Загрузка...'}</div>
+        <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minHeight:20}}>{displayName}</div>
         {statusLine && <div style={{fontSize:11,color:statusColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:statusColor==='#34C759'?500:400}}>{statusLine}</div>}
       </div>
     </div>
 
     {/* Messages */}
     <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0,overscrollBehavior:'contain'}}>
-      {messagesLoading && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Загрузка...</div>}
       {!messagesLoading && messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
         if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
