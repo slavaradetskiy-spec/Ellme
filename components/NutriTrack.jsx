@@ -2114,19 +2114,36 @@ function buildAnalytics(days, meals, waterNorm) {
     return h * 60 + m;
   };
 
-  // Build a dense series: one entry per day, sorted ASC
+  // Parse movement JSON and sum all activity durations (minutes)
+  const parseMovementMinutes = (raw) => {
+    if (!raw) return null;
+    let obj = raw;
+    if (typeof raw === 'string') {
+      if (!raw.trim()) return null;
+      if (raw.startsWith('{')) {
+        try { obj = JSON.parse(raw); } catch(e) { return null; }
+      } else return null;
+    }
+    if (typeof obj !== 'object') return null;
+    const acts = obj.activities || (obj.type ? [{ type: obj.type, duration: obj.duration || 10 }] : []);
+    if (!acts.length) return null;
+    return acts.reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
+  };
+
+  // Build a dense series: one entry per day, sorted ASC — 9 metrics
   const series = {
-    water: [], sleep: [], meals: [], energy: [], mood: [], stress: [], movement: [],
+    water: [], stool: [], sleepDuration: [], sleepQuality: [], bedtime: [],
+    movement: [], stress: [], energy: [], mood: [],
   };
   safeDays.forEach(d => {
     if (!d) return;
-    // Water: our save path defaults water_ml to 0, so treat 0 as "not
-    // tracked" for the average (otherwise a day where the user only
-    // touched sleep drags water avg down to nothing).
+    // Water
     const waterVal = Number(d.water_ml);
     series.water.push({ date: d.date, value: waterVal > 0 ? waterVal : null });
-    // Sleep hours from bed/wake times (handles midnight wrap). Null if
-    // either side missing.
+    // Stool: "Норма" = 1, anything else ("Диарея","Запор","Нет стула") = 0, null = not tracked
+    const stoolVal = d.stool_state ? (d.stool_state === 'Норма' ? 1 : 0) : null;
+    series.stool.push({ date: d.date, value: stoolVal });
+    // Sleep duration (hours) from bed/wake times
     let hours = null;
     const bedMin = parseTime(d.sleep_bed);
     const wakeMin = parseTime(d.sleep_wake);
@@ -2135,17 +2152,17 @@ function buildAnalytics(days, meals, waterNorm) {
       if (mins < 0) mins += 24 * 60;
       hours = mins / 60;
     }
-    series.sleep.push({ date: d.date, value: hours });
-    // Meals: count meals for this diary_day; 0 meals usually means
-    // "not tracked" (same rationale as water).
-    const mealCount = (mealsByDate[d.date] || []).length;
-    series.meals.push({ date: d.date, value: mealCount > 0 ? mealCount : null });
+    series.sleepDuration.push({ date: d.date, value: hours });
+    // Sleep quality (1-10)
+    series.sleepQuality.push({ date: d.date, value: d.sleep_quality != null ? Number(d.sleep_quality) : null });
+    // Bedtime: stored as minutes since midnight for charting, display as HH:MM
+    series.bedtime.push({ date: d.date, value: bedMin });
+    // Movement: total minutes from all activities
+    series.movement.push({ date: d.date, value: parseMovementMinutes(d.movement) });
+    // Stress, Energy, Mood
+    series.stress.push({ date: d.date, value: d.stress_level != null ? Number(d.stress_level) : null });
     series.energy.push({ date: d.date, value: d.energy != null ? Number(d.energy) : null });
     series.mood.push({ date: d.date, value: d.mood != null ? Number(d.mood) + 1 : null }); // mood 0-4 → 1-5
-    series.stress.push({ date: d.date, value: d.stress_level != null ? Number(d.stress_level) : null });
-    // Movement: 1 if filled, 0 otherwise (kept numeric so pct has a
-    // meaningful denominator = number of tracked days).
-    series.movement.push({ date: d.date, value: (typeof d.movement === 'string' && d.movement.trim()) ? 1 : 0 });
   });
 
   const avg = (arr) => {
@@ -2161,17 +2178,18 @@ function buildAnalytics(days, meals, waterNorm) {
   };
 
   const waterAvg = avg(series.water);
-  const sleepAvg = avg(series.sleep);
-  const mealsAvg = avg(series.meals);
+  const stoolPct = pct(series.stool); // % of days with "Норма"
+  const sleepDurAvg = avg(series.sleepDuration);
+  const sleepQualAvg = avg(series.sleepQuality);
+  const bedtimeAvg = avg(series.bedtime); // avg minutes since midnight
+  const movementAvg = avg(series.movement); // avg minutes per day
+  const stressAvg = avg(series.stress);
   const energyAvg = avg(series.energy);
   const moodAvg = avg(series.mood);
-  const stressAvg = avg(series.stress);
-  const movementPct = pct(series.movement);
 
   // Simple status rules
-  const status = (avg, goodMin, okMin, reverse=false) => {
-    if (avg == null) return { label: 'Нет данных', color: '#999' };
-    const val = avg;
+  const statusFn = (val, goodMin, okMin, reverse=false) => {
+    if (val == null) return { label: 'Нет данных', color: '#999' };
     if (reverse) {
       if (val <= goodMin) return { label: 'Отлично', color: '#2D5F3F' };
       if (val <= okMin) return { label: 'Хорошо', color: '#C98B5F' };
@@ -2188,19 +2206,21 @@ function buildAnalytics(days, meals, waterNorm) {
       unit: 'мл',
       norm: waterNorm,
       pct: waterAvg == null ? null : Math.min(100, Math.round(waterAvg/waterNorm*100)),
-      status: waterAvg == null ? { label: 'Нет данных', color: '#999' } : status(waterAvg/waterNorm*100, 90, 70),
+      status: waterAvg == null ? { label: 'Нет данных', color: '#999' } : statusFn(waterAvg/waterNorm*100, 90, 70),
     },
-    sleep: { avg: sleepAvg, unit: 'ч', status: (() => {
-      if (sleepAvg == null) return { label: 'Нет данных', color: '#999' };
-      if (sleepAvg >= 7 && sleepAvg <= 9) return { label: 'Отлично', color: '#2D5F3F' };
-      if (sleepAvg >= 6 && sleepAvg <= 10) return { label: 'Хорошо', color: '#C98B5F' };
+    stool: { pct: stoolPct, unit: '%', status: statusFn(stoolPct, 80, 50) },
+    sleepDuration: { avg: sleepDurAvg, unit: 'ч', status: (() => {
+      if (sleepDurAvg == null) return { label: 'Нет данных', color: '#999' };
+      if (sleepDurAvg >= 7 && sleepDurAvg <= 9) return { label: 'Отлично', color: '#2D5F3F' };
+      if (sleepDurAvg >= 6 && sleepDurAvg <= 10) return { label: 'Хорошо', color: '#C98B5F' };
       return { label: 'Внимание', color: '#B8453A' };
     })() },
-    meals: { avg: mealsAvg, unit: '/день', status: status(mealsAvg, 4, 3) },
-    energy: { avg: energyAvg, unit: '/10', status: status(energyAvg, 7, 5) },
-    mood: { avg: moodAvg, unit: '/5', status: status(moodAvg, 4, 3) },
-    stress: { avg: stressAvg, unit: '/10', status: status(stressAvg, 4, 7, true) },
-    movement: { pct: movementPct, unit: '%', status: status(movementPct, 70, 40) },
+    sleepQuality: { avg: sleepQualAvg, unit: '/10', status: statusFn(sleepQualAvg, 7, 5) },
+    bedtime: { avg: bedtimeAvg, unit: '', status: { label: bedtimeAvg != null ? (Math.floor(bedtimeAvg/60)+':'+String(Math.round(bedtimeAvg%60)).padStart(2,'0')) : '—', color: '#999' } },
+    movement: { avg: movementAvg, unit: 'мин', status: statusFn(movementAvg, 30, 15) },
+    stress: { avg: stressAvg, unit: '/10', status: statusFn(stressAvg, 4, 7, true) },
+    energy: { avg: energyAvg, unit: '/10', status: statusFn(energyAvg, 7, 5) },
+    mood: { avg: moodAvg, unit: '/5', status: statusFn(moodAvg, 4, 3) },
   };
 
   return { series, summary };
@@ -2219,66 +2239,74 @@ function ChartCanvas({ config, width, height, style }) {
   return <canvas ref={canvasRef} width={width} height={height} style={{display:'block',...(style||{})}}/>;
 }
 
-// Metric color map
+// Metric color map — 9 metrics
 const MC = {
-  water:    { color:'#378ADD', bg:'#e8f0fb', icon:'💧' },
-  sleep:    { color:'#7F77DD', bg:'#eeedfe', icon:'😴' },
-  energy:   { color:'#EF9F27', bg:'#fff8e0', icon:'⚡' },
-  meals:    { color:'#2a4a2a', bg:'#e8f0e8', icon:'🍽️' },
-  stress:   { color:'#D85A30', bg:'#faece7', icon:'🧠' },
-  movement: { color:'#0F6E56', bg:'#e1f5ee', icon:'🏃' },
+  water:         { color:'#378ADD', bg:'#e8f0fb', icon:'💧' },
+  stool:         { color:'#8B6F47', bg:'#f5f0e8', icon:'🪑' },
+  sleepDuration: { color:'#7F77DD', bg:'#eeedfe', icon:'😴' },
+  sleepQuality:  { color:'#9B7FDD', bg:'#f0edfe', icon:'🌙' },
+  bedtime:       { color:'#5B6FBB', bg:'#e8ecf8', icon:'🛏️' },
+  movement:      { color:'#0F6E56', bg:'#e1f5ee', icon:'🏃' },
+  stress:        { color:'#D85A30', bg:'#faece7', icon:'🧠' },
+  energy:        { color:'#EF9F27', bg:'#fff8e0', icon:'⚡' },
+  mood:          { color:'#E07BAD', bg:'#fce8f0', icon:'😊' },
 };
 
-const BAR_METRICS = new Set(['water','meals','movement']);
-
-// Sparkline — mini Chart.js canvas (28px height, no axes)
+// Sparkline — mini Chart.js canvas (28px height, no axes) — ALL LINES
 function Sparkline({ data, metricKey, color }) {
   const nums = (data || []).map(d => d.value == null || isNaN(d.value) ? 0 : d.value);
   if (nums.length < 2) return <div style={{width:68,height:28,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:9,color:'#ccc'}}>—</span></div>;
-  const isBar = BAR_METRICS.has(metricKey);
   const cfg = {
-    type: isBar ? 'bar' : 'line',
+    type: 'line',
     data: {
       labels: nums.map((_,i) => i),
       datasets: [{
         data: nums,
-        backgroundColor: isBar ? (color || '#378ADD') + '66' : 'transparent',
+        backgroundColor: (color || '#378ADD') + '18',
         borderColor: color || '#378ADD',
-        borderWidth: isBar ? 0 : 1.5,
+        borderWidth: 1.5,
         pointRadius: 0,
         tension: 0.4,
-        fill: !isBar,
-        ...(isBar ? { borderRadius: 2, barPercentage: 0.7 } : {}),
+        fill: true,
       }]
     },
     options: {
       responsive: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
+      scales: { x: { display: false }, y: { display: false, beginAtZero: metricKey !== 'bedtime' } },
       layout: { padding: 0 },
     }
   };
   return <ChartCanvas config={cfg} width={68} height={28} style={{width:68,height:28}}/>;
 }
 
-// Detail chart — full Chart.js with axes, gridlines, labels, optional norm line
-function DetailLineChart({ data, color, norm, metricKey, range }) {
+// Format minutes since midnight to HH:MM
+const fmtTime = (mins) => {
+  if (mins == null) return '';
+  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+  return h + ':' + String(m).padStart(2, '0');
+};
+
+// Detail chart — full Chart.js with axes, gridlines, labels, optional norm line — ALL LINES
+function DetailLineChart({ data, color, norm, metricKey, range, height: chartHeight }) {
+  const h = chartHeight || 180;
   const items = data || [];
   const nums = items.map(d => d.value == null || isNaN(d.value) ? null : d.value);
   const labels = items.map(d => { const p = (d.date||'').split('-'); return p.length===3 ? p[2]+'.'+p[1] : d.date; });
   const hasData = nums.some(v => v !== null);
   if (!hasData) return <div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:13}}>Недостаточно данных</div>;
-  const isBar = BAR_METRICS.has(metricKey);
+  const isBedtime = metricKey === 'bedtime';
+  const isStool = metricKey === 'stool';
   const datasets = [{
     data: nums,
-    backgroundColor: isBar ? color + '55' : color + '18',
+    backgroundColor: color + '18',
     borderColor: color,
-    borderWidth: isBar ? 0 : 2,
-    pointRadius: isBar ? 0 : 3,
+    borderWidth: 2,
+    pointRadius: 3,
     pointBackgroundColor: color,
     tension: 0.35,
-    fill: !isBar,
-    ...(isBar ? { borderRadius: 4, barPercentage: 0.6 } : {}),
+    fill: true,
+    ...(isStool ? { stepped: true } : {}),
   }];
   const plugins = [];
   if (norm != null && norm > 0) {
@@ -2295,26 +2323,40 @@ function DetailLineChart({ data, color, norm, metricKey, range }) {
     }});
   }
   const cfg = {
-    type: isBar ? 'bar' : 'line',
+    type: 'line',
     data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { enabled: true, mode:'index', intersect: false,
-        callbacks: { label: ctx => ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) : '' }
+        callbacks: { label: ctx => {
+          if (ctx.parsed.y == null) return '';
+          if (isBedtime) return fmtTime(ctx.parsed.y);
+          if (isStool) return ctx.parsed.y === 1 ? 'Норма' : 'Не норма';
+          return ctx.parsed.y.toFixed(1);
+        }}
       }},
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 9 }, color: C.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
-        y: { beginAtZero: true, grid: { color: C.surfaceAlt, drawBorder: false }, ticks: { font: { size: 10 }, color: C.muted, maxTicksLimit: 5 } }
+        y: {
+          beginAtZero: !isBedtime,
+          grid: { color: C.surfaceAlt, drawBorder: false },
+          ticks: {
+            font: { size: 10 }, color: C.muted, maxTicksLimit: 5,
+            ...(isBedtime ? { callback: v => fmtTime(v) } : {}),
+            ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '', stepSize: 1, min: 0, max: 1 } : {}),
+          },
+          ...(isStool ? { min: -0.1, max: 1.1 } : {}),
+        }
       },
       layout: { padding: { top: 4, bottom: 0, left: 0, right: 0 } },
     },
     plugins,
   };
-  return <div style={{width:'100%',height:180}}><ChartCanvas config={cfg} width={400} height={180} style={{width:'100%',height:'100%'}}/></div>;
+  return <div style={{width:'100%',height:h}}><ChartCanvas config={cfg} width={400} height={h} style={{width:'100%',height:'100%'}}/></div>;
 }
 
-// Metric tile — card in the 2-column grid
-function MetricTile({ metricKey, label, value, unit, status, sparkData }) {
+// Metric tile — card in the 2-column grid (tappable)
+function MetricTile({ metricKey, label, value, unit, status, sparkData, onClick }) {
   const mc = MC[metricKey] || { color: C.accent, bg: C.accentSoft, icon: '📊' };
   const badgeStyle = (() => {
     const l = (status?.label || '').toLowerCase();
@@ -2323,7 +2365,7 @@ function MetricTile({ metricKey, label, value, unit, status, sparkData }) {
     if (l.includes('внимание')) return { background:'#fff3e0', color:'#8a5000' };
     return { background: (status?.color||'#999') + '15', color: status?.color||'#999' };
   })();
-  return <div style={{background:C.surface,borderRadius:18,padding:'14px 14px 12px',boxShadow:C.shadowCard,display:'flex',flexDirection:'column',gap:6}}>
+  return <div onClick={onClick} style={{background:C.surface,borderRadius:18,padding:'14px 14px 12px',boxShadow:C.shadowCard,display:'flex',flexDirection:'column',gap:6,cursor:'pointer',WebkitTapHighlightColor:'transparent'}}>
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
       <span style={{fontSize:11,fontWeight:600,color:C.soft,letterSpacing:'.03em',textTransform:'uppercase'}}>{label}</span>
       <div style={{width:30,height:30,borderRadius:10,background:mc.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15}}>{mc.icon}</div>
@@ -2340,49 +2382,64 @@ function MetricTile({ metricKey, label, value, unit, status, sparkData }) {
 // Format number to 1 decimal or dash
 const fmt1 = (v) => v == null || isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
 
-// Compute health score (0-10) as weighted average
+// Compute health score (0-10) as weighted average — 9 metrics
 function computeHealthScore(summary, waterNorm) {
   if (!summary) return null;
-  const weights = { water: 0.25, sleep: 0.20, energy: 0.15, mood: 0.15, stress: 0.10, meals: 0.10, movement: 0.05 };
+  const weights = {
+    water: 0.15, stool: 0.08, sleepDuration: 0.14, sleepQuality: 0.10,
+    movement: 0.12, stress: 0.12, energy: 0.14, mood: 0.15,
+    // bedtime: not scored (display-only per spec)
+  };
   let total = 0, wSum = 0;
   // water: pct of norm -> 0-10
   if (summary.water?.avg != null) { const v = Math.min(10, (summary.water.avg / (waterNorm||2200)) * 10); total += v * weights.water; wSum += weights.water; }
-  // sleep: 6-10h -> 0-10 (peak at 7.5-8)
-  if (summary.sleep?.avg != null) { const h = summary.sleep.avg; const v = h >= 7 && h <= 9 ? 10 : h >= 6 && h <= 10 ? 7 : Math.max(0, 10 - Math.abs(h - 8) * 2.5); total += v * weights.sleep; wSum += weights.sleep; }
-  // energy: already 0-10
-  if (summary.energy?.avg != null) { total += summary.energy.avg * weights.energy; wSum += weights.energy; }
-  // mood: 0-5 -> 0-10
-  if (summary.mood?.avg != null) { total += (summary.mood.avg / 5 * 10) * weights.mood; wSum += weights.mood; }
+  // stool: pct of norma days -> 0-10
+  if (summary.stool?.pct != null) { total += Math.min(10, summary.stool.pct / 10) * weights.stool; wSum += weights.stool; }
+  // sleepDuration: peak at 7-9h
+  if (summary.sleepDuration?.avg != null) { const h = summary.sleepDuration.avg; const v = h >= 7 && h <= 9 ? 10 : h >= 6 && h <= 10 ? 7 : Math.max(0, 10 - Math.abs(h - 8) * 2.5); total += v * weights.sleepDuration; wSum += weights.sleepDuration; }
+  // sleepQuality: already 0-10
+  if (summary.sleepQuality?.avg != null) { total += summary.sleepQuality.avg * weights.sleepQuality; wSum += weights.sleepQuality; }
+  // movement: 30+ min/day is excellent -> cap at 10
+  if (summary.movement?.avg != null) { total += Math.min(10, summary.movement.avg / 6) * weights.movement; wSum += weights.movement; }
   // stress: inverted 0-10 -> 10-0
   if (summary.stress?.avg != null) { total += (10 - summary.stress.avg) * weights.stress; wSum += weights.stress; }
-  // meals: 4+ is good -> cap at 10
-  if (summary.meals?.avg != null) { total += Math.min(10, summary.meals.avg / 4 * 10) * weights.meals; wSum += weights.meals; }
-  // movement: pct -> 0-10
-  if (summary.movement?.pct != null) { total += Math.min(10, summary.movement.pct / 10) * weights.movement; wSum += weights.movement; }
+  // energy: already 0-10
+  if (summary.energy?.avg != null) { total += summary.energy.avg * weights.energy; wSum += weights.energy; }
+  // mood: 1-5 -> 0-10
+  if (summary.mood?.avg != null) { total += (summary.mood.avg / 5 * 10) * weights.mood; wSum += weights.mood; }
   if (wSum === 0) return null;
   return Math.round((total / wSum) * 10) / 10;
 }
 
-// Generate insights
+// Generate insights — 9 metrics
 function generateInsights(summary, waterNorm) {
   if (!summary) return [];
   const out = [];
   // Good
   if (summary.water?.avg != null && summary.water.avg >= (waterNorm||2200)*0.9) out.push({ color:'#378ADD', title:'Водный баланс в норме', text:'Вы стабильно пьёте достаточно воды. Продолжайте в том же духе!' });
-  if (summary.sleep?.avg != null && summary.sleep.avg >= 7 && summary.sleep.avg <= 9) out.push({ color:'#7F77DD', title:'Отличный сон', text:'Средняя продолжительность сна в оптимальном диапазоне 7-9 часов.' });
+  if (summary.sleepDuration?.avg != null && summary.sleepDuration.avg >= 7 && summary.sleepDuration.avg <= 9) out.push({ color:'#7F77DD', title:'Отличный сон', text:'Средняя продолжительность сна в оптимальном диапазоне 7-9 часов.' });
+  if (summary.sleepQuality?.avg != null && summary.sleepQuality.avg >= 7) out.push({ color:'#9B7FDD', title:'Качество сна высокое', text:'Среднее качество сна 7+/10 — отличный результат!' });
   if (summary.energy?.avg != null && summary.energy.avg >= 7) out.push({ color:'#EF9F27', title:'Высокая энергия', text:'Уровень энергии стабильно высокий, это здорово!' });
+  if (summary.mood?.avg != null && summary.mood.avg >= 4) out.push({ color:'#E07BAD', title:'Хорошее настроение', text:'Среднее настроение выше 4/5 — отлично!' });
+  if (summary.stool?.pct != null && summary.stool.pct >= 80) out.push({ color:'#8B6F47', title:'Стул в норме', text:'Нормальный стул в большинстве дней.' });
+  if (summary.movement?.avg != null && summary.movement.avg >= 30) out.push({ color:'#0F6E56', title:'Отличная активность', text:'В среднем 30+ минут активности в день.' });
   // Attention
   if (summary.water?.avg != null && summary.water.avg < (waterNorm||2200)*0.7) out.push({ color:'#D85A30', title:'Мало воды', text:`Среднее потребление ниже 70% нормы. Попробуйте пить чаще маленькими порциями.` });
-  if (summary.sleep?.avg != null && (summary.sleep.avg < 6 || summary.sleep.avg > 10)) out.push({ color:'#D85A30', title:'Сон требует внимания', text:'Продолжительность сна выходит за рамки здорового диапазона.' });
+  if (summary.sleepDuration?.avg != null && (summary.sleepDuration.avg < 6 || summary.sleepDuration.avg > 10)) out.push({ color:'#D85A30', title:'Сон требует внимания', text:'Продолжительность сна выходит за рамки здорового диапазона.' });
   if (summary.stress?.avg != null && summary.stress.avg >= 7) out.push({ color:'#D85A30', title:'Высокий стресс', text:'Средний уровень стресса повышен. Обратите внимание на отдых и восстановление.' });
-  if (summary.meals?.avg != null && summary.meals.avg < 3) out.push({ color:'#EF9F27', title:'Мало приёмов пищи', text:'Менее 3 приёмов пищи в день. Регулярное питание важно для метаболизма.' });
+  if (summary.stool?.pct != null && summary.stool.pct < 50) out.push({ color:'#8B6F47', title:'Стул требует внимания', text:'Менее 50% дней со стулом в норме. Обратите внимание на питание.' });
+  if (summary.mood?.avg != null && summary.mood.avg < 3) out.push({ color:'#E07BAD', title:'Низкое настроение', text:'Среднее настроение ниже 3/5. Позаботьтесь о себе.' });
   if (out.length === 0) out.push({ color:'#0F6E56', title:'Данных мало', text:'Заполняйте дневник каждый день, чтобы получить персональные инсайты.' });
-  return out.slice(0, 3);
+  return out.slice(0, 4);
 }
 
 // Main analytics screen
-function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title }) {
+function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange }) {
   const [renderError, setRenderError] = useState(null);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [metricModal, setMetricModal] = useState(null); // metric key for fullscreen modal
 
   const loading = !analytics || analytics.loading;
   let summary = null, series = null;
@@ -2398,12 +2455,15 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
   }
 
   const METRICS = [
-    { key:'water',    label:'Вода',         norm: waterNorm||2200 },
-    { key:'sleep',    label:'Сон',          norm: null },
-    { key:'energy',   label:'Энергия',      norm: null },
-    { key:'meals',    label:'Приёмы пищи',  norm: null },
-    { key:'stress',   label:'Стресс',       norm: null },
-    { key:'movement', label:'Движение',     norm: null },
+    { key:'water',         label:'Вода',              norm: waterNorm||2200 },
+    { key:'stool',         label:'Стул',              norm: null },
+    { key:'sleepDuration', label:'Длительность сна',  norm: null },
+    { key:'sleepQuality',  label:'Качество сна',      norm: null },
+    { key:'bedtime',       label:'Время отхода ко сну', norm: null },
+    { key:'movement',      label:'Движение',          norm: null },
+    { key:'stress',        label:'Стресс',            norm: null },
+    { key:'energy',        label:'Энергия',           norm: null },
+    { key:'mood',          label:'Настроение',        norm: null },
   ];
 
   const tileValue = (key) => {
@@ -2411,7 +2471,13 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     const s = summary[key];
     if (!s) return '—';
     if (key === 'water') return s.avg == null ? '—' : Number(s.avg).toLocaleString('ru');
-    if (key === 'movement') return s.pct == null ? '—' : s.pct + '%';
+    if (key === 'stool') return s.pct == null ? '—' : s.pct + '%';
+    if (key === 'bedtime') {
+      if (s.avg == null) return '—';
+      const h = Math.floor(s.avg / 60), m = Math.round(s.avg % 60);
+      return h + ':' + String(m).padStart(2, '0');
+    }
+    if (key === 'movement') return s.avg == null ? '—' : Math.round(s.avg);
     return fmt1(s.avg);
   };
   const tileUnit = (key) => {
@@ -2419,9 +2485,11 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     const s = summary[key];
     if (!s) return '';
     if (key === 'water') return 'мл';
-    if (key === 'sleep') return 'ч/ночь';
-    if (key === 'meals') return '/день';
-    if (key === 'movement') return 'дней';
+    if (key === 'stool') return 'норма';
+    if (key === 'sleepDuration') return 'ч/ночь';
+    if (key === 'sleepQuality') return '/10';
+    if (key === 'bedtime') return '';
+    if (key === 'movement') return 'мин/день';
     return s.unit || '';
   };
 
@@ -2449,25 +2517,61 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     const valid = arr.filter(x => x.value != null && !isNaN(x.value));
     if (!valid.length) return 'Недостаточно данных. Заполни дневник за несколько дней.';
     if (key === 'water') { const normVal = waterNorm||2200; const avgN = Number(s.avg)||0; return `В среднем ${avgN.toLocaleString('ru')} мл/день — ${s.pct||0}% нормы (${normVal} мл).`; }
-    if (key === 'sleep') return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
-    if (key === 'meals') return `В среднем ${fmt1(s.avg)} приёмов пищи в день.`;
-    if (key === 'movement') return `Активность заполнена в ${s.pct||0}% дней за период.`;
+    if (key === 'stool') return `Норма в ${s.pct||0}% отмеченных дней.`;
+    if (key === 'sleepDuration') return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
+    if (key === 'sleepQuality') return `Среднее качество сна: ${fmt1(s.avg)}/10.`;
+    if (key === 'bedtime') {
+      if (s.avg == null) return '';
+      const h = Math.floor(s.avg / 60), m = Math.round(s.avg % 60);
+      return `Среднее время отхода ко сну: ${h}:${String(m).padStart(2,'0')}.`;
+    }
+    if (key === 'movement') return `В среднем ${Math.round(s.avg||0)} мин активности в день.`;
     if (key === 'stress') return `В среднем ${fmt1(s.avg)}/10. Чем ниже, тем лучше.`;
     if (key === 'energy') return `В среднем ${fmt1(s.avg)}/10.`;
+    if (key === 'mood') return `Среднее настроение: ${fmt1(s.avg)}/5.`;
     return `В среднем ${fmt1(s.avg)}${s.unit||''}.`;
   };
 
-  const periodLabel = range==='week'?'за неделю':range==='month'?'за месяц':'за год';
+  const periodLabel = range==='3d'?'за 3 дня':range==='5d'?'за 5 дней':range==='7d'?'за неделю':range==='1m'?'за месяц':range==='custom'&&customDateRange?`${customDateRange.start.slice(5).replace('-','.')}–${customDateRange.end.slice(5).replace('-','.')}` :'за период';
+
+  const handleCustomApply = () => {
+    if (customStart && customEnd && customStart <= customEnd) {
+      onCustomDateRange({ start: customStart, end: customEnd });
+      onRangeChange('custom');
+      setShowCustomPicker(false);
+    }
+  };
 
   return <div style={{animation:'slideRight .3s ease'}}>
     <TopBar left={<BackBtn onClick={onBack}/>} title={title||'Аналитика'} right={null}/>
 
     {/* Period tabs */}
-    <div style={{display:'flex',gap:6,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
-      {[['week','Неделя'],['month','Месяц'],['year','Год']].map(([k,l]) =>
-        <button key={k} onClick={()=>onRangeChange(k)} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',background:range===k?C.surface:'transparent',color:range===k?C.accent:C.soft,fontSize:13,fontWeight:range===k?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:range===k?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{l}</button>
+    <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
+      {[['3d','3д'],['5d','5д'],['7d','7д'],['1m','1мес'],['custom','Свой']].map(([k,l]) =>
+        <button key={k} onClick={()=>{if(k==='custom'){setShowCustomPicker(true)}else{onRangeChange(k)}}} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',background:range===k?C.surface:'transparent',color:range===k?C.accent:C.soft,fontSize:12,fontWeight:range===k?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:range===k?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{l}</button>
       )}
     </div>
+
+    {/* Custom date picker modal */}
+    {showCustomPicker && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={()=>setShowCustomPicker(false)}>
+      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:24,width:'100%',maxWidth:340,boxShadow:C.shadow3d}}>
+        <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:16}}>Выберите период</div>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div>
+            <div style={{fontSize:12,color:C.soft,marginBottom:4}}>Начало</div>
+            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{width:'100%',padding:'12px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box'}}/>
+          </div>
+          <div>
+            <div style={{fontSize:12,color:C.soft,marginBottom:4}}>Конец</div>
+            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{width:'100%',padding:'12px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box'}}/>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:20}}>
+          <button onClick={()=>setShowCustomPicker(false)} style={{flex:1,padding:'12px 0',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,background:'transparent',color:C.soft,fontSize:14,fontWeight:500,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
+          <button onClick={handleCustomApply} disabled={!customStart||!customEnd||customStart>customEnd} style={{flex:1,padding:'12px 0',borderRadius:12,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',opacity:(!customStart||!customEnd||customStart>customEnd)?0.5:1}}>Применить</button>
+        </div>
+      </div>
+    </div>}
 
     {loading && <div style={{textAlign:'center',padding:'48px 0',color:C.muted,fontSize:14}}>Загружаем данные...</div>}
 
@@ -2491,7 +2595,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
         </div>
       </div>
 
-      {/* 6 metric tiles — 2-column grid */}
+      {/* 9 metric tiles — 2-column grid, tap opens modal */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
         {METRICS.map(m => {
           const v = tileValue(m.key);
@@ -2503,34 +2607,10 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
             unit={v === '—' ? '' : tileUnit(m.key)}
             status={summary?.[m.key]?.status || {label:'—',color:'#999'}}
             sparkData={series?.[m.key] || []}
+            onClick={()=>setMetricModal(m.key)}
           />;
         })}
       </div>
-
-      {/* Detail chart cards — one per metric */}
-      {METRICS.map(m => {
-        const mc = MC[m.key] || { color: C.accent, icon:'📊' };
-        const info = summary?.[m.key];
-        const insightText = getInsight(m.key);
-        return <div key={m.key} style={{background:C.surface,borderRadius:20,padding:'18px',marginBottom:12,boxShadow:C.shadowCard}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-            <span style={{fontSize:18}}>{mc.icon}</span>
-            <div>
-              <div style={{fontSize:14,fontWeight:700,color:C.text}}>{m.label}</div>
-              <div style={{fontSize:11,color:C.muted}}>{periodLabel}</div>
-            </div>
-            {info && <div style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:info.status?.color,padding:'4px 10px',borderRadius:10,background:(info.status?.color||'#999')+'15'}}>{info.status?.label}</div>}
-          </div>
-          <DetailLineChart
-            data={series?.[m.key]||[]}
-            color={mc.color}
-            norm={m.norm}
-            metricKey={m.key}
-            range={range}
-          />
-          {insightText && <div style={{fontSize:12,color:C.soft,marginTop:10,lineHeight:1.5}}>{insightText}</div>}
-        </div>;
-      })}
 
       {/* Insights section */}
       {insights.length > 0 && <div style={{background:C.surface,borderRadius:20,padding:'18px',marginBottom:16,boxShadow:C.shadowCard}}>
@@ -2543,6 +2623,57 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
           </div>
         </div>)}
       </div>}
+
+      {/* Fullscreen metric detail modal */}
+      {metricModal && (() => {
+        const m = METRICS.find(x => x.key === metricModal);
+        if (!m) return null;
+        const mc = MC[m.key] || { color: C.accent, bg: C.accentSoft, icon: '📊' };
+        const info = summary?.[m.key];
+        const insightText = getInsight(m.key);
+        const v = tileValue(m.key);
+        const u = v === '—' ? '' : tileUnit(m.key);
+        return <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:C.bg,zIndex:9999,display:'flex',flexDirection:'column',overflow:'auto',animation:'enter .2s ease'}}>
+          {/* Header */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px 12px',borderBottom:`1px solid ${C.surfaceAlt}`,background:C.bg,position:'sticky',top:0,zIndex:1}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:40,height:40,borderRadius:12,background:mc.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{mc.icon}</div>
+              <div>
+                <div style={{fontSize:18,fontWeight:700,color:C.text}}>{m.label}</div>
+                <div style={{fontSize:12,color:C.muted}}>{periodLabel}</div>
+              </div>
+            </div>
+            <button onClick={()=>setMetricModal(null)} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.text,display:'flex',alignItems:'center',justifyContent:'center',padding:10,borderRadius:14,minWidth:44,minHeight:44,WebkitTapHighlightColor:'transparent'}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          {/* Body */}
+          <div style={{flex:1,padding:'20px 20px 32px'}}>
+            {/* Value + status */}
+            <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:4}}>
+              <span style={{fontSize:36,fontWeight:800,color:C.text,fontFamily:'var(--fd)',lineHeight:1}}>{v}</span>
+              {u && <span style={{fontSize:14,color:C.muted}}>{u}</span>}
+            </div>
+            {info?.status && <div style={{fontSize:12,fontWeight:600,color:info.status.color,marginBottom:20}}>{info.status.label}</div>}
+            {/* Big chart */}
+            <div style={{background:C.surface,borderRadius:20,padding:'16px 12px',marginBottom:20,boxShadow:C.shadowCard}}>
+              <DetailLineChart
+                data={series?.[m.key]||[]}
+                color={mc.color}
+                norm={m.norm}
+                metricKey={m.key}
+                range={range}
+                height={280}
+              />
+            </div>
+            {/* Insight */}
+            {insightText && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',boxShadow:C.shadowCard}}>
+              <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:4}}>Инсайт</div>
+              <div style={{fontSize:13,color:C.soft,lineHeight:1.5}}>{insightText}</div>
+            </div>}
+          </div>
+        </div>;
+      })()}
     </>}
   </div>;
 }
@@ -2860,7 +2991,8 @@ export default function App(){
   // analyticsRange in its dependency array — otherwise its deps are
   // evaluated in the Temporal Dead Zone and the whole page crashes.
   const[analytics,setAnalytics]=useState(null);
-  const[analyticsRange,setAnalyticsRange]=useState('week');
+  const[analyticsRange,setAnalyticsRange]=useState('7d');
+  const[customDateRange,setCustomDateRange]=useState(null); // {start:'YYYY-MM-DD', end:'YYYY-MM-DD'}
   // Scroll to top on screen change
   useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
 
@@ -2954,14 +3086,21 @@ export default function App(){
     const targetId = isClient ? selClient?.id : user?.id;
     if (!targetId || !supabase) return;
     let cancelled = false;
-    const daysBack = analyticsRange === 'week' ? 7 : analyticsRange === 'month' ? 30 : 365;
     setAnalytics({ range: analyticsRange, days: [], meals: [], loading: true });
     (async () => {
       try {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(start.getDate() - daysBack + 1);
-        const startStr = dk(start), endStr = dk(end);
+        let startStr, endStr;
+        if (analyticsRange === 'custom' && customDateRange) {
+          startStr = customDateRange.start;
+          endStr = customDateRange.end;
+        } else {
+          const daysBack = analyticsRange === '3d' ? 3 : analyticsRange === '5d' ? 5 : analyticsRange === '1m' ? 30 : 7;
+          const end = new Date();
+          const start = new Date();
+          start.setDate(start.getDate() - daysBack + 1);
+          startStr = dk(start);
+          endStr = dk(end);
+        }
         const { data: days, error: dayErr } = await supabase.from('diary_days')
           .select('*').eq('user_id', targetId).gte('date', startStr).lte('date', endStr)
           .order('date', { ascending: true });
@@ -2981,7 +3120,7 @@ export default function App(){
       }
     })();
     return () => { cancelled = true; };
-  }, [screen, analyticsRange, user?.id, selClient?.id]);
+  }, [screen, analyticsRange, user?.id, selClient?.id, customDateRange?.start, customDateRange?.end]);
 
   // Create invite and save to DB
   const createInvite=async()=>{
@@ -3767,6 +3906,8 @@ export default function App(){
     analytics={analytics}
     range={analyticsRange}
     onRangeChange={setAnalyticsRange}
+    customDateRange={customDateRange}
+    onCustomDateRange={setCustomDateRange}
     onBack={()=>setScreen('clientView')}
     waterNorm={selClient.waterNorm||waterNorm}
     title={(selClient.nick||selClient.name) + ' — аналитика'}
@@ -3777,6 +3918,8 @@ export default function App(){
     analytics={analytics}
     range={analyticsRange}
     onRangeChange={setAnalyticsRange}
+    customDateRange={customDateRange}
+    onCustomDateRange={setCustomDateRange}
     onBack={()=>setScreen('profile')}
     waterNorm={waterNorm}
   />);
