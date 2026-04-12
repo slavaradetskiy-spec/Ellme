@@ -3843,6 +3843,8 @@ export default function App(){
   })();
 
   const handleTabPress = (tab) => {
+    // Always close chat modals when switching tabs
+    if (tab !== 'chat') { setChatModal(null); setShowChatList(false); }
     if (tab === 'diary') { goHome(); }
     if (tab === 'analytics') {
       setAnalytics(null);
