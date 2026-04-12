@@ -3,7 +3,8 @@
 Временный файл для передачи контекста между сессиями Claude Code.
 
 ## Текущая ветка и статус
-- Ветки: **staging** (dev) и **main** (prod) — синхронизированы
+- Ветки: **staging** (dev) и **main** (prod)
+- **ПРАВИЛО: ВСЕГДА сначала пуш на staging, НЕ мержить в main без одобрения пользователя!**
 - Staging: https://ellme-git-staging-slavaradetskiy-specs-projects.vercel.app
 - Prod: https://ellme.ru
 
