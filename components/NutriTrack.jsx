@@ -2088,6 +2088,15 @@ function ReactionPicker({ onPick, active }) {
 
 // ═══ ANALYTICS ═══
 
+// Format minutes since midnight to HH:MM (handles 24h+ normalized bedtimes)
+const fmtTime = (mins) => {
+  if (mins == null) return '';
+  let total = mins;
+  if (total >= 1440) total -= 1440; // normalize back to 0-1439
+  const h = Math.floor(total / 60), m = Math.round(total % 60);
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+};
+
 // Aggregate a diary range into per-metric summaries.
 // Input: days array of diary_days rows, meals array joined via diary_day_id.
 // Output: { series: { water:[{date,value}], sleep:[...], ... }, summary: {...} }
@@ -2155,8 +2164,11 @@ function buildAnalytics(days, meals, waterNorm) {
     series.sleepDuration.push({ date: d.date, value: hours });
     // Sleep quality (1-10)
     series.sleepQuality.push({ date: d.date, value: d.sleep_quality != null ? Number(d.sleep_quality) : null });
-    // Bedtime: stored as minutes since midnight for charting, display as HH:MM
-    series.bedtime.push({ date: d.date, value: bedMin });
+    // Bedtime: normalize for averaging — if before 12:00 (early morning), treat as next day (add 24h)
+    // This way 23:00=1380, 00:30=1470, 01:00=1500 — averaging works correctly
+    let bedNorm = bedMin;
+    if (bedNorm != null && bedNorm < 720) bedNorm += 1440; // before noon → add 24h
+    series.bedtime.push({ date: d.date, value: bedNorm, bedRaw: d.sleep_bed, wakeRaw: d.sleep_wake });
     // Movement: total minutes from all activities
     series.movement.push({ date: d.date, value: parseMovementMinutes(d.movement) });
     // Stress, Energy, Mood
@@ -2181,7 +2193,9 @@ function buildAnalytics(days, meals, waterNorm) {
   const stoolPct = pct(series.stool); // % of days with "Норма"
   const sleepDurAvg = avg(series.sleepDuration);
   const sleepQualAvg = avg(series.sleepQuality);
-  const bedtimeAvg = avg(series.bedtime); // avg minutes since midnight
+  // Bedtime avg: normalize back from 24h+ to proper time
+  let bedtimeAvg = avg(series.bedtime);
+  if (bedtimeAvg != null && bedtimeAvg >= 1440) bedtimeAvg -= 1440;
   const movementAvg = avg(series.movement); // avg minutes per day
   const stressAvg = avg(series.stress);
   const energyAvg = avg(series.energy);
@@ -2216,7 +2230,7 @@ function buildAnalytics(days, meals, waterNorm) {
       return { label: 'Внимание', color: '#B8453A' };
     })() },
     sleepQuality: { avg: sleepQualAvg, unit: '/10', status: statusFn(sleepQualAvg, 7, 5) },
-    bedtime: { avg: bedtimeAvg, unit: '', status: { label: bedtimeAvg != null ? (Math.floor(bedtimeAvg/60)+':'+String(Math.round(bedtimeAvg%60)).padStart(2,'0')) : '—', color: '#999' } },
+    bedtime: { avg: bedtimeAvg, unit: '', status: { label: bedtimeAvg != null ? fmtTime(bedtimeAvg) : '—', color: '#999' } },
     movement: { avg: movementAvg, unit: 'мин', status: statusFn(movementAvg, 30, 15) },
     stress: { avg: stressAvg, unit: '/10', status: statusFn(stressAvg, 4, 7, true) },
     energy: { avg: energyAvg, unit: '/10', status: statusFn(energyAvg, 7, 5) },
@@ -2239,17 +2253,17 @@ function ChartCanvas({ config, width, height, style }) {
   return <canvas ref={canvasRef} width={width} height={height} style={{display:'block',...(style||{})}}/>;
 }
 
-// Metric color map — 9 metrics
+// Metric color map — 9 metrics (SVG icons from diary)
 const MC = {
-  water:         { color:'#378ADD', bg:'#e8f0fb', icon:'💧' },
-  stool:         { color:'#8B6F47', bg:'#f5f0e8', icon:'🪑' },
-  sleepDuration: { color:'#7F77DD', bg:'#eeedfe', icon:'😴' },
-  sleepQuality:  { color:'#9B7FDD', bg:'#f0edfe', icon:'🌙' },
-  bedtime:       { color:'#5B6FBB', bg:'#e8ecf8', icon:'🛏️' },
-  movement:      { color:'#0F6E56', bg:'#e1f5ee', icon:'🏃' },
-  stress:        { color:'#D85A30', bg:'#faece7', icon:'🧠' },
-  energy:        { color:'#EF9F27', bg:'#fff8e0', icon:'⚡' },
-  mood:          { color:'#E07BAD', bg:'#fce8f0', icon:'😊' },
+  water:         { color:'#378ADD', bg:'#e8f0fb', icon: I.drop },
+  stool:         { color:'#8B6F47', bg:'#f5f0e8', icon: I.stool },
+  sleepDuration: { color:'#7F77DD', bg:'#eeedfe', icon: I.moon },
+  sleepQuality:  { color:'#9B7FDD', bg:'#f0edfe', icon: I.moon },
+  bedtime:       { color:'#5B6FBB', bg:'#e8ecf8', icon: I.moon },
+  movement:      { color:'#0F6E56', bg:'#e1f5ee', icon: I.run },
+  stress:        { color:'#D85A30', bg:'#faece7', icon: I.brain },
+  energy:        { color:'#EF9F27', bg:'#fff8e0', icon: I.heart },
+  mood:          { color:'#E07BAD', bg:'#fce8f0', icon: I.heart },
 };
 
 // Sparkline — mini Chart.js canvas (28px height, no axes) — ALL LINES
@@ -2280,13 +2294,6 @@ function Sparkline({ data, metricKey, color }) {
   return <ChartCanvas config={cfg} width={68} height={28} style={{width:68,height:28}}/>;
 }
 
-// Format minutes since midnight to HH:MM
-const fmtTime = (mins) => {
-  if (mins == null) return '';
-  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
-  return h + ':' + String(m).padStart(2, '0');
-};
-
 // Detail chart — full Chart.js with axes, gridlines, labels, optional norm line — ALL LINES
 function DetailLineChart({ data, color, norm, metricKey, range, height: chartHeight }) {
   const h = chartHeight || 180;
@@ -2302,7 +2309,8 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
     backgroundColor: color + '18',
     borderColor: color,
     borderWidth: 2,
-    pointRadius: 3,
+    pointRadius: 0,
+    pointHoverRadius: 4,
     pointBackgroundColor: color,
     tension: 0.35,
     fill: true,
@@ -2472,11 +2480,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     if (!s) return '—';
     if (key === 'water') return s.avg == null ? '—' : Number(s.avg).toLocaleString('ru');
     if (key === 'stool') return s.pct == null ? '—' : s.pct + '%';
-    if (key === 'bedtime') {
-      if (s.avg == null) return '—';
-      const h = Math.floor(s.avg / 60), m = Math.round(s.avg % 60);
-      return h + ':' + String(m).padStart(2, '0');
-    }
+    if (key === 'bedtime') return s.avg == null ? '—' : fmtTime(s.avg);
     if (key === 'movement') return s.avg == null ? '—' : Math.round(s.avg);
     return fmt1(s.avg);
   };
@@ -2520,11 +2524,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     if (key === 'stool') return `Норма в ${s.pct||0}% отмеченных дней.`;
     if (key === 'sleepDuration') return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
     if (key === 'sleepQuality') return `Среднее качество сна: ${fmt1(s.avg)}/10.`;
-    if (key === 'bedtime') {
-      if (s.avg == null) return '';
-      const h = Math.floor(s.avg / 60), m = Math.round(s.avg % 60);
-      return `Среднее время отхода ко сну: ${h}:${String(m).padStart(2,'0')}.`;
-    }
+    if (key === 'bedtime') return s.avg == null ? '' : `Среднее время отхода ко сну: ${fmtTime(s.avg)}.`;
     if (key === 'movement') return `В среднем ${Math.round(s.avg||0)} мин активности в день.`;
     if (key === 'stress') return `В среднем ${fmt1(s.avg)}/10. Чем ниже, тем лучше.`;
     if (key === 'energy') return `В среднем ${fmt1(s.avg)}/10.`;
@@ -2581,7 +2581,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
 
     {!loading && !renderError && <>
       {/* Hero card — Health Score */}
-      <div style={{background:'#2a4a2a',borderRadius:20,padding:'20px 18px 16px',marginBottom:16,color:'#fff',position:'relative',overflow:'hidden'}}>
+      <div style={{background:'#2a4a2a',borderRadius:20,padding:'20px 18px 16px',marginBottom:12,color:'#fff',position:'relative',overflow:'hidden'}}>
         <div style={{position:'absolute',bottom:0,left:0,right:0,height:50,opacity:0.3}}>
           {heroSpark.length>=2 && <ChartCanvas config={heroChartCfg} width={360} height={50} style={{width:'100%',height:50}}/>}
         </div>
@@ -2591,9 +2591,40 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
             <span style={{fontSize:40,fontWeight:800,lineHeight:1,fontFamily:'var(--fd)'}}>{healthScore != null ? fmt1(healthScore) : '—'}</span>
             <span style={{fontSize:14,opacity:0.6}}>/10</span>
           </div>
-          <div style={{fontSize:11,opacity:0.5,marginTop:4}}>{periodLabel} &middot; сравнение: —</div>
+          <div style={{fontSize:11,opacity:0.5,marginTop:4}}>{periodLabel}</div>
         </div>
       </div>
+
+      {/* Health score breakdown */}
+      {healthScore != null && summary && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',marginBottom:16,boxShadow:C.shadowCard}}>
+        <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:8}}>Как считается балл</div>
+        <div style={{fontSize:11,color:C.soft,lineHeight:1.5,marginBottom:10}}>Средневзвешенная оценка 8 показателей (0-10). Время сна не оценивается.</div>
+        {(() => {
+          const scoreItems = [
+            { key:'water', label:'Вода', w:15, score: summary.water?.avg != null ? Math.min(10, (summary.water.avg / (waterNorm||2200)) * 10) : null },
+            { key:'stool', label:'Стул', w:8, score: summary.stool?.pct != null ? Math.min(10, summary.stool.pct / 10) : null },
+            { key:'sleepDuration', label:'Длит. сна', w:14, score: summary.sleepDuration?.avg != null ? (()=>{ const h=summary.sleepDuration.avg; return h>=7&&h<=9?10:h>=6&&h<=10?7:Math.max(0,10-Math.abs(h-8)*2.5); })() : null },
+            { key:'sleepQuality', label:'Кач. сна', w:10, score: summary.sleepQuality?.avg != null ? summary.sleepQuality.avg : null },
+            { key:'movement', label:'Движение', w:12, score: summary.movement?.avg != null ? Math.min(10, summary.movement.avg / 6) : null },
+            { key:'stress', label:'Стресс', w:12, score: summary.stress?.avg != null ? (10 - summary.stress.avg) : null },
+            { key:'energy', label:'Энергия', w:14, score: summary.energy?.avg != null ? summary.energy.avg : null },
+            { key:'mood', label:'Настроение', w:15, score: summary.mood?.avg != null ? (summary.mood.avg / 5 * 10) : null },
+          ];
+          return scoreItems.map((it, i) => {
+            const mc = MC[it.key];
+            const barW = it.score != null ? Math.round(it.score * 10) : 0;
+            return <div key={it.key} style={{display:'flex',alignItems:'center',gap:8,marginBottom:i<scoreItems.length-1?6:0}}>
+              <div style={{width:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',color:mc?.color||C.muted,flexShrink:0}}>{mc?.icon}</div>
+              <span style={{fontSize:11,color:C.soft,width:65,flexShrink:0}}>{it.label}</span>
+              <div style={{flex:1,height:6,background:C.surfaceAlt,borderRadius:3,overflow:'hidden'}}>
+                <div style={{width:barW+'%',height:'100%',background:mc?.color||C.accent,borderRadius:3,transition:'width .3s'}}/>
+              </div>
+              <span style={{fontSize:11,fontWeight:600,color:it.score!=null?C.text:C.muted,width:28,textAlign:'right'}}>{it.score!=null?fmt1(it.score):'—'}</span>
+              <span style={{fontSize:9,color:C.muted,width:22,textAlign:'right'}}>{it.w}%</span>
+            </div>;
+          });
+        })()}
+      </div>}
 
       {/* 9 metric tiles — 2-column grid, tap opens modal */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
@@ -2654,17 +2685,44 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
               <span style={{fontSize:36,fontWeight:800,color:C.text,fontFamily:'var(--fd)',lineHeight:1}}>{v}</span>
               {u && <span style={{fontSize:14,color:C.muted}}>{u}</span>}
             </div>
-            {info?.status && <div style={{fontSize:12,fontWeight:600,color:info.status.color,marginBottom:20}}>{info.status.label}</div>}
-            {/* Big chart */}
+            {info?.status && m.key !== 'bedtime' && <div style={{fontSize:12,fontWeight:600,color:info.status.color,marginBottom:20}}>{info.status.label}</div>}
+
+            {/* Bedtime: show bed/wake times per day */}
+            {m.key === 'bedtime' && series?.bedtime && (() => {
+              const days = series.bedtime.filter(d => d.bedRaw || d.wakeRaw);
+              return days.length > 0 ? <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',marginBottom:16,boxShadow:C.shadowCard}}>
+                <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:10}}>Лёг / Встал</div>
+                {days.map((d, i) => {
+                  const dateLabel = (() => { const p = (d.date||'').split('-'); return p.length===3 ? p[2]+'.'+p[1] : d.date; })();
+                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom: i < days.length-1 ? `1px solid ${C.surfaceAlt}` : 'none'}}>
+                    <span style={{fontSize:12,color:C.muted,minWidth:45}}>{dateLabel}</span>
+                    <span style={{fontSize:13,color:C.text}}>🛏 {d.bedRaw || '—'}</span>
+                    <span style={{fontSize:13,color:C.text}}>☀️ {d.wakeRaw || '—'}</span>
+                  </div>;
+                })}
+              </div> : null;
+            })()}
+
+            {/* Big chart — for bedtime show sleep duration chart instead */}
             <div style={{background:C.surface,borderRadius:20,padding:'16px 12px',marginBottom:20,boxShadow:C.shadowCard}}>
-              <DetailLineChart
+              {m.key === 'bedtime' ? <>
+                <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:8}}>Часы сна по дням</div>
+                <DetailLineChart
+                  data={series?.sleepDuration||[]}
+                  color={mc.color}
+                  norm={null}
+                  metricKey="sleepDuration"
+                  range={range}
+                  height={280}
+                />
+              </> : <DetailLineChart
                 data={series?.[m.key]||[]}
                 color={mc.color}
                 norm={m.norm}
                 metricKey={m.key}
                 range={range}
                 height={280}
-              />
+              />}
             </div>
             {/* Insight */}
             {insightText && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',boxShadow:C.shadowCard}}>
