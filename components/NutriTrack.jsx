@@ -3982,8 +3982,8 @@ export default function App(){
       </footer>}
     </div>
     {/* Bottom tab bar */}
-    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:9990,background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,paddingBottom:'calc(8px + env(safe-area-inset-bottom))',boxShadow:'0 -2px 12px rgba(0,0,0,.06)'}}>
-      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'stretch',height:56}}>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:9990,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
+      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 4px'}}>
         {[
           { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
           { id:'analytics', label:'Аналитика',  icon:I.chart, badge:0 },
@@ -3992,19 +3992,18 @@ export default function App(){
         ].map(tab => {
           const active = tab.id === 'chat' ? false : activeTab === tab.id;
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
-            flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,
+            flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
             border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
-            background:active?C.accentSoft:'transparent',
-            color:active?C.accent:C.muted,
-            borderRadius:active?14:0,margin:active?'4px 2px':'4px 2px',
-            transition:'all .15s',WebkitTapHighlightColor:'transparent',
-            padding:'4px 0',
+            background:'transparent',
+            color:active?'#333333':'#99A2AD',
+            transition:'color .15s',WebkitTapHighlightColor:'transparent',
+            padding:'6px 0',
           }}>
-            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,color:'inherit'}}>
-              {tab.icon}
-              {tab.badge > 0 && <div style={{position:'absolute',top:-4,right:-8,minWidth:16,height:16,borderRadius:8,background:'#E53935',color:'#fff',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{tab.badge > 99 ? '99+' : tab.badge}</div>}
+            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',width:28,height:28,color:'inherit'}}>
+              <svg viewBox={tab.icon.props.viewBox} width="28" height="28" fill="none" stroke="currentColor" strokeWidth={tab.icon.props.strokeWidth||'1.5'} strokeLinecap={tab.icon.props.strokeLinecap||undefined} strokeLinejoin={tab.icon.props.strokeLinejoin||undefined}>{tab.icon.props.children}</svg>
+              {tab.badge > 0 && <div style={{position:'absolute',top:-4,right:-10,minWidth:18,height:18,borderRadius:9,background:'#FF3B30',color:'#fff',fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 5px',border:'2px solid #fff'}}>{tab.badge > 99 ? '99+' : tab.badge}</div>}
             </div>
-            <span style={{fontSize:10,fontWeight:active?600:500,letterSpacing:'.02em'}}>{tab.label}</span>
+            <span style={{fontSize:11,fontWeight:active?600:400,lineHeight:1}}>{tab.label}</span>
           </button>;
         })}
       </div>
