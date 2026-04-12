@@ -2778,7 +2778,7 @@ export default function App(){
     let startY=null;
     const threshold=70;
     const onTouchStart=(e)=>{
-      if(window.scrollY>0||refreshing)return;
+      if(window.scrollY>0||refreshing||modalOpenRef.current)return;
       startY=e.touches[0].clientY;
     };
     const onTouchMove=(e)=>{
@@ -2832,6 +2832,10 @@ export default function App(){
   const[copied,setCopied]=useState(false);
   // Chat modal: {clientId, docId, clientName, tagDate} | null
   const[chatModal,setChatModal]=useState(null);
+  // Ref so the pull-to-refresh handler (stale closure on window) can
+  // check whether a fixed overlay is open and skip the refresh.
+  const modalOpenRef=useRef(false);
+  useEffect(()=>{modalOpenRef.current=!!(chatModal||showChatList)},[chatModal,showChatList]);
   // Doc-side chat list (list of all chats with clients)
   const[showChatList,setShowChatList]=useState(false);
   // When the user clicks a day-tag in the chat, we close the modal,
