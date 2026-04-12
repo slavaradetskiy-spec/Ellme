@@ -3982,7 +3982,7 @@ export default function App(){
       </footer>}
     </div>
     {/* Bottom tab bar */}
-    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:9990,background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,paddingBottom:'env(safe-area-inset-bottom)',boxShadow:'0 -2px 12px rgba(0,0,0,.06)'}}>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:9990,background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,paddingBottom:'calc(8px + env(safe-area-inset-bottom))',boxShadow:'0 -2px 12px rgba(0,0,0,.06)'}}>
       <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'stretch',height:56}}>
         {[
           { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
