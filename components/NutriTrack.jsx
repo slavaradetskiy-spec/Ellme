@@ -1815,13 +1815,13 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     setPhotoBroken(false);
     setOtherParty(prev => ({ ...prev, photo: prev.photo || storageGuess }));
     supabase.from('profiles')
-      .select('id,name,nick,photo_url,last_seen')
+      .select('id,name,photo_url,last_seen')
       .eq('id', otherId)
       .maybeSingle()
       .then(({ data }) => {
         if (!mounted || !data) return;
         setOtherParty(prev => ({
-          name: data.nick || data.name || prev.name || '',
+          name: data.name || prev.name || '',
           photo: data.photo_url || prev.photo || storageGuess || null,
           lastSeen: data.last_seen || null,
         }));
