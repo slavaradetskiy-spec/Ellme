@@ -104,6 +104,8 @@ const I={
   fork:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>,
   stool:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 2h6l1 7H8L9 2z"/><path d="M8 9l-2 13M16 9l2 13M12 9v13"/></svg>,
   steth:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4.8 2.3A.3.3 0 105 2H4a2 2 0 00-2 2v5a6 6 0 006 6 6 6 0 006-6V4a2 2 0 00-2-2h-1a.2.2 0 10.3.3"/><path d="M8 15v1a6 6 0 006 6 6 6 0 006-6v-4"/><circle cx="20" cy="10" r="2"/></svg>,
+  chart:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>,
+  book:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>,
 };
 
 // ═══ DATA ═══
@@ -3833,6 +3835,31 @@ export default function App(){
     });
   };
 
+  // Active tab for bottom bar
+  const activeTab = (() => {
+    if (screen === 'analytics' || screen === 'clientAnalytics') return 'analytics';
+    if (screen === 'profile') return 'profile';
+    return 'diary';
+  })();
+
+  const handleTabPress = (tab) => {
+    if (tab === 'diary') { goHome(); }
+    if (tab === 'analytics') {
+      setAnalytics(null);
+      setAnalyticsRange('7d');
+      setScreen('analytics');
+    }
+    if (tab === 'chat') {
+      if (isDoc) { setShowChatList(true); }
+      else { openChat(user.id, user.name || 'Нутрициолог', null, null); }
+    }
+    if (tab === 'profile') { setScreen('profile'); }
+  };
+
+  const chatBadge = isDoc
+    ? Object.values(docChatUnreadByClient).reduce((s, n) => s + n, 0)
+    : clientChatUnread;
+
   const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)',overscrollBehavior:'none'}}>
     <style>{CSS}</style>
     {/* Pull-to-refresh indicator */}
@@ -3890,7 +3917,7 @@ export default function App(){
     {/* Floating "back to chat" button shown after navigating from a tag */}
     {returnToChat && !chatModal && <button
       onClick={()=>{setChatModal(returnToChat);setReturnToChat(null);}}
-      style={{position:'fixed',right:16,bottom:'calc(20px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
+      style={{position:'fixed',right:16,bottom:'calc(76px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 14l-4-4 4-4M5 10h11a4 4 0 014 4v0a4 4 0 01-4 4H9"/></svg>
       Вернуться в чат
     </button>}
@@ -3944,7 +3971,7 @@ export default function App(){
         }
       }}
     />}
-    <div style={{maxWidth:520,margin:'0 auto',padding:'0 calc(20px + env(safe-area-inset-left)) 48px calc(20px + env(safe-area-inset-right))',paddingLeft:'max(20px, env(safe-area-inset-left))',paddingRight:'max(20px, env(safe-area-inset-right))'}}>
+    <div style={{maxWidth:520,margin:'0 auto',padding:'0 calc(20px + env(safe-area-inset-left)) 90px calc(20px + env(safe-area-inset-right))',paddingLeft:'max(20px, env(safe-area-inset-left))',paddingRight:'max(20px, env(safe-area-inset-right))'}}>
       {ch}
       {screen==='profile'&&<footer style={{marginTop:140,padding:'16px 0',textAlign:'center',fontSize:12,color:C.soft,lineHeight:2}}>
         <div>Разработано <a href="https://radema.ru" target="_blank" rel="noopener" style={{color:C.soft,textDecoration:'none',fontWeight:700}}>radema.ru</a></div>
@@ -3953,6 +3980,34 @@ export default function App(){
           <a href="/terms" style={{color:C.soft,textDecoration:'none'}}>Оферта</a>
         </div>
       </footer>}
+    </div>
+    {/* Bottom tab bar */}
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:9990,background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,paddingBottom:'env(safe-area-inset-bottom)',boxShadow:'0 -2px 12px rgba(0,0,0,.06)'}}>
+      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'stretch',height:56}}>
+        {[
+          { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
+          { id:'analytics', label:'Аналитика',  icon:I.chart, badge:0 },
+          { id:'chat',      label:'Чат',        icon:I.chat,  badge:chatBadge },
+          { id:'profile',   label:'Профиль',    icon:I.user,  badge:0 },
+        ].map(tab => {
+          const active = tab.id === 'chat' ? false : activeTab === tab.id;
+          return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
+            flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,
+            border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
+            background:active?C.accentSoft:'transparent',
+            color:active?C.accent:C.muted,
+            borderRadius:active?14:0,margin:active?'4px 2px':'4px 2px',
+            transition:'all .15s',WebkitTapHighlightColor:'transparent',
+            padding:'4px 0',
+          }}>
+            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,color:'inherit'}}>
+              {tab.icon}
+              {tab.badge > 0 && <div style={{position:'absolute',top:-4,right:-8,minWidth:16,height:16,borderRadius:8,background:'#E53935',color:'#fff',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{tab.badge > 99 ? '99+' : tab.badge}</div>}
+            </div>
+            <span style={{fontSize:10,fontWeight:active?600:500,letterSpacing:'.02em'}}>{tab.label}</span>
+          </button>;
+        })}
+      </div>
     </div>
   </div>;
 
@@ -3989,7 +4044,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={<IcoBtn icon={I.chat} badge={clientChatUnread} onClick={()=>openChat(user.id, user.name||'Нутрициолог', null, null)}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+    <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <WeeklyGoalWidget goal={user.weeklyGoal} goalDays={user.weeklyGoalDays} goalStarted={user.weeklyGoalStarted} goalSetBy={user.weeklyGoalSetBy} daysDone={goalDays} onToggleDay={toggleGoalDay}/>
@@ -4057,7 +4112,7 @@ export default function App(){
   if(isDoc&&screen==='clientView'&&selClient){
     const cd=getDay(selClient.id),cm=cd.meals||{};
     return shell(<>
-      <TopBar left={<div style={{display:'flex',gap:4,alignItems:'center'}}><BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/><IcoBtn icon={I.chat} badge={docChatUnreadByClient[selClient.id]||0} onClick={()=>openChat(selClient.id, selClient.nick||selClient.name, user.id, null)}/></div>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.user} onClick={()=>{setScreen('profile');window.scrollTo(0,0)}}/>}/>
+      <TopBar left={<BackBtn onClick={()=>{setScreen('home');setSelClient(null);setDocComment('');window.scrollTo(0,0)}}/>} title={selClient.nick||selClient.name} right={<IcoBtn icon={I.chat} badge={docChatUnreadByClient[selClient.id]||0} onClick={()=>openChat(selClient.id, selClient.nick||selClient.name, user.id, null)}/>}/>
       <div style={{background:C.surface,borderRadius:16,padding:'12px 16px',marginBottom:12,boxShadow:C.shadowCard,display:'flex',alignItems:'center',gap:12}}>
         <div style={{position:'relative',flexShrink:0}}>
           {selClient.photo?<img src={selClient.photo} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',display:'block',background:C.surfaceAlt}} alt=""/>:<div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{(selClient.nick||selClient.name).charAt(0)}</div>}
@@ -4110,7 +4165,7 @@ export default function App(){
   if(isDoc&&screen==='myDiary'){
     const md=getDay(user.id),mm=md.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={<IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/>}/>
+      <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={null}/>
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
@@ -4128,7 +4183,7 @@ export default function App(){
     const invLink=invCode?((typeof window!=='undefined'?window.location.origin:'https://ellme.ru')+'/?invite='+invCode):'';
 
     return shell(<>
-      <TopBar left={<IcoBtn icon={I.chat} badge={Object.values(docChatUnreadByClient).reduce((s,n)=>s+n,0)} onClick={()=>setShowChatList(true)}/>} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<div style={{display:'flex',gap:4}}><IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/><IcoBtn icon={I.user} onClick={()=>setScreen('profile')}/></div>}/>
+      <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/>}/>
 
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
