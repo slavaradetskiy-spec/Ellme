@@ -775,7 +775,6 @@ function Cal({sel,onSelect}){
         </button>;
       })}
     </div>
-    <div style={{textAlign:'center',marginTop:6,fontSize:13,color:C.muted}}>{sameD(sel,new Date())?'Сегодня, ':''}{ sameD(sel,ago(1))?'Вчера, ':''}{fmtD(sel)}</div>
   </div>;
 }
 
@@ -1180,12 +1179,12 @@ function DocGoalAssigner({clientId,docId,currentGoal,currentDays}){
     }catch(e){console.error('save goal:',e)}
   };
 
-  return <div style={{background:C.surface,borderRadius:16,boxShadow:C.shadowCard,marginBottom:12,overflow:'hidden'}}>
-    <button onClick={()=>setOpen(!open)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'12px 16px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>
-      <span style={{fontSize:16}}>🎯</span>
+  return <div style={{background:C.surface,borderRadius:18,boxShadow:C.shadowCard,marginBottom:14,overflow:'hidden'}}>
+    <button onClick={()=>setOpen(!open)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'14px 16px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>
+      <div style={{width:32,height:32,borderRadius:10,background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0}}>🎯</div>
       <div style={{flex:1,textAlign:'left'}}>
-        <div style={{fontSize:11,fontWeight:600,color:C.muted,letterSpacing:'.04em'}}>ЗАДАЧА КЛИЕНТУ</div>
-        <div style={{fontSize:13,color:currentGoal?C.text:C.muted,fontStyle:'italic'}}>{currentGoal||'Не задана'}</div>
+        <div style={{fontSize:14,fontWeight:600,color:C.text}}>Задача</div>
+        <div style={{fontSize:12,color:currentGoal?C.soft:C.muted,marginTop:1}}>{currentGoal||'Не задана'}</div>
       </div>
       <div style={{transform:open?'rotate(180deg)':'rotate(0)',transition:'transform .25s',color:C.muted,display:'flex'}}>
         <svg width="14" height="14" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 3.5L5 6.5L8 3.5"/></svg>
@@ -2291,7 +2290,7 @@ function MetricTile({ icon, label, value, unit, status, sparkData, sparkColor, a
 const fmt1 = (v) => v == null || isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
 
 // Main analytics screen. Shared between client and nutritionist (their own data).
-function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm }) {
+function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title }) {
   const [activeMetric, setActiveMetric] = useState('water');
   const [renderError, setRenderError] = useState(null);
 
@@ -2380,7 +2379,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm })
   })();
 
   return <div style={{animation:'slideRight .3s ease'}}>
-    <TopBar left={<BackBtn onClick={onBack}/>} title="Аналитика" right={null}/>
+    <TopBar left={<BackBtn onClick={onBack}/>} title={title||'Аналитика'} right={null}/>
 
     {/* Period tabs */}
     <div style={{display:'flex',gap:6,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
@@ -2753,11 +2752,15 @@ export default function App(){
   // Scroll to top on screen change
   useEffect(()=>{try{window.scrollTo({top:0,behavior:'instant'})}catch(e){try{window.scrollTo(0,0)}catch(e){}}},[screen]);
 
-  // Load analytics when screen switches to 'analytics' or range changes.
-  // The query is inlined here (not a separate helper) to avoid any
-  // subtle forward-reference issues in the function component body.
+  // Load analytics when screen switches to 'analytics' (own) or
+  // 'clientAnalytics' (viewing a client). Uses user.id for own data,
+  // selClient.id for client data.
   useEffect(() => {
-    if (screen !== 'analytics' || !user?.id || !supabase) return;
+    const isOwn = screen === 'analytics';
+    const isClient = screen === 'clientAnalytics';
+    if (!isOwn && !isClient) return;
+    const targetId = isClient ? selClient?.id : user?.id;
+    if (!targetId || !supabase) return;
     let cancelled = false;
     const daysBack = analyticsRange === 'week' ? 7 : analyticsRange === 'month' ? 30 : 365;
     setAnalytics({ range: analyticsRange, days: [], meals: [], loading: true });
@@ -2770,7 +2773,7 @@ export default function App(){
         const startStr = dk(start), endStr = dk(end);
         const { data: days, error: dayErr } = await supabase.from('diary_days')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', targetId)
           .gte('date', startStr)
           .lte('date', endStr)
           .order('date', { ascending: true });
@@ -2792,7 +2795,7 @@ export default function App(){
     })();
 
     return () => { cancelled = true; };
-  }, [screen, analyticsRange, user?.id]);
+  }, [screen, analyticsRange, user?.id, selClient?.id]);
 
   // Pull-to-refresh (mobile)
   const[pullDist,setPullDist]=useState(0);
@@ -3652,6 +3655,17 @@ export default function App(){
   // ═══ PROFILE ═══
   if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb} onOpenAnalytics={()=>setScreen('analytics')}/>);
 
+  // Client analytics viewed by the nutritionist
+  if(screen==='clientAnalytics'&&selClient) return shell(<AnalyticsScreen
+    analytics={analytics}
+    range={analyticsRange}
+    onRangeChange={setAnalyticsRange}
+    onBack={()=>setScreen('clientView')}
+    waterNorm={selClient.waterNorm||waterNorm}
+    title={(selClient.nick||selClient.name) + ' — аналитика'}
+  />);
+
+  // Own analytics (from profile)
   if(screen==='analytics') return shell(<AnalyticsScreen
     analytics={analytics}
     range={analyticsRange}
@@ -3747,10 +3761,24 @@ export default function App(){
         </div>
         <button onClick={()=>{setScreen('clientProfile');window.scrollTo(0,0)}} style={{background:C.surfaceAlt,border:'none',cursor:'pointer',padding:'6px 12px',borderRadius:8,fontSize:12,color:C.accent,fontFamily:'inherit',fontWeight:500}}>Профиль</button>
       </div>
+      <Cal sel={date} onSelect={setDate}/>
+
+      {/* Client analytics shortcut */}
+      <button onClick={()=>{
+        setAnalytics(null);
+        setAnalyticsRange('week');
+        // Temporarily override user.id for analytics to load client data
+        setScreen('clientAnalytics');
+      }} style={{width:'100%',padding:'13px 16px',borderRadius:16,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:14,boxShadow:C.shadowCard,transition:'all .15s'}}
+        onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}}
+        onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.text}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+        Аналитика клиента
+      </button>
+
       {/* Goal assignment for nutritionist */}
       <DocGoalAssigner clientId={selClient.id} docId={user.id} currentGoal={selClient.weeklyGoal} currentDays={selClient.weeklyGoalDays}/>
 
-      <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
           {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={cm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('clientMealDetail')}} delay={i*0.05} canLike={true} onToggleLike={()=>toggleMealLike(selClient.id,m.id)}/>)}
