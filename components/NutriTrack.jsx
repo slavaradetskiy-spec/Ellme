@@ -2832,12 +2832,14 @@ export default function App(){
   const[copied,setCopied]=useState(false);
   // Chat modal: {clientId, docId, clientName, tagDate} | null
   const[chatModal,setChatModal]=useState(null);
-  // Ref so the pull-to-refresh handler (stale closure on window) can
-  // check whether a fixed overlay is open and skip the refresh.
-  const modalOpenRef=useRef(false);
-  useEffect(()=>{modalOpenRef.current=!!(chatModal||showChatList)},[chatModal,showChatList]);
   // Doc-side chat list (list of all chats with clients)
   const[showChatList,setShowChatList]=useState(false);
+  // Ref so the pull-to-refresh handler (stale closure on window) can
+  // check whether a fixed overlay is open and skip the refresh.
+  // IMPORTANT: showChatList must be declared ABOVE this useEffect — its
+  // deps array is evaluated immediately and hits TDZ otherwise.
+  const modalOpenRef=useRef(false);
+  useEffect(()=>{modalOpenRef.current=!!(chatModal||showChatList)},[chatModal,showChatList]);
   // When the user clicks a day-tag in the chat, we close the modal,
   // navigate to that day, and remember the chat context here so a
   // floating "back to chat" button can reopen it.
