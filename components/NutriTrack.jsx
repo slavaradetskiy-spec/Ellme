@@ -1578,7 +1578,7 @@ function ChatListModal({ docId, clients, unreadByClient, onOpenChat, onClose }) 
     return '';
   };
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',overflow:'hidden',overscrollBehavior:'none'}}>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:76,overflow:'hidden',overscrollBehavior:'none'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
@@ -1979,7 +1979,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   else if (isOnline) { statusLine = 'онлайн'; statusColor = '#34C759'; }
   else if (seenAgo) { statusLine = 'был(а) ' + seenAgo; statusColor = C.muted; }
 
-  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':0,overflow:'hidden',overscrollBehavior:'none',touchAction:'pan-y'}}>
+  return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':'76px',overflow:'hidden',overscrollBehavior:'none',touchAction:'pan-y'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
       <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
@@ -2054,7 +2054,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
 
     {/* Input toolbar — extends all the way to the bottom edge so no
         background-color strip shows under it on iOS */}
-    <div style={{background:C.surface,padding:`14px 18px calc(env(safe-area-inset-bottom) + 23px)`,flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
+    <div style={{background:C.surface,padding:'14px 18px 14px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
       <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
         <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
         <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
@@ -3982,7 +3982,7 @@ export default function App(){
       </footer>}
     </div>
     {/* Bottom tab bar */}
-    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:9990,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
       <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 4px'}}>
         {[
           { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
