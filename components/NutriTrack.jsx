@@ -2458,7 +2458,10 @@ function Sparkline({ data, metricKey, color }) {
         backgroundColor: (color || '#378ADD') + '18',
         borderColor: color || '#378ADD',
         borderWidth: 1.5,
-        pointRadius: 0,
+        pointRadius: 3,
+        pointBackgroundColor: '#fff',
+        pointBorderColor: color || '#378ADD',
+        pointBorderWidth: 1.5,
         tension: 0.35,
         fill: true,
         spanGaps: true,
@@ -2468,7 +2471,7 @@ function Sparkline({ data, metricKey, color }) {
     options: {
       responsive: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: { x: { display: false }, y: { display: false, beginAtZero: !isBedtime } },
+      scales: { x: { display: false }, y: { display: false, beginAtZero: !isBedtime && !isStool } },
       layout: { padding: 0 },
     }
   };
@@ -2695,7 +2698,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     if (!s) return '';
     if (key === 'water') return 'мл';
     if (key === 'stool') return 'норма';
-    if (key === 'sleepDuration') return 'ч/ночь';
+    if (key === 'sleepDuration') return 'ч';
     if (key === 'sleepQuality') return '/10';
     if (key === 'bedtime') return '';
     if (key === 'movement') return 'мин/день';
@@ -2727,7 +2730,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     if (!valid.length) return 'Недостаточно данных. Заполни дневник за несколько дней.';
     if (key === 'water') { const normVal = waterNorm||2200; const avgN = Number(s.avg)||0; return `В среднем ${avgN.toLocaleString('ru')} мл/день — ${s.pct||0}% нормы (${normVal} мл).`; }
     if (key === 'stool') return `Норма в ${s.pct||0}% отмеченных дней.`;
-    if (key === 'sleepDuration') return `В среднем ${fmt1(s.avg)} ч/ночь. Оптимум — 7-9 часов.`;
+    if (key === 'sleepDuration') return `В среднем ${fmt1(s.avg)} ч. Оптимум — 7-9 часов.`;
     if (key === 'sleepQuality') return `Среднее качество сна: ${fmt1(s.avg)}/10.`;
     if (key === 'bedtime') return s.avg == null ? '' : `Среднее время отхода ко сну: ${fmtTime(s.avg)}.`;
     if (key === 'movement') return `В среднем ${Math.round(s.avg||0)} мин активности в день.`;
