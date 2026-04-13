@@ -880,7 +880,11 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
 
 // ═══ CALENDAR ═══
 function Cal({sel,onSelect}){
-  const days=[];for(let i=-3;i<=3;i++){const d=new Date(sel);d.setDate(sel.getDate()+i);days.push(d);}
+  // Week starts Monday: find Monday of the week containing `sel`
+  const dayOfWeek = sel.getDay(); // 0=Sun, 1=Mon...6=Sat
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // how many days back to Monday
+  const days=[];
+  for(let i=0;i<7;i++){const d=new Date(sel);d.setDate(sel.getDate()+mondayOffset+i);days.push(d);}
   const today=new Date();
   const goM=dir=>{const d=new Date(sel);d.setMonth(d.getMonth()+dir);onSelect(d)};
   return <div style={{marginBottom:12}}>
@@ -1271,8 +1275,8 @@ function WeeklyGoalWidget({goal,goalDays,goalStarted,goalSetBy,daysDone,onToggle
           return <button key={c.dateStr} onClick={canTap?()=>onToggleDay&&onToggleDay(c.dateStr,!c.done):undefined}
             style={{width:'100%',aspectRatio:'1',borderRadius:'50%',background:bg,border:c.isToday&&c.inRange?'1.5px solid #7AAA7A':'1.5px solid transparent',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:canTap?'pointer':'default',padding:0,fontFamily:'inherit',transition:'all .15s'}}>
             {c.done?<svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="#2A4A2A" strokeWidth="2" strokeLinecap="round"><path d="M2.5 6L5 8.5L9.5 3.5"/></svg>
+            :c.inRange&&c.isPast&&!c.done?<svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="#FF6B6B" strokeWidth="2" strokeLinecap="round"><path d="M3 3L9 9M9 3L3 9"/></svg>
             :<span style={{fontSize:11,fontWeight:c.isToday?700:400,color}}>{c.day}</span>}
-            {c.inRange&&c.isPast&&!c.done&&<div style={{width:3,height:3,borderRadius:'50%',background:'rgba(255,100,100,.5)',marginTop:1}}/>}
           </button>;
         })}
       </div>
