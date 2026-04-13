@@ -497,7 +497,13 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
     onMouseOut={e=>{e.currentTarget.style.transform='perspective(600px) rotateX(0deg)';e.currentTarget.style.boxShadow=has?C.shadow3d:'none'}}
   >
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
-    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none'}}/>}
+    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <svg width="48" height="48" viewBox="0 0 100 100" fill="none" stroke={C.tileBorder} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="50" cy="50" r="28"/><circle cx="50" cy="50" r="20"/>
+        <path d="M22 20 L22 80 M22 20 L19 28 M22 20 L22 28 M22 20 L25 28"/>
+        <path d="M78 22 C82 22 84 26 84 30 L84 36 L78 36 L78 80 M78 36 L78 22"/>
+      </svg>
+    </div>}
     {photos.length>1&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:8,padding:'2px 8px',fontSize:11,fontWeight:600,zIndex:2,backdropFilter:'blur(4px)'}}>{photos.length} фото</div>}
     {/* Like button: always visible for doc (canLike), decorative for client when liked */}
     {canLike?<button onClick={handleLike} style={{position:'absolute',top:8,right:8,width:32,height:32,borderRadius:'50%',background:d.liked?'rgba(255,255,255,.95)':'rgba(255,255,255,.2)',backdropFilter:'blur(8px)',border:'none',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:d.liked?'0 2px 8px rgba(0,0,0,.15)':'none',zIndex:3,cursor:'pointer',padding:0,transition:'all .15s'}}>
