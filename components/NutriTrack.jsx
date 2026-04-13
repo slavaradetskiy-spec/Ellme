@@ -2757,7 +2757,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     if (key === 'stool') return `Норма в ${s.pct||0}% отмеченных дней.`;
     if (key === 'sleepDuration') return `В среднем ${fmt1(s.avg)} ч. Оптимум — 7-9 часов.`;
     if (key === 'sleepQuality') return `Среднее качество сна: ${fmt1(s.avg)}/10.`;
-    if (key === 'bedtime') return s.avg == null ? '' : `Среднее время отхода ко сну: ${fmtTime(s.avg)}.`;
+    if (key === 'bedtime') return s.avg == null ? '' : `Среднее время отхода ко сну: ${fmtTime(s.avg)}. Оптимум — до 23:00.`;
     if (key === 'movement') return `В среднем ${Math.round(s.avg||0)} мин активности в день.`;
     if (key === 'stress') return `В среднем ${fmt1(s.avg)}/10. Чем ниже, тем лучше.`;
     if (key === 'energy') return `В среднем ${fmt1(s.avg)}/10.`;
