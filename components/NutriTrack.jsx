@@ -2887,22 +2887,6 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
             </div>
             {info?.status && <div style={{fontSize:12,fontWeight:600,color:info.status.color,marginBottom:20}}>{info.status.label}</div>}
 
-            {/* Bedtime: show bed/wake times per day */}
-            {m.key === 'bedtime' && series?.bedtime && (() => {
-              const days = series.bedtime.filter(d => d.bedRaw || d.wakeRaw);
-              return days.length > 0 ? <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',marginBottom:16,boxShadow:C.shadowCard}}>
-                <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:10}}>Лёг / Встал</div>
-                {days.map((d, i) => {
-                  const dateLabel = (() => { const p = (d.date||'').split('-'); return p.length===3 ? p[2]+'.'+p[1] : d.date; })();
-                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom: i < days.length-1 ? `1px solid ${C.surfaceAlt}` : 'none'}}>
-                    <span style={{fontSize:12,color:C.muted,minWidth:45}}>{dateLabel}</span>
-                    <span style={{fontSize:13,color:C.text}}>🛏 {d.bedRaw || '—'}</span>
-                    <span style={{fontSize:13,color:C.text}}>☀️ {d.wakeRaw || '—'}</span>
-                  </div>;
-                })}
-              </div> : null;
-            })()}
-
             {/* Insight — above chart */}
             {insightText && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',marginBottom:12,boxShadow:C.shadowCard}}>
               <div style={{fontSize:13,color:C.soft,lineHeight:1.5}}>{insightText}</div>
@@ -2928,6 +2912,21 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
                 height={280}
               />}
             </div>
+            {/* Лёг/Встал table — after chart in sleepDuration modal */}
+            {m.key === 'sleepDuration' && series?.bedtime && (() => {
+              const days = series.bedtime.filter(d => d.bedRaw || d.wakeRaw);
+              return days.length > 0 ? <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',boxShadow:C.shadowCard}}>
+                <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:10}}>Лёг / Встал</div>
+                {days.map((d, i) => {
+                  const dateLabel = (() => { const p = (d.date||'').split('-'); return p.length===3 ? p[2]+'.'+p[1] : d.date; })();
+                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom: i < days.length-1 ? `1px solid ${C.surfaceAlt}` : 'none'}}>
+                    <span style={{fontSize:12,color:C.muted,minWidth:45}}>{dateLabel}</span>
+                    <span style={{fontSize:13,color:C.text}}>🛏 {d.bedRaw || '—'}</span>
+                    <span style={{fontSize:13,color:C.text}}>☀️ {d.wakeRaw || '—'}</span>
+                  </div>;
+                })}
+              </div> : null;
+            })()}
           </div>
         </div>;
       })()}
