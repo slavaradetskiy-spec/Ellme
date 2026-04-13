@@ -2811,21 +2811,6 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     </div>}
 
     {!loading && !renderError && <>
-      {/* Hero card — Health Score */}
-      <div style={{background:'#2a4a2a',borderRadius:20,padding:'20px 18px 16px',marginBottom:12,color:'#fff',position:'relative',overflow:'hidden'}}>
-        <div style={{position:'absolute',bottom:0,left:0,right:0,height:50,opacity:0.3}}>
-          {heroSpark.length>=2 && <ChartCanvas config={heroChartCfg} width={360} height={50} style={{width:'100%',height:50}}/>}
-        </div>
-        <div style={{position:'relative',zIndex:1}}>
-          <div style={{fontSize:12,fontWeight:500,opacity:0.75,marginBottom:4}}>Балл здоровья</div>
-          <div style={{display:'flex',alignItems:'baseline',gap:6}}>
-            <span style={{fontSize:40,fontWeight:800,lineHeight:1,fontFamily:'var(--fd)'}}>{healthScore != null ? fmt1(healthScore) : '—'}</span>
-            <span style={{fontSize:14,opacity:0.6}}>/10</span>
-          </div>
-          <div style={{fontSize:11,opacity:0.5,marginTop:4}}>{periodLabel}</div>
-        </div>
-      </div>
-
       {/* 9 metric tiles — 2-column grid, tap opens modal */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
         {METRICS.map(m => {
