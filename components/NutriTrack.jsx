@@ -2489,15 +2489,39 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
     data: nums,
     backgroundColor: color + '18',
     borderColor: color,
-    borderWidth: 2,
-    pointRadius: 0,
-    pointHoverRadius: 4,
-    pointBackgroundColor: color,
+    borderWidth: 2.5,
+    pointRadius: 5,
+    pointHoverRadius: 7,
+    pointBackgroundColor: '#fff',
+    pointBorderColor: color,
+    pointBorderWidth: 2.5,
     tension: 0.35,
     fill: true,
-    ...(isStool ? { stepped: true } : {}),
+    spanGaps: true,
+    ...(isStool ? { stepped: true, pointRadius: 6 } : {}),
   }];
   const plugins = [];
+  // Value labels above points
+  plugins.push({ id:'valueLabels', afterDatasetsDraw(chart) {
+    const ctx = chart.ctx;
+    const dataset = chart.data.datasets[0];
+    const meta = chart.getDatasetMeta(0);
+    ctx.save();
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    meta.data.forEach((pt, i) => {
+      const val = dataset.data[i];
+      if (val == null) return;
+      let label;
+      if (isStool) label = val === 1 ? 'Норма' : 'Не норма';
+      else if (isBedtime) label = fmtTime(val);
+      else if (Number.isInteger(val)) label = String(val);
+      else label = val.toFixed(1).replace('.', ',');
+      ctx.fillStyle = color;
+      ctx.fillText(label, pt.x, pt.y - 10);
+    });
+    ctx.restore();
+  }});
   if (norm != null && norm > 0) {
     plugins.push({ id:'normLine', afterDraw(chart) {
       const yScale = chart.scales.y;
@@ -2527,17 +2551,17 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 9 }, color: C.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
         y: {
-          beginAtZero: !isBedtime,
+          beginAtZero: !isBedtime && !isStool,
           grid: { color: C.surfaceAlt, drawBorder: false },
           ticks: {
             font: { size: 10 }, color: C.muted, maxTicksLimit: 5,
             ...(isBedtime ? { callback: v => fmtTime(v) } : {}),
-            ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '', stepSize: 1, min: 0, max: 1 } : {}),
+            ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '', stepSize: 1 } : {}),
           },
-          ...(isStool ? { min: -0.1, max: 1.1 } : {}),
+          ...(isStool ? { min: -0.2, max: 1.4 } : {}),
         }
       },
-      layout: { padding: { top: 4, bottom: 0, left: 0, right: 0 } },
+      layout: { padding: { top: 20, bottom: 0, left: 0, right: 0 } },
     },
     plugins,
   };
