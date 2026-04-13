@@ -882,7 +882,23 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     <SecCard icon={I.brain} title="Стресс">
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
         <div><Lbl>Уровень</Lbl><Scale max={10} value={d.stress?.level} onChange={v=>upd('stress',{...(d.stress||{}),level:v})} dis={dis} lowLabel="Спокоен" highLabel="Сильный стресс"/></div>
-        <div><Lbl>Практики расслабления</Lbl><Area value={d.stress?.practices} onChange={v=>upd('stress',{...(d.stress||{}),practices:v})} placeholder="Медитация, дыхание..." dis={dis} rows={2} showMic={!dis}/></div>
+        <div>
+          <Lbl>Практики расслабления</Lbl>
+          {(()=>{
+            const PRACTICES=['Дыхание','Медитация','Прогулка','Йога','Массаж','Ванна','Музыка','Другое'];
+            const selected=Array.isArray(d.stress?.practicesList)?d.stress.practicesList:[];
+            const toggleP=(p)=>{if(dis)return;const next=selected.includes(p)?selected.filter(x=>x!==p):[...selected,p];upd('stress',{...(d.stress||{}),practicesList:next})};
+            return <>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                {dis
+                  ? selected.length>0?selected.map(p=><Chip key={p} sel dis>{p}</Chip>):<span style={{fontSize:13,color:C.muted}}>—</span>
+                  : PRACTICES.map(p=><Chip key={p} sel={selected.includes(p)} onClick={()=>toggleP(p)}>{p}</Chip>)
+                }
+              </div>
+            </>;
+          })()}
+        </div>
+        <div><Lbl>Детали практики</Lbl><Area value={d.stress?.practices} onChange={v=>upd('stress',{...(d.stress||{}),practices:v})} placeholder="Подробности, длительность..." dis={dis} rows={2} showMic={!dis}/></div>
       </div>
     </SecCard>
 
