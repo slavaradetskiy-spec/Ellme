@@ -2978,9 +2978,15 @@ function Login({onLogin}){
     if (!supabase) { onLogin('client', email, 'c1'); return; }
     setLoading(true); setError('');
     try {
-      const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+      const auth = supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
+      const { error: err } = await Promise.race([auth, timeout]);
       if (err) { setError(ruError(err.message)); setLoading(false); }
-    } catch(e) { setError('Ошибка подключения'); setLoading(false); }
+    } catch(e) {
+      setLoading(false);
+      if (e.message === 'timeout') setError('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз');
+      else setError('Нет связи с сервером. Проверьте интернет и попробуйте ещё раз');
+    }
   };
 
   // ── Email Sign Up ──
