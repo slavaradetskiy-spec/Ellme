@@ -627,7 +627,7 @@ function SecCard({icon,title,children}){
   </div>;
 }
 
-function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
+function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,onWaterNormChange}){
   const d=data||{},upd=(k,v)=>setData({...d,[k]:v});
   const waterMl=d.water||0;
   const waterPct=Math.min(100,Math.round((waterMl/waterNorm)*100));
@@ -674,24 +674,25 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate}){
       <div style={{padding:'14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
           {/* Bottle visualization */}
-          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,flexShrink:0}}>
-            {!dis&&<button onClick={()=>{setWaterEditVal(String(waterMl));setWaterEdit(true)}} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex',padding:2}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>}
-            <div style={{width:48,height:100,borderRadius:12,border:`2px solid ${C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt}}>
-              <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,background:'linear-gradient(to top, #7BC8E8, #A8DFF0)',transition:'height .5s cubic-bezier(.34,1.56,.64,1)',borderRadius:'0 0 10px 10px'}}/>
-              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none'}}>{waterPct}%</div>
-            </div>
+          <div style={{width:48,height:100,borderRadius:12,border:`2px solid ${C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt,flexShrink:0}}>
+            <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,background:'linear-gradient(to top, #7BC8E8, #A8DFF0)',transition:'height .5s cubic-bezier(.34,1.56,.64,1)',borderRadius:'0 0 10px 10px'}}/>
+            <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none'}}>{waterPct}%</div>
           </div>
           <div style={{flex:1}}>
-            {waterEdit&&!dis ? <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+            <div style={{fontSize:24,fontWeight:700,fontFamily:'var(--fd)',color:C.text}}>{waterMl} <span style={{fontSize:14,fontWeight:400,color:C.muted}}>мл</span></div>
+            {waterEdit&&!dis ? <div style={{display:'flex',alignItems:'center',gap:6,marginTop:4}}>
+              <span style={{fontSize:12,color:C.muted}}>Норма:</span>
               <input type="number" autoFocus value={waterEditVal} onChange={e=>setWaterEditVal(e.target.value)}
-                onKeyDown={e=>{if(e.key==='Enter'){const v=parseInt(waterEditVal,10);if(!isNaN(v)&&v>=0)upd('water',v);setWaterEdit(false)}if(e.key==='Escape')setWaterEdit(false)}}
-                style={{width:80,fontSize:20,fontWeight:700,fontFamily:'var(--fd)',color:C.text,border:'none',borderBottom:`2px solid ${C.accent}`,background:'transparent',outline:'none',padding:'0 0 2px'}}/>
-              <span style={{fontSize:14,color:C.muted}}>мл</span>
-              <button onClick={()=>{const v=parseInt(waterEditVal,10);if(!isNaN(v)&&v>=0)upd('water',v);setWaterEdit(false)}} style={{background:C.accent,border:'none',color:'#fff',borderRadius:8,padding:'4px 10px',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>OK</button>
-            </div> : <div style={{fontSize:24,fontWeight:700,fontFamily:'var(--fd)',color:C.text}}>{waterMl} <span style={{fontSize:14,fontWeight:400,color:C.muted}}>мл</span></div>}
-            <div style={{fontSize:12,color:C.muted,marginTop:2}}>Норма: {waterNorm} мл</div>
+                onKeyDown={e=>{if(e.key==='Enter'){const v=parseInt(waterEditVal,10);if(v>0&&onWaterNormChange){onWaterNormChange(v)}setWaterEdit(false)}if(e.key==='Escape')setWaterEdit(false)}}
+                style={{width:65,fontSize:13,fontWeight:600,color:C.text,border:'none',borderBottom:`2px solid ${C.accent}`,background:'transparent',outline:'none',padding:'0 0 2px'}}/>
+              <span style={{fontSize:12,color:C.muted}}>мл</span>
+              <button onClick={()=>{const v=parseInt(waterEditVal,10);if(v>0&&onWaterNormChange){onWaterNormChange(v)}setWaterEdit(false)}} style={{background:C.accent,border:'none',color:'#fff',borderRadius:8,padding:'3px 10px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>OK</button>
+            </div> : <div style={{display:'flex',alignItems:'center',gap:4,marginTop:2}}>
+              <span style={{fontSize:12,color:C.muted}}>Норма: {waterNorm} мл</span>
+              {!dis&&onWaterNormChange&&<button onClick={()=>{setWaterEditVal(String(waterNorm));setWaterEdit(true)}} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,display:'flex',padding:2}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>}
+            </div>}
             <div style={{height:6,borderRadius:3,background:C.surfaceAlt,overflow:'hidden',marginTop:8}}>
               <div style={{height:'100%',width:`${waterPct}%`,borderRadius:3,background:waterPct>=100?C.accent:'#7BC8E8',transition:'width .5s'}}/>
             </div>
@@ -3403,6 +3404,7 @@ export default function App(){
   useEffect(()=>{try{const p=localStorage.getItem('ellme_photo');if(p)setProfilePhoto(p)}catch(e){}},[]);
   const updatePhoto=(url)=>{setProfilePhoto(url);try{if(url)localStorage.setItem('ellme_photo',url);else localStorage.removeItem('ellme_photo')}catch(e){}};
   const[waterNorm,setWaterNorm]=useState(2200);
+  const updateWaterNorm=async(val)=>{setWaterNorm(val);if(supabase&&user?.id)await supabase.from('profiles').update({water_norm:val}).eq('id',user.id)};
   const[celebration,setCelebration]=useState(null);
   const[clientMenu,setClientMenu]=useState(null);
   const[clientProfileData,setClientProfileData]=useState(null); // client id for open menu
@@ -4119,7 +4121,7 @@ export default function App(){
       </div>
     </SecCard>
 
-    <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
+    <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onWaterNormChange={updateWaterNorm} onCelebrate={setCelebration}/>
     {!isDoc&&<DayChatPreview
       clientId={user.id}
       currentUserId={user.id}
@@ -4236,7 +4238,7 @@ export default function App(){
           {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={mm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('myMealDetail')}} delay={i*0.05}/>)}
         </div>
       </SecCard>
-      <DayExtras data={md} setData={v=>setDay(user.id,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration}/>
+      <DayExtras data={md} setData={v=>setDay(user.id,v)} dis={false} waterNorm={waterNorm} onWaterNormChange={updateWaterNorm} onCelebrate={setCelebration}/>
     </>);
   }
 
