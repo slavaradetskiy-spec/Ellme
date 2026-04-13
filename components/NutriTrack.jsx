@@ -2443,10 +2443,12 @@ const MC = {
   mood:          { color:'#E07BAD', bg:'#fce8f0', icon: I.heart },
 };
 
-// Sparkline — mini Chart.js canvas (28px height, no axes) — ALL LINES
+// Sparkline — mini Chart.js canvas (28px height, no axes) — matches detail chart style
 function Sparkline({ data, metricKey, color }) {
-  const nums = (data || []).map(d => d.value == null || isNaN(d.value) ? 0 : d.value);
-  if (nums.length < 2) return <div style={{width:68,height:28,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:9,color:'#ccc'}}>—</span></div>;
+  const nums = (data || []).map(d => d.value == null || isNaN(d.value) ? null : d.value);
+  if (nums.filter(v => v !== null).length < 2) return <div style={{width:68,height:28,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:9,color:'#ccc'}}>—</span></div>;
+  const isStool = metricKey === 'stool';
+  const isBedtime = metricKey === 'bedtime';
   const cfg = {
     type: 'line',
     data: {
@@ -2457,14 +2459,16 @@ function Sparkline({ data, metricKey, color }) {
         borderColor: color || '#378ADD',
         borderWidth: 1.5,
         pointRadius: 0,
-        tension: 0.4,
+        tension: 0.35,
         fill: true,
+        spanGaps: true,
+        ...(isStool ? { stepped: true } : {}),
       }]
     },
     options: {
       responsive: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: { x: { display: false }, y: { display: false, beginAtZero: metricKey !== 'bedtime' } },
+      scales: { x: { display: false }, y: { display: false, beginAtZero: !isBedtime } },
       layout: { padding: 0 },
     }
   };
@@ -2775,37 +2779,6 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
           <div style={{fontSize:11,opacity:0.5,marginTop:4}}>{periodLabel}</div>
         </div>
       </div>
-
-      {/* Health score breakdown */}
-      {healthScore != null && summary && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',marginBottom:16,boxShadow:C.shadowCard}}>
-        <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:8}}>Как считается балл</div>
-        <div style={{fontSize:11,color:C.soft,lineHeight:1.5,marginBottom:10}}>Средневзвешенная оценка 8 показателей (0-10). Время сна не оценивается.</div>
-        {(() => {
-          const scoreItems = [
-            { key:'water', label:'Вода', w:15, score: summary.water?.avg != null ? Math.min(10, (summary.water.avg / (waterNorm||2200)) * 10) : null },
-            { key:'stool', label:'Стул', w:8, score: summary.stool?.pct != null ? Math.min(10, summary.stool.pct / 10) : null },
-            { key:'sleepDuration', label:'Длит. сна', w:14, score: summary.sleepDuration?.avg != null ? (()=>{ const h=summary.sleepDuration.avg; return h>=7&&h<=9?10:h>=6&&h<=10?7:Math.max(0,10-Math.abs(h-8)*2.5); })() : null },
-            { key:'sleepQuality', label:'Кач. сна', w:10, score: summary.sleepQuality?.avg != null ? summary.sleepQuality.avg : null },
-            { key:'movement', label:'Движение', w:12, score: summary.movement?.avg != null ? Math.min(10, summary.movement.avg / 6) : null },
-            { key:'stress', label:'Стресс', w:12, score: summary.stress?.avg != null ? (10 - summary.stress.avg) : null },
-            { key:'energy', label:'Энергия', w:14, score: summary.energy?.avg != null ? summary.energy.avg : null },
-            { key:'mood', label:'Настроение', w:15, score: summary.mood?.avg != null ? (summary.mood.avg / 5 * 10) : null },
-          ];
-          return scoreItems.map((it, i) => {
-            const mc = MC[it.key];
-            const barW = it.score != null ? Math.round(it.score * 10) : 0;
-            return <div key={it.key} style={{display:'flex',alignItems:'center',gap:8,marginBottom:i<scoreItems.length-1?6:0}}>
-              <div style={{width:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',color:mc?.color||C.muted,flexShrink:0}}>{mc?.icon}</div>
-              <span style={{fontSize:11,color:C.soft,width:65,flexShrink:0}}>{it.label}</span>
-              <div style={{flex:1,height:6,background:C.surfaceAlt,borderRadius:3,overflow:'hidden'}}>
-                <div style={{width:barW+'%',height:'100%',background:mc?.color||C.accent,borderRadius:3,transition:'width .3s'}}/>
-              </div>
-              <span style={{fontSize:11,fontWeight:600,color:it.score!=null?C.text:C.muted,width:28,textAlign:'right'}}>{it.score!=null?fmt1(it.score):'—'}</span>
-              <span style={{fontSize:9,color:C.muted,width:22,textAlign:'right'}}>{it.w}%</span>
-            </div>;
-          });
-        })()}
-      </div>}
 
       {/* 9 metric tiles — 2-column grid, tap opens modal */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
