@@ -2734,8 +2734,8 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     </div>
 
     {/* Custom date picker modal */}
-    {showCustomPicker && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:24}} onClick={()=>setShowCustomPicker(false)}>
-      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:20,width:'100%',maxWidth:300,boxShadow:C.shadow3d,overflow:'hidden'}}>
+    {showCustomPicker && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 32px'}} onClick={()=>setShowCustomPicker(false)}>
+      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:20,width:'100%',maxWidth:300,boxShadow:C.shadow3d,overflow:'hidden',margin:'0 auto'}}>
         <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:16}}>Выберите период</div>
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
           <div>
