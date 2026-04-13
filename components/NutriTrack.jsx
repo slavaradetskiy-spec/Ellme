@@ -2591,7 +2591,7 @@ function MetricTile({ metricKey, label, value, unit, status, sparkData, onClick 
       {unit && <span style={{fontSize:11,color:C.muted}}>{unit}</span>}
     </div>
     <Sparkline data={sparkData} metricKey={metricKey} color={mc.color}/>
-    <div style={{fontSize:10,fontWeight:600,padding:'3px 10px',borderRadius:8,alignSelf:'flex-start',...badgeStyle}}>{status?.label || '—'}</div>
+    {metricKey!=='bedtime'&&<div style={{fontSize:10,fontWeight:600,padding:'3px 10px',borderRadius:8,alignSelf:'flex-start',...badgeStyle}}>{status?.label || '—'}</div>}
   </div>;
 }
 
