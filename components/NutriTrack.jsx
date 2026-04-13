@@ -497,12 +497,15 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
     onMouseOut={e=>{e.currentTarget.style.transform='perspective(600px) rotateX(0deg)';e.currentTarget.style.boxShadow=has?C.shadow3d:'none'}}
   >
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
-    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,background:`linear-gradient(135deg, ${C.tile} 0%, ${C.surfaceAlt} 100%)`}}>
-      <div style={{width:56,height:56,borderRadius:16,background:'rgba(255,255,255,.7)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>
-        </svg>
-      </div>
+    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center',background:'#C4C0B8'}}>
+      <svg width="80" height="52" viewBox="0 0 120 52" fill="none" stroke="#A8A49C" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        {/* Fork */}
+        <path d="M20 4 L20 48"/><path d="M14 4 L14 18 C14 22 20 22 20 18"/><path d="M20 4 L20 18"/><path d="M26 4 L26 18 C26 22 20 22 20 18"/>
+        {/* Camera */}
+        <rect x="44" y="16" width="32" height="24" rx="4"/><path d="M52 16 L55 10 L65 10 L68 16"/><circle cx="60" cy="28" r="7"/><circle cx="60" cy="28" r="3"/>
+        {/* Spoon */}
+        <path d="M100 48 L100 22"/><ellipse cx="100" cy="12" rx="8" ry="12"/>
+      </svg>
     </div>}
     {photos.length>1&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:8,padding:'2px 8px',fontSize:11,fontWeight:600,zIndex:2,backdropFilter:'blur(4px)'}}>{photos.length} фото</div>}
     {/* Like button: always visible for doc (canLike), decorative for client when liked */}
