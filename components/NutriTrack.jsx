@@ -497,7 +497,7 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
     onMouseOut={e=>{e.currentTarget.style.transform='perspective(600px) rotateX(0deg)';e.currentTarget.style.boxShadow=has?C.shadow3d:'none'}}
   >
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
-    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center',background:'#C4C0B8'}}>
+    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
       <svg width="80" height="52" viewBox="0 0 120 52" fill="none" stroke="#A8A49C" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         {/* Fork */}
         <path d="M20 4 L20 48"/><path d="M14 4 L14 18 C14 22 20 22 20 18"/><path d="M20 4 L20 18"/><path d="M26 4 L26 18 C26 22 20 22 20 18"/>
