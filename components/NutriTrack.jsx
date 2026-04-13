@@ -615,12 +615,13 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
 }
 
 // ═══ SECTIONS (water, sleep, etc) ═══
-function SecCard({icon,title,children}){
+function SecCard({icon,title,children,extra}){
   const[open,setOpen]=useState(true);
   return <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,overflow:'hidden',marginTop:12}}>
     <button onClick={()=>setOpen(!open)} style={{width:'100%',padding:'14px 18px',display:'flex',alignItems:'center',gap:10,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}>
       <span style={{color:C.accent,display:'flex'}}>{icon}</span>
       <span style={{flex:1,textAlign:'left',fontSize:15,fontWeight:600,color:C.text}}>{title}</span>
+      {extra}
       <span style={{transition:'transform .2s',transform:open?'rotate(90deg)':'rotate(0)',color:C.muted,display:'flex'}}>{I.chev}</span>
     </button>
     {open&&<div style={{padding:'0 18px 18px',borderTop:`1px solid ${C.surfaceAlt}`}}>{children}</div>}
@@ -675,7 +676,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   useEffect(()=>()=>{if(sleepTimerRef.current)clearTimeout(sleepTimerRef.current)},[]);
   return <>
     {/* Water — bottle style */}
-    <SecCard icon={I.drop} title={`Вода · ${waterMl} мл`}>
+    <SecCard icon={I.drop} title={`Вода · ${waterMl} мл`} extra={<button onClick={e=>{e.stopPropagation();setShowWaterHint(!showWaterHint)}} style={{width:18,height:18,borderRadius:'50%',background:showWaterHint?C.accent:'#E3EFE7',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:showWaterHint?'#fff':C.accent,cursor:'pointer',flexShrink:0,border:'none',transition:'all .15s',marginRight:4}}>i</button>}>
       <div style={{padding:'14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
           {/* Bottle visualization — tap to show/hide log */}
@@ -693,10 +694,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
               <span style={{fontSize:24,fontWeight:700,fontFamily:'var(--fd)',color:C.text}}>{waterMl}</span>
               <span style={{fontSize:14,fontWeight:400,color:C.muted}}>мл</span>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginTop:2}}>
-              <span style={{fontSize:12,color:C.muted}}>Норма: {waterNorm} мл</span>
-              <button onClick={()=>setShowWaterHint(!showWaterHint)} style={{width:16,height:16,borderRadius:'50%',background:showWaterHint?C.accent:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:showWaterHint?'#fff':C.muted,cursor:'pointer',flexShrink:0,border:'none',transition:'all .15s'}}>i</button>
-            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:2}}>Норма: {waterNorm} мл</div>
             <div style={{height:6,borderRadius:3,background:C.surfaceAlt,overflow:'hidden',marginTop:8}}>
               <div style={{height:'100%',width:`${waterPct}%`,borderRadius:3,background:waterPct>=100?C.accent:'#7BC8E8',transition:'width .5s'}}/>
             </div>
