@@ -3344,7 +3344,7 @@ export default function App(){
   // IMPORTANT: showChatList must be declared ABOVE this useEffect — its
   // deps array is evaluated immediately and hits TDZ otherwise.
   const modalOpenRef=useRef(false);
-  useEffect(()=>{modalOpenRef.current=!!(chatModal||showChatList)},[chatModal,showChatList]);
+  useEffect(()=>{modalOpenRef.current=!!(chatModal||showChatList||screen==='analytics'||screen==='clientAnalytics')},[chatModal,showChatList,screen]);
   // When the user clicks a day-tag in the chat, we close the modal,
   // navigate to that day, and remember the chat context here so a
   // floating "back to chat" button can reopen it.
