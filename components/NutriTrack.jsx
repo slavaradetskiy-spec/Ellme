@@ -677,9 +677,14 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
       <div style={{padding:'14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
           {/* Bottle visualization — tap to show/hide log */}
-          <div onClick={waterLog.length>0?()=>setShowWaterLog(!showWaterLog):undefined} style={{width:48,height:100,borderRadius:12,border:`2px solid ${C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt,flexShrink:0,cursor:waterLog.length>0?'pointer':'default'}}>
-            <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,background:'linear-gradient(to top, #7BC8E8, #A8DFF0)',transition:'height .5s cubic-bezier(.34,1.56,.64,1)',borderRadius:'0 0 10px 10px'}}/>
-            <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none'}}>{waterPct}%</div>
+          <div onClick={waterLog.length>0?()=>setShowWaterLog(!showWaterLog):undefined} style={{width:48,position:'relative',flexShrink:0,cursor:waterLog.length>0?'pointer':'default'}}>
+            <div style={{width:48,height:100,borderRadius:12,border:`2px solid ${waterLog.length>0?'#7BC8E8':C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt,transition:'border-color .2s'}}>
+              <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,background:'linear-gradient(to top, #7BC8E8, #A8DFF0)',transition:'height .5s cubic-bezier(.34,1.56,.64,1)',borderRadius:'0 0 10px 10px'}}/>
+              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none'}}>{waterPct}%</div>
+            </div>
+            {waterLog.length>0&&!dis&&<div style={{position:'absolute',top:-4,right:-4,width:20,height:20,borderRadius:6,background:'#7BC8E8',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 4px rgba(0,0,0,.15)'}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </div>}
           </div>
           <div style={{flex:1}}>
             <div style={{display:'flex',alignItems:'baseline',gap:6}}>
