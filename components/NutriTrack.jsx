@@ -947,12 +947,12 @@ function Cal({sel,onSelect}){
   const days=[];
   for(let i=0;i<7;i++){const d=new Date(sel);d.setDate(sel.getDate()+mondayOffset+i);days.push(d);}
   const today=new Date();
-  const goM=dir=>{const d=new Date(sel);d.setMonth(d.getMonth()+dir);onSelect(d)};
+  const goWeek=dir=>{const d=new Date(sel);d.setDate(d.getDate()+dir*7);onSelect(d)};
   return <div style={{marginBottom:12}}>
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
-      <button onClick={()=>goM(-1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex',transform:'rotate(180deg)'}}>{I.chev}</button>
+      <button onClick={()=>goWeek(-1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex',transform:'rotate(180deg)'}}>{I.chev}</button>
       <span style={{fontSize:16,fontWeight:600,fontFamily:'var(--fd)',color:C.text}}>{MO[sel.getMonth()]} {sel.getFullYear()}</span>
-      <button onClick={()=>goM(1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex'}}>{I.chev}</button>
+      <button onClick={()=>goWeek(1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex'}}>{I.chev}</button>
     </div>
     <div style={{display:'flex',justifyContent:'center',gap:4}}>
       {days.map((d,i)=>{const s2=sameD(d,sel),td=sameD(d,today);
@@ -2358,7 +2358,7 @@ function buildAnalytics(days, meals, waterNorm) {
     if (bedNorm != null && bedNorm < 720) bedNorm += 1440; // before noon → add 24h
     series.bedtime.push({ date: d.date, value: bedNorm, bedRaw: d.sleep_bed, wakeRaw: d.sleep_wake });
     // Movement: total minutes from all activities
-    series.movement.push({ date: d.date, value: parseMovementMinutes(d.movement) });
+    series.movement.push({ date: d.date, value: parseMovementMinutes(d.movement) ?? 0 });
     // Stress, Energy, Mood
     series.stress.push({ date: d.date, value: d.stress_level != null ? Number(d.stress_level) : null });
     series.energy.push({ date: d.date, value: d.energy != null ? Number(d.energy) : null });
@@ -2909,6 +2909,10 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
               </div> : null;
             })()}
 
+            {/* Insight — above chart */}
+            {insightText && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',marginBottom:12,boxShadow:C.shadowCard}}>
+              <div style={{fontSize:13,color:C.soft,lineHeight:1.5}}>{insightText}</div>
+            </div>}
             {/* Big chart — for bedtime show sleep duration chart instead */}
             <div style={{background:C.surface,borderRadius:20,padding:'16px 12px',marginBottom:20,boxShadow:C.shadowCard}}>
               {m.key === 'bedtime' ? <>
@@ -2930,11 +2934,6 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
                 height={280}
               />}
             </div>
-            {/* Insight */}
-            {insightText && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',boxShadow:C.shadowCard}}>
-              <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:4}}>Инсайт</div>
-              <div style={{fontSize:13,color:C.soft,lineHeight:1.5}}>{insightText}</div>
-            </div>}
           </div>
         </div>;
       })()}
