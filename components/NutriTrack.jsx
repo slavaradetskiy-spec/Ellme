@@ -4186,7 +4186,7 @@ export default function App(){
       </footer>}
     </div>
     {/* Bottom tab bar */}
-    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'rgba(250,249,245,.8)',backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',borderTop:'1px solid rgba(176,179,173,.15)',paddingBottom:'calc(8px + env(safe-area-inset-bottom))',borderRadius:'24px 24px 0 0',boxShadow:'0 -12px 32px rgba(48,51,47,.04)'}}>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
       <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 8px'}}>
         {[
           { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
@@ -4198,11 +4198,11 @@ export default function App(){
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
             flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
             border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
-            background:active?'#d1e8dd':'transparent',
-            borderRadius:16,margin:'4px 3px',
-            color:active?'#43574f':'rgba(48,51,47,.4)',
-            transition:'all .2s',WebkitTapHighlightColor:'transparent',
-            padding:'8px 0',
+            background:active?'#F0F0F0':'transparent',
+            borderRadius:14,margin:'4px 3px',
+            color:active?'#333333':'#99A2AD',
+            transition:'all .15s',WebkitTapHighlightColor:'transparent',
+            padding:'6px 0',
           }}>
             <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,color:'inherit'}}>
               <svg viewBox={tab.icon.props.viewBox} width="26" height="26" fill="none" stroke="currentColor" strokeWidth={tab.icon.props.strokeWidth||'1.5'} strokeLinecap={tab.icon.props.strokeLinecap||undefined} strokeLinejoin={tab.icon.props.strokeLinejoin||undefined}>{tab.icon.props.children}</svg>
