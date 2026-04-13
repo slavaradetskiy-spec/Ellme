@@ -743,7 +743,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
       if(isNaN(bh)||isNaN(wh))return;
       let hrs=wh-bh+(wm-bm)/60;if(hrs<=0)hrs+=24;
       if(hrs>=8&&hrs<=12)onCelebrate('sleep');
-    },2000);
+    },5000);
   };
   useEffect(()=>()=>{if(sleepTimerRef.current)clearTimeout(sleepTimerRef.current)},[]);
   return <>
