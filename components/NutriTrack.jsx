@@ -2440,12 +2440,15 @@ function buildAnalytics(days, meals, waterNorm) {
 function ChartCanvas({ config, width, height, style }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
+  const configRef = useRef(config);
+  configRef.current = config;
+  const depsKey = JSON.stringify(config, (k, v) => typeof v === 'function' ? '<<fn>>' : v);
   useEffect(() => {
     if (!canvasRef.current) return;
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    try { chartRef.current = new Chart(canvasRef.current, JSON.parse(JSON.stringify(config))); } catch(e) { console.error('ChartCanvas error',e); }
+    try { chartRef.current = new Chart(canvasRef.current, configRef.current); } catch(e) { console.error('ChartCanvas error',e); }
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
-  }, [JSON.stringify(config)]);
+  }, [depsKey]);
   return <canvas ref={canvasRef} width={width} height={height} style={{display:'block',...(style||{})}}/>;
 }
 
