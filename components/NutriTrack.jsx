@@ -2978,7 +2978,7 @@ function Login({onLogin}){
     if (!supabase) { onLogin('client', email, 'c1'); return; }
     setLoading(true); setError('');
     try {
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 11000));
       const auth = supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
       const { error: err } = await Promise.race([auth, timeout]);
       if (err) { setError(ruError(err.message)); setLoading(false); }
@@ -3220,6 +3220,16 @@ export default function App(){
   useEffect(()=>{userRef.current=user},[user]);
   const[authLoading,setAuthLoading]=useState(!!supabase);
   const[loadingPhase,setLoadingPhase]=useState('Идёт загрузка, это может занять несколько секунд...');
+  const[isOffline,setIsOffline]=useState(typeof navigator!=='undefined'&&!navigator.onLine);
+  const[showOnlineBanner,setShowOnlineBanner]=useState(false);
+  useEffect(()=>{
+    if(typeof window==='undefined')return;
+    const goOff=()=>setIsOffline(true);
+    const goOn=()=>{setIsOffline(false);setShowOnlineBanner(true);setTimeout(()=>setShowOnlineBanner(false),3000)};
+    window.addEventListener('offline',goOff);
+    window.addEventListener('online',goOn);
+    return()=>{window.removeEventListener('offline',goOff);window.removeEventListener('online',goOn)};
+  },[]);
   const[diaries,setDiaries]=useState({});
   const[goalDays,setGoalDays]=useState({}); // {dateStr: true/false}
   const[comments,setComments]=useState({});
@@ -4046,6 +4056,9 @@ export default function App(){
 
   const shell = ch => <div style={{minHeight:'100vh',background:C.bg,fontFamily:'var(--fb)',overscrollBehavior:'none'}}>
     <style>{CSS}</style>
+    {/* Offline/online banner */}
+    {isOffline&&<div style={{position:'fixed',top:0,left:0,right:0,zIndex:10002,background:'#FF9500',color:'#fff',textAlign:'center',padding:'6px 16px',fontSize:12,fontWeight:600,animation:'enter .2s'}}>Нет интернета · офлайн-режим</div>}
+    {showOnlineBanner&&!isOffline&&<div style={{position:'fixed',top:0,left:0,right:0,zIndex:10002,background:'#34C759',color:'#fff',textAlign:'center',padding:'6px 16px',fontSize:12,fontWeight:600,animation:'enter .2s'}}>Подключено</div>}
     {/* Pull-to-refresh indicator */}
     {(pullDist>0||refreshing)&&<div style={{position:'fixed',top:0,left:0,right:0,display:'flex',alignItems:'center',justifyContent:'center',height:Math.max(pullDist,refreshing?60:0),pointerEvents:'none',zIndex:9999,transition:refreshing?'none':'height .1s'}}>
       <div style={{width:36,height:36,borderRadius:'50%',background:C.surface,boxShadow:'0 2px 12px rgba(0,0,0,.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>
