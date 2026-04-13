@@ -2370,8 +2370,9 @@ function buildAnalytics(days, meals, waterNorm) {
   const stoolPct = pct(series.stool); // % of days with "Норма"
   const sleepDurAvg = avg(series.sleepDuration);
   const sleepQualAvg = avg(series.sleepQuality);
-  // Bedtime avg: normalize back from 24h+ to proper time
-  let bedtimeAvg = avg(series.bedtime);
+  // Bedtime avg: keep raw (normalized) for status, denormalize for display
+  const bedtimeAvgRaw = avg(series.bedtime); // e.g. 1566 for 02:06
+  let bedtimeAvg = bedtimeAvgRaw;
   if (bedtimeAvg != null && bedtimeAvg >= 1440) bedtimeAvg -= 1440;
   const movementAvg = avg(series.movement); // avg minutes per day
   const stressAvg = avg(series.stress);
@@ -2408,14 +2409,12 @@ function buildAnalytics(days, meals, waterNorm) {
     })() },
     sleepQuality: { avg: sleepQualAvg, unit: '/10', status: statusFn(sleepQualAvg, 7, 5) },
     bedtime: { avg: bedtimeAvg, unit: '', status: (() => {
-      if (bedtimeAvg == null) return { label: 'Нет данных', color: '#999' };
-      // bedtimeAvg is in minutes, normalized (22:00=1320, 23:00=1380, 00:30=1470)
-      const mins = bedtimeAvg >= 1440 ? bedtimeAvg - 1440 : bedtimeAvg;
-      const h = mins / 60;
-      // Before 22:00 = excellent, 22-23 = good, after 23 = attention
-      if (h < 22) return { label: 'Отлично', color: '#2D5F3F' };
-      if (h < 23) return { label: 'Хорошо', color: '#C98B5F' };
-      return { label: 'Внимание', color: '#B8453A' };
+      if (bedtimeAvgRaw == null) return { label: 'Нет данных', color: '#999' };
+      // Use raw normalized minutes: 22:00=1320, 23:00=1380, 00:30=1470, 02:06=1566
+      const m = bedtimeAvgRaw;
+      if (m < 1320) return { label: 'Отлично', color: '#2D5F3F' }; // before 22:00
+      if (m < 1380) return { label: 'Хорошо', color: '#C98B5F' }; // 22:00-23:00
+      return { label: 'Внимание', color: '#B8453A' }; // after 23:00 (incl. after midnight)
     })() },
     movement: { avg: movementAvg, unit: 'мин', status: statusFn(movementAvg, 30, 15) },
     stress: { avg: stressAvg, unit: '/10', status: statusFn(stressAvg, 4, 7, true) },
