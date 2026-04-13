@@ -639,6 +639,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
   const waterPct=Math.min(100,waterPctRaw);
   const [showWaterLog, setShowWaterLog] = useState(false);
+  const [showWaterHint, setShowWaterHint] = useState(false);
   const addWater=(ml)=>{
     if(dis)return;
     const now = new Date();
@@ -691,16 +692,16 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
             <div style={{display:'flex',alignItems:'baseline',gap:6}}>
               <span style={{fontSize:24,fontWeight:700,fontFamily:'var(--fd)',color:C.text}}>{waterMl}</span>
               <span style={{fontSize:14,fontWeight:400,color:C.muted}}>мл</span>
-              {waterLog.length>0&&!dis&&<button onClick={()=>setShowWaterLog(!showWaterLog)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:11,fontFamily:'inherit',padding:'2px 6px',display:'flex',alignItems:'center',gap:3}}>
-                {waterLog.length} зап.
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{transform:showWaterLog?'rotate(180deg)':'none',transition:'transform .15s'}}><path d="M6 9l6 6 6-6"/></svg>
-              </button>}
             </div>
-            <div style={{fontSize:12,color:C.muted,marginTop:2}}>Норма: {waterNorm} мл</div>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginTop:2}}>
+              <span style={{fontSize:12,color:C.muted}}>Норма: {waterNorm} мл</span>
+              <button onClick={()=>setShowWaterHint(!showWaterHint)} style={{width:16,height:16,borderRadius:'50%',background:showWaterHint?C.accent:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:showWaterHint?'#fff':C.muted,cursor:'pointer',flexShrink:0,border:'none',transition:'all .15s'}}>i</button>
+            </div>
             <div style={{height:6,borderRadius:3,background:C.surfaceAlt,overflow:'hidden',marginTop:8}}>
               <div style={{height:'100%',width:`${waterPct}%`,borderRadius:3,background:waterPct>=100?C.accent:'#7BC8E8',transition:'width .5s'}}/>
             </div>
             <div style={{fontSize:11,color:waterPctRaw>=100?C.accent:C.muted,marginTop:4,fontWeight:waterPctRaw>=100?600:400}}>{waterPctRaw>=100?'Норма выполнена'+(waterMl>waterNorm?' (+' +(waterMl-waterNorm)+' мл)':''):'Осталось '+(waterNorm-waterMl)+' мл'}</div>
+            {showWaterHint&&<div style={{fontSize:11,color:C.soft,marginTop:6,padding:'8px 10px',background:C.surfaceAlt,borderRadius:10,lineHeight:1.4,animation:'enter .15s'}}>Вноси только воду и травяной чай</div>}
           </div>
         </div>
         {/* Water log — history of additions */}
