@@ -2411,7 +2411,13 @@ function buildAnalytics(days, meals, waterNorm) {
     movement: { avg: movementAvg, unit: 'мин', status: statusFn(movementAvg, 30, 15) },
     stress: { avg: stressAvg, unit: '/10', status: statusFn(stressAvg, 4, 7, true) },
     energy: { avg: energyAvg, unit: '/10', status: statusFn(energyAvg, 7, 5) },
-    mood: { avg: moodAvg, unit: '/5', status: statusFn(moodAvg, 4, 3) },
+    mood: { avg: moodAvg, unit: '/5', status: (() => {
+      if (moodAvg == null) return { label: 'Нет данных', color: '#999' };
+      if (moodAvg >= 4.5) return { label: 'Прекрасно', color: '#2D5F3F' };
+      if (moodAvg >= 3.5) return { label: 'Хорошо', color: '#2D5F3F' };
+      if (moodAvg >= 2.5) return { label: 'Нейтрально', color: '#C98B5F' };
+      return { label: 'Внимание', color: '#B8453A' };
+    })() },
   };
 
   return { series, summary };
