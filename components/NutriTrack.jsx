@@ -804,29 +804,6 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
       </div>
     </SecCard>
 
-    <SecCard icon={I.pill} title="Препараты / БАДы">
-      <div style={{padding:'12px 0'}}><Area value={d.supplements} onChange={v=>upd('supplements',v)} placeholder="Что принимали..." dis={dis} rows={2} showMic={!dis}/></div>
-    </SecCard>
-
-    <SecCard icon={I.stool} title="Стул">
-      <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
-        <div>
-          <Lbl>Состояние</Lbl>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-            {dis
-              ? d.stoolState && <Chip sel dis>{d.stoolState}</Chip>
-              : ['Диарея','Норма','Запор','Нет стула'].map(s => <Chip key={s} sel={d.stoolState===s} onClick={()=>upd('stoolState',d.stoolState===s?null:s)}>{s}</Chip>)
-            }
-            {dis && !d.stoolState && <span style={{fontSize:13,color:C.muted}}>—</span>}
-          </div>
-        </div>
-        <div>
-          <Lbl>Комментарий</Lbl>
-          <Area value={d.stoolNote} onChange={v=>upd('stoolNote',v)} placeholder="Подробности..." dis={dis} rows={2} showMic={!dis}/>
-        </div>
-      </div>
-    </SecCard>
-
     <SecCard icon={I.moon} title="Сон">
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -840,6 +817,14 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
             :<TimePick value={d.sleep?.bed||''} onChange={v=>{const ns=Object.assign({},d.sleep||{},{bed:v});upd('sleep',ns);checkSleep(ns)}}/>}
         </div>
         <div><Lbl>Качество сна</Lbl><Scale max={10} value={d.sleep?.quality} onChange={v=>upd('sleep',{...(d.sleep||{}),quality:v})} dis={dis} lowLabel="Плохой сон" highLabel="Отличный сон"/></div>
+      </div>
+    </SecCard>
+
+    <SecCard icon={I.heart} title="Самочувствие">
+      <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
+        <div><Lbl>Энергия</Lbl><Scale max={10} value={d.well?.energy} onChange={v=>upd('well',{...(d.well||{}),energy:v})} dis={dis} lowLabel="Нет сил" highLabel="Полон энергии"/></div>
+        <div><Lbl>Настроение</Lbl><Mood value={d.well?.mood} onChange={v=>upd('well',{...(d.well||{}),mood:v})} dis={dis}/></div>
+        <div><Lbl>Заметка дня</Lbl><Area value={d.well?.comment} onChange={v=>upd('well',{...(d.well||{}),comment:v})} placeholder="Как прошёл день..." dis={dis} rows={3} showMic={!dis}/></div>
       </div>
     </SecCard>
 
@@ -901,11 +886,26 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
       </div>
     </SecCard>
 
-    <SecCard icon={I.heart} title="Самочувствие">
+    <SecCard icon={I.pill} title="Препараты / БАДы">
+      <div style={{padding:'12px 0'}}><Area value={d.supplements} onChange={v=>upd('supplements',v)} placeholder="Что принимали..." dis={dis} rows={2} showMic={!dis}/></div>
+    </SecCard>
+
+    <SecCard icon={I.stool} title="Стул">
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
-        <div><Lbl>Энергия</Lbl><Scale max={10} value={d.well?.energy} onChange={v=>upd('well',{...(d.well||{}),energy:v})} dis={dis} lowLabel="Нет сил" highLabel="Полон энергии"/></div>
-        <div><Lbl>Настроение</Lbl><Mood value={d.well?.mood} onChange={v=>upd('well',{...(d.well||{}),mood:v})} dis={dis}/></div>
-        <div><Lbl>Заметка дня</Lbl><Area value={d.well?.comment} onChange={v=>upd('well',{...(d.well||{}),comment:v})} placeholder="Как прошёл день..." dis={dis} rows={3} showMic={!dis}/></div>
+        <div>
+          <Lbl>Состояние</Lbl>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {dis
+              ? d.stoolState && <Chip sel dis>{d.stoolState}</Chip>
+              : ['Диарея','Норма','Запор','Нет стула'].map(s => <Chip key={s} sel={d.stoolState===s} onClick={()=>upd('stoolState',d.stoolState===s?null:s)}>{s}</Chip>)
+            }
+            {dis && !d.stoolState && <span style={{fontSize:13,color:C.muted}}>—</span>}
+          </div>
+        </div>
+        <div>
+          <Lbl>Комментарий</Lbl>
+          <Area value={d.stoolNote} onChange={v=>upd('stoolNote',v)} placeholder="Подробности..." dis={dis} rows={2} showMic={!dis}/>
+        </div>
       </div>
     </SecCard>
 
