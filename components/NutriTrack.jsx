@@ -4035,6 +4035,7 @@ export default function App(){
 
   // Active tab for bottom bar
   const activeTab = (() => {
+    if (chatModal || showChatList) return 'chat';
     if (screen === 'analytics' || screen === 'clientAnalytics') return 'analytics';
     if (screen === 'profile') return 'profile';
     return 'diary';
@@ -4193,7 +4194,7 @@ export default function App(){
           { id:'chat',      label:'Чат',        icon:I.chat,  badge:chatBadge },
           { id:'profile',   label:'Профиль',    icon:I.user,  badge:0 },
         ].map(tab => {
-          const active = tab.id === 'chat' ? false : activeTab === tab.id;
+          const active = activeTab === tab.id;
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
             flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
             border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
