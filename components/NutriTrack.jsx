@@ -2437,6 +2437,19 @@ function buildAnalytics(days, meals, waterNorm) {
 }
 
 // ── Chart.js canvas wrapper ──
+// Deep clone that preserves functions (JSON.parse/stringify kills them)
+function cloneConfig(obj) {
+  if (obj == null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(cloneConfig);
+  const out = {};
+  for (const k in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+      out[k] = typeof obj[k] === 'function' ? obj[k] : cloneConfig(obj[k]);
+    }
+  }
+  return out;
+}
+
 function ChartCanvas({ config, width, height, style }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
@@ -2446,7 +2459,7 @@ function ChartCanvas({ config, width, height, style }) {
   useEffect(() => {
     if (!canvasRef.current) return;
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    try { chartRef.current = new Chart(canvasRef.current, configRef.current); } catch(e) { console.error('ChartCanvas error',e); }
+    try { chartRef.current = new Chart(canvasRef.current, cloneConfig(configRef.current)); } catch(e) { console.error('ChartCanvas error',e); }
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
   }, [depsKey]);
   return <canvas ref={canvasRef} width={width} height={height} style={{display:'block',...(style||{})}}/>;
