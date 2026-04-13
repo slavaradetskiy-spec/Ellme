@@ -2690,15 +2690,15 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
   }
 
   const METRICS = [
-    { key:'water',         label:'Вода',              norm: waterNorm||2200 },
-    { key:'stool',         label:'Стул',              norm: null },
+    { key:'energy',        label:'Энергия',           norm: null },
+    { key:'mood',          label:'Настроение',        norm: null },
     { key:'sleepDuration', label:'Длительность сна',  norm: null },
     { key:'sleepQuality',  label:'Качество сна',      norm: null },
     { key:'bedtime',       label:'Время отхода ко сну', norm: null },
-    { key:'movement',      label:'Движение',          norm: null },
     { key:'stress',        label:'Стресс',            norm: null },
-    { key:'energy',        label:'Энергия',           norm: null },
-    { key:'mood',          label:'Настроение',        norm: null },
+    { key:'movement',      label:'Движение',          norm: null },
+    { key:'water',         label:'Вода',              norm: waterNorm||2200 },
+    { key:'stool',         label:'Стул',              norm: null },
   ];
 
   const tileValue = (key) => {
