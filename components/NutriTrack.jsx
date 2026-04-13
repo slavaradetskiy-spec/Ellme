@@ -885,7 +885,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
         <div>
           <Lbl>Практики расслабления</Lbl>
           {(()=>{
-            const PRACTICES=['Дыхание','Медитация','Прогулка','Йога','Массаж','Ванна','Музыка','Другое'];
+            const PRACTICES=['Дыхание','Медитация','Йога','Массаж','Ванна','Музыка','Другое'];
             const selected=Array.isArray(d.stress?.practicesList)?d.stress.practicesList:[];
             const toggleP=(p)=>{if(dis)return;const next=selected.includes(p)?selected.filter(x=>x!==p):[...selected,p];upd('stress',{...(d.stress||{}),practicesList:next})};
             return <>
