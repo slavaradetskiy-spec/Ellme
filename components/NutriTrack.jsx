@@ -134,7 +134,7 @@ const I={
   stool:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 2h6l1 7H8L9 2z"/><path d="M8 9l-2 13M16 9l2 13M12 9v13"/></svg>,
   steth:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4.8 2.3A.3.3 0 105 2H4a2 2 0 00-2 2v5a6 6 0 006 6 6 6 0 006-6V4a2 2 0 00-2-2h-1a.2.2 0 10.3.3"/><path d="M8 15v1a6 6 0 006 6 6 6 0 006-6v-4"/><circle cx="20" cy="10" r="2"/></svg>,
   chart:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>,
-  book:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>,
+  book:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>,
 };
 
 // ═══ DATA ═══
@@ -4053,6 +4053,7 @@ export default function App(){
 
   // Active tab for bottom bar
   const activeTab = (() => {
+    if (chatModal || showChatList) return 'chat';
     if (screen === 'analytics' || screen === 'clientAnalytics') return 'analytics';
     if (screen === 'profile') return 'profile';
     return 'diary';
@@ -4204,28 +4205,28 @@ export default function App(){
     </div>
     {/* Bottom tab bar */}
     <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
-      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 4px'}}>
+      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 8px'}}>
         {[
           { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
           { id:'analytics', label:'Аналитика',  icon:I.chart, badge:0 },
           { id:'chat',      label:'Чат',        icon:I.chat,  badge:chatBadge },
           { id:'profile',   label:'Профиль',    icon:I.user,  badge:0 },
         ].map(tab => {
-          const active = tab.id === 'chat' ? false : activeTab === tab.id;
+          const active = activeTab === tab.id;
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
             flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
             border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
             background:active?'#F0F0F0':'transparent',
-            borderRadius:14,margin:'4px 2px',
+            borderRadius:14,margin:'4px 3px',
             color:active?'#333333':'#99A2AD',
             transition:'all .15s',WebkitTapHighlightColor:'transparent',
             padding:'6px 0',
           }}>
-            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',width:28,height:28,color:'inherit'}}>
-              <svg viewBox={tab.icon.props.viewBox} width="28" height="28" fill="none" stroke="currentColor" strokeWidth={tab.icon.props.strokeWidth||'1.5'} strokeLinecap={tab.icon.props.strokeLinecap||undefined} strokeLinejoin={tab.icon.props.strokeLinejoin||undefined}>{tab.icon.props.children}</svg>
+            <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,color:'inherit'}}>
+              <svg viewBox={tab.icon.props.viewBox} width="26" height="26" fill="none" stroke="currentColor" strokeWidth={tab.icon.props.strokeWidth||'1.5'} strokeLinecap={tab.icon.props.strokeLinecap||undefined} strokeLinejoin={tab.icon.props.strokeLinejoin||undefined}>{tab.icon.props.children}</svg>
               {tab.badge > 0 && <div style={{position:'absolute',top:-4,right:-10,minWidth:18,height:18,borderRadius:9,background:'#FF3B30',color:'#fff',fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 5px',border:'2px solid #fff'}}>{tab.badge > 99 ? '99+' : tab.badge}</div>}
             </div>
-            <span style={{fontSize:11,fontWeight:active?600:400,lineHeight:1}}>{tab.label}</span>
+            <span style={{fontSize:10,fontWeight:active?600:500,letterSpacing:'.05em',textTransform:'uppercase',lineHeight:1}}>{tab.label}</span>
           </button>;
         })}
       </div>
