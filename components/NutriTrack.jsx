@@ -2572,15 +2572,17 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
       }},
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 9 }, color: C.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
-        y: {
-          beginAtZero: !isBedtime && !isStool,
+        y: isStool ? {
+          min: -0.1, max: 1.1,
+          grid: { color: C.surfaceAlt, drawBorder: false },
+          ticks: { font: { size: 10 }, color: C.muted, stepSize: 1, autoSkip: false, maxTicksLimit: 2, callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '' },
+        } : {
+          beginAtZero: !isBedtime,
           grid: { color: C.surfaceAlt, drawBorder: false },
           ticks: {
             font: { size: 10 }, color: C.muted, maxTicksLimit: 5,
             ...(isBedtime ? { callback: v => fmtTime(v) } : {}),
-            ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '', stepSize: 1, autoSkip: false } : {}),
           },
-          ...(isStool ? { min: 0, max: 1 } : {}),
         }
       },
       layout: { padding: { top: 20, bottom: 0, left: 0, right: 0 } },
