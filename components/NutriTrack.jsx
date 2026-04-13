@@ -498,13 +498,8 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
   >
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
     {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
-      <svg width="80" height="52" viewBox="0 0 120 52" fill="none" stroke="#D5D1CA" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        {/* Fork */}
-        <path d="M20 4 L20 48"/><path d="M14 4 L14 18 C14 22 20 22 20 18"/><path d="M20 4 L20 18"/><path d="M26 4 L26 18 C26 22 20 22 20 18"/>
-        {/* Camera */}
-        <rect x="44" y="16" width="32" height="24" rx="4"/><path d="M52 16 L55 10 L65 10 L68 16"/><circle cx="60" cy="28" r="7"/><circle cx="60" cy="28" r="3"/>
-        {/* Spoon */}
-        <path d="M100 48 L100 22"/><ellipse cx="100" cy="12" rx="8" ry="12"/>
+      <svg width="44" height="38" viewBox="0 0 32 24" fill="none" stroke="#D5D1CA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="1" y="5" width="30" height="18" rx="3"/><path d="M10 5 L12 1 L20 1 L22 5"/><circle cx="16" cy="14" r="5"/><circle cx="16" cy="14" r="2"/>
       </svg>
     </div>}
     {photos.length>1&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:8,padding:'2px 8px',fontSize:11,fontWeight:600,zIndex:2,backdropFilter:'blur(4px)'}}>{photos.length} фото</div>}
