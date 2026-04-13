@@ -497,12 +497,12 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
     onMouseOut={e=>{e.currentTarget.style.transform='perspective(600px) rotateX(0deg)';e.currentTarget.style.boxShadow=has?C.shadow3d:'none'}}
   >
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
-    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,border:`1.5px dashed ${C.tileBorder}`,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
-      <svg width="48" height="48" viewBox="0 0 100 100" fill="none" stroke={C.tileBorder} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="50" cy="50" r="28"/><circle cx="50" cy="50" r="20"/>
-        <path d="M22 20 L22 80 M22 20 L19 28 M22 20 L22 28 M22 20 L25 28"/>
-        <path d="M78 22 C82 22 84 26 84 30 L84 36 L78 36 L78 80 M78 36 L78 22"/>
-      </svg>
+    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,background:`linear-gradient(135deg, ${C.tile} 0%, ${C.surfaceAlt} 100%)`}}>
+      <div style={{width:56,height:56,borderRadius:16,background:'rgba(255,255,255,.7)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>
+        </svg>
+      </div>
     </div>}
     {photos.length>1&&<div style={{position:'absolute',top:10,left:10,background:'rgba(0,0,0,.5)',color:'#fff',borderRadius:8,padding:'2px 8px',fontSize:11,fontWeight:600,zIndex:2,backdropFilter:'blur(4px)'}}>{photos.length} фото</div>}
     {/* Like button: always visible for doc (canLike), decorative for client when liked */}
