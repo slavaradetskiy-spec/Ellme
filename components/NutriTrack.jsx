@@ -45,17 +45,29 @@ const SNACK_SLOTS=[
   {id:"snack4",label:"Перекус 4"},{id:"snack5",label:"Перекус 5"},
 ];
 const MEALS=[...MEALS_MAIN,...SNACK_SLOTS];
-// Returns visible meals: main 3 + filled snacks + one empty "add snack" slot
+// Returns visible meals: main 3 + filled snacks (relabeled) + one "add" slot, sorted by time
 function getVisibleMeals(mealsData) {
   const md = mealsData || {};
-  const filledSnacks = SNACK_SLOTS.filter(s => { const d = md[s.id]; return d && (d.text || d.photo || d.time); });
-  const nextSnack = SNACK_SLOTS.find(s => { const d = md[s.id]; return !d || (!d.text && !d.photo && !d.time); });
-  const snackLabel = filledSnacks.length === 0 ? 'Перекус' : 'Ещё перекус';
-  return [
+  const isFilled = (id) => { const d = md[id]; return d && (d.text || d.photo || d.time); };
+  const filledSnacks = SNACK_SLOTS.filter(s => isFilled(s.id))
+    .map((s, i) => ({ ...s, label: 'Перекус' + (i > 0 ? ' ' + (i + 1) : '') }));
+  const nextSnack = SNACK_SLOTS.find(s => !isFilled(s.id));
+  const addLabel = filledSnacks.length === 0 ? 'Перекус' : 'Ещё перекус';
+  const all = [
     ...MEALS_MAIN,
     ...filledSnacks,
-    ...(nextSnack ? [{ ...nextSnack, label: snackLabel, isAddSlot: true }] : []),
+    ...(nextSnack ? [{ ...nextSnack, label: addLabel, isAddSlot: true }] : []),
   ];
+  // Sort by time: items with time go in order, items without time keep relative position
+  const timeToMin = (t) => { if (!t) return null; const p = t.split(':'); const h = parseInt(p[0], 10), m = parseInt(p[1] || '0', 10); return isNaN(h) ? null : h * 60 + m; };
+  const withTime = all.map((m, origIdx) => ({ m, time: timeToMin(md[m.id]?.time), origIdx }));
+  withTime.sort((a, b) => {
+    if (a.time != null && b.time != null) return a.time - b.time;
+    if (a.time != null) return -1;
+    if (b.time != null) return 1;
+    return a.origIdx - b.origIdx;
+  });
+  return withTime.map(w => w.m);
 }
 const HUNGER=["Сильный","Умеренный","Лёгкий","Нейтральный","Сытость"];
 const FEELING=["Тяжесть","Дискомфорт","Нормально","Хорошо","Отлично"];
@@ -543,6 +555,8 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
   const fRef=useRef(null),cRef=useRef(null);
   const[uploading,setUploading]=useState(false);
   const photos=Array.isArray(d.photo)?d.photo:(d.photo?[d.photo]:[]);
+  const autoTime = () => { const now = new Date(); return String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0'); };
+  const addPhoto = (url) => { const updates = { ...d, photo: [...photos, url] }; if (!d.time) updates.time = autoTime(); onChange(updates); };
   const hFile=async(e)=>{
     const f=e.target.files?.[0];if(!f)return;
     e.target.value='';
@@ -550,11 +564,11 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
       setUploading(true);
       try{
         const url=await onUploadPhoto(f);
-        if(url) upd('photo',[...photos,url]);
+        if(url) addPhoto(url);
       }catch(err){console.error('Photo upload error:',err)}
       setUploading(false);
     }else{
-      const r=new FileReader();r.onload=ev=>upd('photo',[...photos,ev.target.result]);r.readAsDataURL(f);
+      const r=new FileReader();r.onload=ev=>addPhoto(ev.target.result);r.readAsDataURL(f);
     }
   };
   const removePhoto=(idx)=>{ if(!window.confirm('Удалить фото?'))return; const next=photos.filter((_,i)=>i!==idx); upd('photo',next.length?next:null); };
