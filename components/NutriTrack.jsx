@@ -816,6 +816,17 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           {dis?<span style={{fontSize:14,fontWeight:500,color:d.sleep?.bed?C.text:C.muted}}>{d.sleep?.bed||'—'}</span>
             :<TimePick value={d.sleep?.bed||''} onChange={v=>{const ns=Object.assign({},d.sleep||{},{bed:v});upd('sleep',ns);checkSleep(ns)}}/>}
         </div>
+        {(()=>{
+          if(!d.sleep?.bed||!d.sleep?.wake)return null;
+          const pt=(t)=>{const p=t.split(':');return parseInt(p[0])*60+parseInt(p[1]||'0')};
+          let mins=pt(d.sleep.wake)-pt(d.sleep.bed);if(mins<0)mins+=1440;
+          const hrs=mins/60;
+          if(hrs>14)return <div style={{padding:'10px 14px',borderRadius:12,background:'#FFF3E0',border:'1px solid #FFB74D',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+            <div style={{fontSize:12,color:'#8a5000',lineHeight:1.4}}>⚠️ Сон {Math.round(hrs)}ч — перепутаны лёг/встал?</div>
+            {!dis&&<button onClick={()=>upd('sleep',{...d.sleep,bed:d.sleep.wake,wake:d.sleep.bed})} style={{background:'#FFB74D',border:'none',color:'#fff',borderRadius:8,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>Поменять</button>}
+          </div>;
+          return null;
+        })()}
         <div><Lbl>Качество сна</Lbl><Scale max={10} value={d.sleep?.quality} onChange={v=>upd('sleep',{...(d.sleep||{}),quality:v})} dis={dis} lowLabel="Плохой сон" highLabel="Отличный сон"/></div>
       </div>
     </SecCard>
