@@ -70,6 +70,7 @@ input::-ms-reveal,input::-ms-clear{display:none !important;width:0;height:0}
 .card-hover{transition:transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s ease !important}
 .card-hover:active{transform:scale(.98) !important}
 @keyframes confetti{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(120vh) rotate(720deg);opacity:0}}
+@keyframes wave{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 @keyframes celebrate{0%{transform:scale(0);opacity:0}50%{transform:scale(1.1);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes sparkle{0%,100%{opacity:0;transform:scale(0)}50%{opacity:1;transform:scale(1)}}
 @keyframes bounceIn{0%{transform:scale(0.3);opacity:0}50%{transform:scale(1.05)}70%{transform:scale(.9)}100%{transform:scale(1);opacity:1}}
@@ -682,8 +683,13 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           {/* Bottle visualization — tap to show/hide log */}
           <div onClick={waterLog.length>0?()=>setShowWaterLog(!showWaterLog):undefined} style={{width:48,position:'relative',flexShrink:0,cursor:waterLog.length>0?'pointer':'default'}}>
             <div style={{width:48,height:100,borderRadius:12,border:`2px solid ${waterLog.length>0?'#7BC8E8':C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt,transition:'border-color .2s'}}>
-              <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,background:'linear-gradient(to top, #7BC8E8, #A8DFF0)',transition:'height .5s cubic-bezier(.34,1.56,.64,1)',borderRadius:'0 0 10px 10px'}}/>
-              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none'}}>{waterPctRaw}%</div>
+              <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,transition:'height .5s cubic-bezier(.34,1.56,.64,1)'}}>
+                {waterPct>0&&<svg viewBox="0 0 96 8" preserveAspectRatio="none" style={{position:'absolute',top:-4,left:0,width:'200%',height:8,animation:'wave 3s linear infinite'}}>
+                  <path d="M0 4 Q6 0 12 4 T24 4 T36 4 T48 4 T60 4 T72 4 T84 4 T96 4 V8 H0Z" fill="#A8DFF0"/>
+                </svg>}
+                <div style={{width:'100%',height:'100%',background:'linear-gradient(to top, #5BB8DB, #7BC8E8, #A8DFF0)',borderRadius:'0 0 10px 10px'}}/>
+              </div>
+              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none',zIndex:1}}>{waterPctRaw}%</div>
             </div>
             {waterLog.length>0&&!dis&&<div style={{position:'absolute',top:-4,right:-4,width:20,height:20,borderRadius:6,background:'#7BC8E8',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 4px rgba(0,0,0,.15)'}}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
