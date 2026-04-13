@@ -375,7 +375,7 @@ function Chip({children,sel,onClick,dis}){
   return <button onClick={dis?undefined:onClick} style={{padding:'7px 16px',borderRadius:100,fontSize:13,fontWeight:sel?600:400,fontFamily:'inherit',border:`1.5px solid ${sel?C.accent:'transparent'}`,cursor:dis?'default':'pointer',background:sel?C.accentSoft:C.surfaceAlt,color:sel?C.accent:C.soft,transition:'all .15s'}}>{children}</button>;
 }
 
-function Scale({max=10,value:v,onChange,dis}){
+function Scale({max=10,value:v,onChange,dis,lowLabel,highLabel}){
   if(dis){
     if(v==null)return <span style={{fontSize:13,color:C.muted}}>—</span>;
     return <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -384,8 +384,14 @@ function Scale({max=10,value:v,onChange,dis}){
       <span style={{fontSize:12,color:C.muted}}>/ {max}</span>
     </div>;
   }
-  return <div style={{display:'flex',gap:3}}>
-    {Array.from({length:max},(_,i)=>i+1).map(n=><button key={n} onClick={()=>onChange(v===n?null:n)} style={{flex:1,height:36,minWidth:0,borderRadius:8,border:'none',fontSize:12,fontWeight:600,fontFamily:'inherit',cursor:'pointer',background:v===n?C.accent:C.surfaceAlt,color:v===n?'#fff':C.soft,transition:'all .12s',transform:v===n?'scale(1.05)':'scale(1)',boxShadow:v===n?'0 2px 8px rgba(45,95,63,.25)':'none'}}>{n}</button>)}
+  return <div>
+    <div style={{display:'flex',gap:3}}>
+      {Array.from({length:max},(_,i)=>i+1).map(n=><button key={n} onClick={()=>onChange(v===n?null:n)} style={{flex:1,height:36,minWidth:0,borderRadius:8,border:'none',fontSize:12,fontWeight:600,fontFamily:'inherit',cursor:'pointer',background:v===n?C.accent:C.surfaceAlt,color:v===n?'#fff':C.soft,transition:'all .12s',transform:v===n?'scale(1.05)':'scale(1)',boxShadow:v===n?'0 2px 8px rgba(45,95,63,.25)':'none'}}>{n}</button>)}
+    </div>
+    {(lowLabel||highLabel)&&<div style={{display:'flex',justifyContent:'space-between',marginTop:4,padding:'0 2px'}}>
+      <span style={{fontSize:10,color:C.muted}}>{lowLabel||''}</span>
+      <span style={{fontSize:10,color:C.muted}}>{highLabel||''}</span>
+    </div>}
   </div>;
 }
 
@@ -667,6 +673,33 @@ function SecCard({icon,title,children,extra}){
   </div>;
 }
 
+function ScaleHelpButton(){
+  const[open,setOpen]=useState(false);
+  return <div style={{marginTop:12,marginBottom:4}}>
+    <button onClick={()=>setOpen(!open)} style={{display:'flex',alignItems:'center',gap:6,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',color:C.muted,fontSize:12,padding:'8px 0'}}>
+      <div style={{width:18,height:18,borderRadius:'50%',background:C.surfaceAlt,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:C.soft}}>?</div>
+      Как заполнять шкалы
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{transform:open?'rotate(180deg)':'none',transition:'transform .15s'}}><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    {open&&<div style={{background:C.surface,borderRadius:16,padding:16,boxShadow:C.shadowCard,animation:'enter .2s',marginTop:4}}>
+      {[
+        {icon:'🧠',title:'Стресс (1–10)',desc:'1 = полное спокойствие, 10 = максимальный стресс'},
+        {icon:'😴',title:'Качество сна (1–10)',desc:'1 = ужасный сон, 10 = выспался идеально'},
+        {icon:'⚡',title:'Энергия (1–10)',desc:'1 = нет сил, 10 = полон энергии'},
+        {icon:'😊',title:'Настроение (5 уровней)',desc:'Эмодзи от 😫 Тяжело до 😄 Прекрасно'},
+        {icon:'💧',title:'Вода',desc:'Только чистая вода и травяной чай'},
+        {icon:'🪑',title:'Стул',desc:'Норма = оформленный. Диарея, запор, отсутствие = не норма'},
+      ].map((item,i)=><div key={i} style={{display:'flex',gap:10,marginBottom:i<5?10:0}}>
+        <span style={{fontSize:16,flexShrink:0}}>{item.icon}</span>
+        <div>
+          <div style={{fontSize:12,fontWeight:600,color:C.text}}>{item.title}</div>
+          <div style={{fontSize:11,color:C.soft,lineHeight:1.4}}>{item.desc}</div>
+        </div>
+      </div>)}
+    </div>}
+  </div>;
+}
+
 function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   const d=data||{},upd=(k,v)=>setData({...d,[k]:v});
   // Water log: stored in localStorage by date, array of {ml, time}
@@ -806,7 +839,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           {dis?<span style={{fontSize:14,fontWeight:500,color:d.sleep?.bed?C.text:C.muted}}>{d.sleep?.bed||'—'}</span>
             :<TimePick value={d.sleep?.bed||''} onChange={v=>{const ns=Object.assign({},d.sleep||{},{bed:v});upd('sleep',ns);checkSleep(ns)}}/>}
         </div>
-        <div><Lbl>Качество сна</Lbl><Scale max={10} value={d.sleep?.quality} onChange={v=>upd('sleep',{...(d.sleep||{}),quality:v})} dis={dis}/></div>
+        <div><Lbl>Качество сна</Lbl><Scale max={10} value={d.sleep?.quality} onChange={v=>upd('sleep',{...(d.sleep||{}),quality:v})} dis={dis} lowLabel="Плохой сон" highLabel="Отличный сон"/></div>
       </div>
     </SecCard>
 
@@ -863,18 +896,20 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
 
     <SecCard icon={I.brain} title="Стресс">
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
-        <div><Lbl>Уровень</Lbl><Scale max={10} value={d.stress?.level} onChange={v=>upd('stress',{...(d.stress||{}),level:v})} dis={dis}/></div>
+        <div><Lbl>Уровень</Lbl><Scale max={10} value={d.stress?.level} onChange={v=>upd('stress',{...(d.stress||{}),level:v})} dis={dis} lowLabel="Спокоен" highLabel="Сильный стресс"/></div>
         <div><Lbl>Практики расслабления</Lbl><Area value={d.stress?.practices} onChange={v=>upd('stress',{...(d.stress||{}),practices:v})} placeholder="Медитация, дыхание..." dis={dis} rows={2} showMic={!dis}/></div>
       </div>
     </SecCard>
 
     <SecCard icon={I.heart} title="Самочувствие">
       <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:14}}>
-        <div><Lbl>Энергия</Lbl><Scale max={10} value={d.well?.energy} onChange={v=>upd('well',{...(d.well||{}),energy:v})} dis={dis}/></div>
+        <div><Lbl>Энергия</Lbl><Scale max={10} value={d.well?.energy} onChange={v=>upd('well',{...(d.well||{}),energy:v})} dis={dis} lowLabel="Нет сил" highLabel="Полон энергии"/></div>
         <div><Lbl>Настроение</Lbl><Mood value={d.well?.mood} onChange={v=>upd('well',{...(d.well||{}),mood:v})} dis={dis}/></div>
         <div><Lbl>Заметка дня</Lbl><Area value={d.well?.comment} onChange={v=>upd('well',{...(d.well||{}),comment:v})} placeholder="Как прошёл день..." dis={dis} rows={3} showMic={!dis}/></div>
       </div>
     </SecCard>
+
+    {!dis&&<ScaleHelpButton/>}
   </>;
 }
 
