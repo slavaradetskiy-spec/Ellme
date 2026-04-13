@@ -2407,7 +2407,16 @@ function buildAnalytics(days, meals, waterNorm) {
       return { label: 'Внимание', color: '#B8453A' };
     })() },
     sleepQuality: { avg: sleepQualAvg, unit: '/10', status: statusFn(sleepQualAvg, 7, 5) },
-    bedtime: { avg: bedtimeAvg, unit: '', status: { label: bedtimeAvg != null ? fmtTime(bedtimeAvg) : '—', color: '#999' } },
+    bedtime: { avg: bedtimeAvg, unit: '', status: (() => {
+      if (bedtimeAvg == null) return { label: 'Нет данных', color: '#999' };
+      // bedtimeAvg is in minutes, normalized (22:00=1320, 23:00=1380, 00:30=1470)
+      const mins = bedtimeAvg >= 1440 ? bedtimeAvg - 1440 : bedtimeAvg;
+      const h = mins / 60;
+      // Before 22:00 = excellent, 22-23 = good, after 23 = attention
+      if (h < 22) return { label: 'Отлично', color: '#2D5F3F' };
+      if (h < 23) return { label: 'Хорошо', color: '#C98B5F' };
+      return { label: 'Внимание', color: '#B8453A' };
+    })() },
     movement: { avg: movementAvg, unit: 'мин', status: statusFn(movementAvg, 30, 15) },
     stress: { avg: stressAvg, unit: '/10', status: statusFn(stressAvg, 4, 7, true) },
     energy: { avg: energyAvg, unit: '/10', status: statusFn(energyAvg, 7, 5) },
@@ -2597,7 +2606,7 @@ function MetricTile({ metricKey, label, value, unit, status, sparkData, onClick 
       {unit && <span style={{fontSize:11,color:C.muted}}>{unit}</span>}
     </div>
     <Sparkline data={sparkData} metricKey={metricKey} color={mc.color}/>
-    {metricKey!=='bedtime'&&<div style={{fontSize:10,fontWeight:600,padding:'3px 10px',borderRadius:8,alignSelf:'flex-start',...badgeStyle}}>{status?.label || '—'}</div>}
+    <div style={{fontSize:10,fontWeight:600,padding:'3px 10px',borderRadius:8,alignSelf:'flex-start',...badgeStyle}}>{status?.label || '—'}</div>
   </div>;
 }
 
@@ -2872,7 +2881,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
               <span style={{fontSize:36,fontWeight:800,color:C.text,fontFamily:'var(--fd)',lineHeight:1}}>{v}</span>
               {u && <span style={{fontSize:14,color:C.muted}}>{u}</span>}
             </div>
-            {info?.status && m.key !== 'bedtime' && <div style={{fontSize:12,fontWeight:600,color:info.status.color,marginBottom:20}}>{info.status.label}</div>}
+            {info?.status && <div style={{fontSize:12,fontWeight:600,color:info.status.color,marginBottom:20}}>{info.status.label}</div>}
 
             {/* Bedtime: show bed/wake times per day */}
             {m.key === 'bedtime' && series?.bedtime && (() => {
