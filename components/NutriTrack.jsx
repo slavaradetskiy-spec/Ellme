@@ -2563,11 +2563,11 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { enabled: true, mode:'index', intersect: false,
-        callbacks: { label: ctx => {
+        callbacks: { title: ctx => ctx[0]?.label || '', label: ctx => {
           if (ctx.parsed.y == null) return '';
           if (isBedtime) return fmtTime(ctx.parsed.y);
           if (isStool) return ctx.parsed.y === 1 ? 'Норма' : 'Не норма';
-          return ctx.parsed.y.toFixed(1);
+          return (Math.round(ctx.parsed.y * 10) / 10).toString().replace('.', ',');
         }}
       }},
       scales: {
