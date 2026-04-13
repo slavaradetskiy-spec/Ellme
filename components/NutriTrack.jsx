@@ -555,7 +555,7 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
   const fRef=useRef(null),cRef=useRef(null);
   const[uploading,setUploading]=useState(false);
   const photos=Array.isArray(d.photo)?d.photo:(d.photo?[d.photo]:[]);
-  const autoTime = () => { const now = new Date(); return String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0'); };
+  const autoTime = () => { const now = new Date(); const m = Math.round(now.getMinutes()/5)*5; const h = m===60?now.getHours()+1:now.getHours(); return String(h%24).padStart(2,'0') + ':' + String(m%60).padStart(2,'0'); };
   const addPhoto = (url) => { const updates = { ...d, photo: [...photos, url] }; if (!d.time) updates.time = autoTime(); onChange(updates); };
   const hFile=async(e)=>{
     const f=e.target.files?.[0];if(!f)return;
