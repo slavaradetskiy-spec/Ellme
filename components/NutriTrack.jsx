@@ -486,7 +486,7 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
   const handleLike=(e)=>{e.stopPropagation();e.preventDefault();onToggleLike&&onToggleLike()};
   return <div onClick={onClick} className="tile3d" style={{
     aspectRatio:'1',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',
-    background:firstPhoto?`url(${firstPhoto}) center/cover`:C.tile,
+    background:firstPhoto?`url(${firstPhoto}) center/cover`:(has?C.accentSoft:C.tile),
     display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:14,
     position:'relative',overflow:'hidden',textAlign:'left',
     boxShadow:has?C.shadow3d:'none',
@@ -497,8 +497,8 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
     onMouseOut={e=>{e.currentTarget.style.transform='perspective(600px) rotateX(0deg)';e.currentTarget.style.boxShadow=has?C.shadow3d:'none'}}
   >
     {firstPhoto&&<div style={{position:'absolute',inset:0,background:'linear-gradient(transparent 40%, rgba(0,0,0,.6))',borderRadius:20}}/>}
-    {!firstPhoto&&!has&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
-      <svg width="44" height="38" viewBox="0 0 32 24" fill="none" stroke="#D5D1CA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    {!firstPhoto&&<div style={{position:'absolute',inset:0,borderRadius:20,pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <svg width="44" height="38" viewBox="0 0 32 24" fill="none" stroke={has?'#B8D4BE':'#D5D1CA'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="1" y="5" width="30" height="18" rx="3"/><path d="M10 5 L12 1 L20 1 L22 5"/><circle cx="16" cy="14" r="5"/><circle cx="16" cy="14" r="2"/>
       </svg>
     </div>}
