@@ -1136,12 +1136,6 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
     </div>
 
     {/* Analytics entry */}
-    {onOpenAnalytics && <button onClick={onOpenAnalytics} style={{width:'100%',padding:'14px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,background:C.surface,color:C.text,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginTop:12,boxShadow:C.shadowCard,transition:'all .15s'}}
-      onMouseOver={e=>{e.currentTarget.style.borderColor=C.accent;e.currentTarget.style.color=C.accent}}
-      onMouseOut={e=>{e.currentTarget.style.borderColor=C.tileBorder;e.currentTarget.style.color=C.text}}>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
-      Моя аналитика
-    </button>}
 
     {/* Support - collapsible */}
     <div style={{background:C.surface,borderRadius:20,boxShadow:C.shadowCard,marginTop:12,overflow:'hidden'}}>
@@ -2776,7 +2770,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
   };
 
   return <div style={{animation:'slideRight .3s ease'}}>
-    <TopBar left={<BackBtn onClick={onBack}/>} title={title||'Аналитика'} right={null}/>
+    <TopBar left={onBack?<BackBtn onClick={onBack}/>:null} title={title||'Аналитика'} right={null}/>
 
     {/* Period tabs */}
     <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
@@ -4258,7 +4252,7 @@ export default function App(){
     onRangeChange={setAnalyticsRange}
     customDateRange={customDateRange}
     onCustomDateRange={setCustomDateRange}
-    onBack={()=>setScreen('profile')}
+    onBack={null}
     waterNorm={waterNorm}
   />);
 
