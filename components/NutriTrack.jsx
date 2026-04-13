@@ -2734,17 +2734,17 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     </div>
 
     {/* Custom date picker modal */}
-    {showCustomPicker && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={()=>setShowCustomPicker(false)}>
-      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:24,width:'100%',maxWidth:340,boxShadow:C.shadow3d}}>
+    {showCustomPicker && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:24}} onClick={()=>setShowCustomPicker(false)}>
+      <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:20,padding:20,width:'100%',maxWidth:300,boxShadow:C.shadow3d,overflow:'hidden'}}>
         <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:16}}>Выберите период</div>
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
           <div>
             <div style={{fontSize:12,color:C.soft,marginBottom:4}}>Начало</div>
-            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{width:'100%',padding:'12px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box'}}/>
+            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{width:'100%',padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box',maxWidth:'100%'}}/>
           </div>
           <div>
             <div style={{fontSize:12,color:C.soft,marginBottom:4}}>Конец</div>
-            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{width:'100%',padding:'12px 14px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box'}}/>
+            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{width:'100%',padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box',maxWidth:'100%'}}/>
           </div>
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}>
