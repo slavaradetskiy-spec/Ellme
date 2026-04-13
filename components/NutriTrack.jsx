@@ -165,12 +165,12 @@ const ACTIVITIES = [
   {id:'walk',label:'Ходьба'},
   {id:'run',label:'Бег'},
   {id:'bike',label:'Велосипед'},
-  {id:'swim',label:'Плавание'},
   {id:'yoga',label:'Йога'},
+  {id:'swim',label:'Плавание'},
   {id:'strength',label:'Силовая'},
   {id:'pilates',label:'Пилатес'},
-  {id:'gymnastics',label:'Гимнастика'},
   {id:'dance',label:'Танцы'},
+  {id:'gymnastics',label:'Гимнастика'},
   {id:'other',label:'Другое'},
 ];
 
