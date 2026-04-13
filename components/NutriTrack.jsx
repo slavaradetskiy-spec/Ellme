@@ -2578,9 +2578,9 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
           ticks: {
             font: { size: 10 }, color: C.muted, maxTicksLimit: 5,
             ...(isBedtime ? { callback: v => fmtTime(v) } : {}),
-            ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '', stepSize: 1 } : {}),
+            ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '' } : {}),
           },
-          ...(isStool ? { min: -0.2, max: 1.4 } : {}),
+          ...(isStool ? { min: -0.15, max: 1.15, afterBuildTicks: axis => { axis.ticks = [{value:0},{value:1}]; } } : {}),
         }
       },
       layout: { padding: { top: 20, bottom: 0, left: 0, right: 0 } },
