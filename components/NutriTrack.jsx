@@ -909,7 +909,6 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
       </div>
     </SecCard>
 
-    {!dis&&<ScaleHelpButton/>}
   </>;
 }
 
