@@ -2725,7 +2725,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     {/* Period tabs */}
     <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
       {[['3d','3д'],['5d','5д'],['7d','7д'],['1m','1мес'],['custom','Свой']].map(([k,l]) =>
-        <button key={k} onClick={()=>{if(k==='custom'){if(!customStart||!customEnd){const e=new Date(),s=new Date();s.setDate(s.getDate()-6);setCustomStart(dk(s));setCustomEnd(dk(e))}setShowCustomPicker(true)}else{onRangeChange(k)}}} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',background:range===k?C.surface:'transparent',color:range===k?C.accent:C.soft,fontSize:12,fontWeight:range===k?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:range===k?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{l}</button>
+        <button key={k} onClick={()=>{if(k==='custom'){if(!customStart||!customEnd){const e=new Date(),s=new Date();s.setDate(s.getDate()-6);setCustomStart(dk(s));setCustomEnd(dk(e))}setShowCustomPicker(true)}else{setShowCustomPicker(false);onRangeChange(k)}}} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',background:range===k?C.surface:'transparent',color:range===k?C.accent:C.soft,fontSize:12,fontWeight:range===k?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:range===k?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{l}</button>
       )}
     </div>
 
@@ -2968,6 +2968,7 @@ function Login({onLogin}){
       if (msg.includes(en)) return ru;
     }
     // Fallback: if message is in English, show generic
+    if (msg.includes('Load failed') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) return 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз';
     if (/^[a-zA-Z\s:.,!?]+$/.test(msg)) return 'Ошибка: ' + msg;
     return msg;
   };
