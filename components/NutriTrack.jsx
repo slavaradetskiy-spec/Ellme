@@ -37,10 +37,26 @@ const MO_R=["января","февраля","марта","апреля","мая"
 const fmtD=d=>`${d.getDate()} ${MO_R[d.getMonth()]} ${d.getFullYear()}`;
 const daysBetween=(a,b)=>Math.floor((b-a)/(1000*60*60*24));
 
-const MEALS=[
+const MEALS_MAIN=[
   {id:"breakfast",label:"Завтрак"},{id:"lunch",label:"Обед"},{id:"dinner",label:"Ужин"},
-  {id:"snack1",label:"Перекус 1"},{id:"snack2",label:"Перекус 2"},{id:"snack3",label:"Перекус 3"},
 ];
+const SNACK_SLOTS=[
+  {id:"snack1",label:"Перекус 1"},{id:"snack2",label:"Перекус 2"},{id:"snack3",label:"Перекус 3"},
+  {id:"snack4",label:"Перекус 4"},{id:"snack5",label:"Перекус 5"},
+];
+const MEALS=[...MEALS_MAIN,...SNACK_SLOTS];
+// Returns visible meals: main 3 + filled snacks + one empty "add snack" slot
+function getVisibleMeals(mealsData) {
+  const md = mealsData || {};
+  const filledSnacks = SNACK_SLOTS.filter(s => { const d = md[s.id]; return d && (d.text || d.photo || d.time); });
+  const nextSnack = SNACK_SLOTS.find(s => { const d = md[s.id]; return !d || (!d.text && !d.photo && !d.time); });
+  const snackLabel = filledSnacks.length === 0 ? 'Перекус' : 'Ещё перекус';
+  return [
+    ...MEALS_MAIN,
+    ...filledSnacks,
+    ...(nextSnack ? [{ ...nextSnack, label: snackLabel, isAddSlot: true }] : []),
+  ];
+}
 const HUNGER=["Сильный","Умеренный","Лёгкий","Нейтральный","Сытость"];
 const FEELING=["Тяжесть","Дискомфорт","Нормально","Хорошо","Отлично"];
 const MOOD_L=["Тяжело","Неважно","Нейтрально","Хорошо","Прекрасно"];
@@ -510,8 +526,12 @@ function MealTile({meal,data,onClick,delay=0,canLike=false,onToggleLike}){
       <svg width="15" height="15" viewBox="0 0 24 24" fill="#E74C3C" stroke="#E74C3C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
     </div>:null}
     <div style={{position:'relative',zIndex:1}}>
-      {!has&&<div style={{fontSize:13,color:C.muted,marginBottom:2}}>Добавить</div>}
-      <div style={{fontSize:15,fontWeight:700,color:firstPhoto?'#fff':C.text}}>{meal.label}</div>
+      {!has&&!meal.isAddSlot&&<div style={{fontSize:13,color:C.muted,marginBottom:2}}>Добавить</div>}
+      {meal.isAddSlot&&!has&&<div style={{fontSize:13,color:C.accent,marginBottom:2,display:'flex',alignItems:'center',gap:3}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Добавить
+      </div>}
+      <div style={{fontSize:15,fontWeight:700,color:firstPhoto?'#fff':(meal.isAddSlot&&!has?C.accent:C.text)}}>{meal.label}</div>
       {d.time&&<div style={{fontSize:12,color:firstPhoto?'rgba(255,255,255,.8)':C.soft,marginTop:2}}>{d.time}</div>}
     </div>
   </div>;
@@ -4140,7 +4160,7 @@ export default function App(){
 
     <SecCard icon={I.fork} title="Приёмы пищи">
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
-        {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={meals[m.id]} onClick={()=>setSelMeal(m.id)} delay={i*0.05}/>)}
+        {getVisibleMeals(meals).map((m,i) => <MealTile key={m.id} meal={m} data={meals[m.id]} onClick={()=>setSelMeal(m.id)} delay={i*0.05}/>)}
       </div>
     </SecCard>
 
@@ -4233,7 +4253,7 @@ export default function App(){
 
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
-          {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={cm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('clientMealDetail')}} delay={i*0.05} canLike={true} onToggleLike={()=>toggleMealLike(selClient.id,m.id)}/>)}
+          {getVisibleMeals(cm).map((m,i) => <MealTile key={m.id} meal={m} data={cm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('clientMealDetail')}} delay={i*0.05} canLike={true} onToggleLike={()=>toggleMealLike(selClient.id,m.id)}/>)}
         </div>
       </SecCard>
       <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm} dateKey={key}/>
@@ -4258,7 +4278,7 @@ export default function App(){
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
-          {MEALS.map((m,i) => <MealTile key={m.id} meal={m} data={mm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('myMealDetail')}} delay={i*0.05}/>)}
+          {getVisibleMeals(mm).map((m,i) => <MealTile key={m.id} meal={m} data={mm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('myMealDetail')}} delay={i*0.05}/>)}
         </div>
       </SecCard>
       <DayExtras data={md} setData={v=>setDay(user.id,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration} dateKey={key}/>
