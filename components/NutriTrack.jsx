@@ -636,7 +636,8 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   });
   const saveWaterLog = (log) => { setWaterLog(log); try { localStorage.setItem(lsKey, JSON.stringify(log)); } catch(e) {} };
   const waterMl = waterLog.length > 0 ? waterLog.reduce((s, e) => s + (e.ml || 0), 0) : (d.water || 0);
-  const waterPct=Math.min(100,Math.round((waterMl/waterNorm)*100));
+  const waterPctRaw=Math.round((waterMl/waterNorm)*100);
+  const waterPct=Math.min(100,waterPctRaw);
   const [showWaterLog, setShowWaterLog] = useState(false);
   const addWater=(ml)=>{
     if(dis)return;
@@ -680,7 +681,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           <div onClick={waterLog.length>0?()=>setShowWaterLog(!showWaterLog):undefined} style={{width:48,position:'relative',flexShrink:0,cursor:waterLog.length>0?'pointer':'default'}}>
             <div style={{width:48,height:100,borderRadius:12,border:`2px solid ${waterLog.length>0?'#7BC8E8':C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt,transition:'border-color .2s'}}>
               <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,background:'linear-gradient(to top, #7BC8E8, #A8DFF0)',transition:'height .5s cubic-bezier(.34,1.56,.64,1)',borderRadius:'0 0 10px 10px'}}/>
-              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none'}}>{waterPct}%</div>
+              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none'}}>{waterPctRaw}%</div>
             </div>
             {waterLog.length>0&&!dis&&<div style={{position:'absolute',top:-4,right:-4,width:20,height:20,borderRadius:6,background:'#7BC8E8',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 4px rgba(0,0,0,.15)'}}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -699,7 +700,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
             <div style={{height:6,borderRadius:3,background:C.surfaceAlt,overflow:'hidden',marginTop:8}}>
               <div style={{height:'100%',width:`${waterPct}%`,borderRadius:3,background:waterPct>=100?C.accent:'#7BC8E8',transition:'width .5s'}}/>
             </div>
-            <div style={{fontSize:11,color:waterPct>=100?C.accent:C.muted,marginTop:4,fontWeight:waterPct>=100?600:400}}>{waterPct>=100?'Норма выполнена':'Осталось '+(waterNorm-waterMl)+' мл'}</div>
+            <div style={{fontSize:11,color:waterPctRaw>=100?C.accent:C.muted,marginTop:4,fontWeight:waterPctRaw>=100?600:400}}>{waterPctRaw>=100?'Норма выполнена'+(waterMl>waterNorm?' (+' +(waterMl-waterNorm)+' мл)':''):'Осталось '+(waterNorm-waterMl)+' мл'}</div>
           </div>
         </div>
         {/* Water log — history of additions */}
