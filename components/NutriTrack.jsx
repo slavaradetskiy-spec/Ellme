@@ -2724,9 +2724,13 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
 
     {/* Period tabs */}
     <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
-      {[['3d','3д'],['5d','5д'],['7d','7д'],['1m','1мес'],['custom','Свой']].map(([k,l]) =>
-        <button key={k} onClick={()=>{if(k==='custom'){if(!customStart||!customEnd){const e=new Date(),s=new Date();s.setDate(s.getDate()-6);setCustomStart(dk(s));setCustomEnd(dk(e))}setShowCustomPicker(true)}else{setShowCustomPicker(false);onRangeChange(k)}}} style={{flex:1,padding:'10px 0',borderRadius:10,border:'none',background:range===k?C.surface:'transparent',color:range===k?C.accent:C.soft,fontSize:12,fontWeight:range===k?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:range===k?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{l}</button>
-      )}
+      {[['3d','3д'],['5d','5д'],['7d','7д'],['1m','1мес'],['custom','Свой']].map(([k,l]) => {
+        const isActive = range===k || (k==='custom' && showCustomPicker);
+        const label = k==='custom' && range==='custom' && customDateRange
+          ? customDateRange.start.slice(8)+'.'+customDateRange.start.slice(5,7)+'–'+customDateRange.end.slice(8)+'.'+customDateRange.end.slice(5,7)
+          : l;
+        return <button key={k} onClick={()=>{if(k==='custom'){if(!customStart||!customEnd){const e=new Date(),s=new Date();s.setDate(s.getDate()-6);setCustomStart(dk(s));setCustomEnd(dk(e))}setShowCustomPicker(true)}else{setShowCustomPicker(false);onRangeChange(k)}}} style={{flex:k==='custom'&&range==='custom'?1.4:1,padding:'10px 0',borderRadius:10,border:'none',background:isActive?C.surface:'transparent',color:isActive?C.accent:C.soft,fontSize:k==='custom'&&range==='custom'?10:12,fontWeight:isActive?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:isActive?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{label}</button>;
+      })}
     </div>
 
     {/* Custom date picker modal */}
