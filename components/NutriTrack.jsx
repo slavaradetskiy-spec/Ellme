@@ -1425,9 +1425,12 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
 
     (async () => {
       try {
+        // Exclude the user's own items — notifications should only show activity
+        // from the other party (likes, news, and incoming messages).
         const { data } = await supabase.from('doc_comments')
           .select('*')
           .eq(filterCol, userId)
+          .neq('sender_id', userId)
           .order('created_at', { ascending: false })
           .limit(100);
         if (mounted && data) setItems(data);
@@ -1435,12 +1438,14 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
       if (mounted) setLoading(false);
     })();
 
-    // Realtime: listen for new inserts where we are the recipient
+    // Realtime: listen for new inserts where we are the recipient.
+    // Skip inserts we authored ourselves.
     const channel = supabase.channel('notif_' + userId + '_' + Date.now())
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `${filterCol}=eq.${userId}` },
         (payload) => {
           if (!mounted) return;
+          if (payload.new?.sender_id === userId) return;
           setItems(prev => [payload.new, ...prev].slice(0, 100));
         })
       .on('postgres_changes',
