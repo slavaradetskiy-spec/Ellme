@@ -48,7 +48,11 @@ const MEALS=[...MEALS_MAIN,...SNACK_SLOTS];
 // Returns visible meals: main 3 + filled snacks (relabeled) + one "add" slot, sorted by time
 function getVisibleMeals(mealsData) {
   const md = mealsData || {};
-  const isFilled = (id) => { const d = md[id]; return d && (d.text || d.photo || d.time); };
+  // A snack slot is "used" only when the user actually put food in it (text
+  // or photo). Time alone doesn't count — the user often taps the picker
+  // accidentally and we don't want a phantom "Перекус N" tile stuck on the
+  // diary because of that.
+  const isFilled = (id) => { const d = md[id]; return d && (d.text || d.photo); };
   const filledSnacks = SNACK_SLOTS.filter(s => isFilled(s.id))
     .map((s, i) => ({ ...s, label: 'Перекус' + (i > 0 ? ' ' + (i + 1) : '') }));
   const nextSnack = SNACK_SLOTS.find(s => !isFilled(s.id));
@@ -367,6 +371,9 @@ function TimePick({value,onChange,placeholder}){
       <option value="" disabled>мм</option>
       {Array.from({length:60},(_,i)=>String(i).padStart(2,'0')).map(v=><option key={v} value={v}>{v}</option>)}
     </select>
+    {value&&<button onClick={()=>onChange('')} aria-label="Сбросить время" style={{marginLeft:6,width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:C.muted,fontFamily:'inherit',padding:0,WebkitTapHighlightColor:'transparent'}}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>}
   </div>;
 }
 
@@ -1425,9 +1432,12 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
 
     (async () => {
       try {
+        // Exclude the user's own items — notifications should only show activity
+        // from the other party (likes, news, and incoming messages).
         const { data } = await supabase.from('doc_comments')
           .select('*')
           .eq(filterCol, userId)
+          .neq('sender_id', userId)
           .order('created_at', { ascending: false })
           .limit(100);
         if (mounted && data) setItems(data);
@@ -1435,12 +1445,14 @@ function NotificationsPanel({ userId, userRole, onClose, onNavigate }) {
       if (mounted) setLoading(false);
     })();
 
-    // Realtime: listen for new inserts where we are the recipient
+    // Realtime: listen for new inserts where we are the recipient.
+    // Skip inserts we authored ourselves.
     const channel = supabase.channel('notif_' + userId + '_' + Date.now())
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'doc_comments', filter: `${filterCol}=eq.${userId}` },
         (payload) => {
           if (!mounted) return;
+          if (payload.new?.sender_id === userId) return;
           setItems(prev => [payload.new, ...prev].slice(0, 100));
         })
       .on('postgres_changes',
