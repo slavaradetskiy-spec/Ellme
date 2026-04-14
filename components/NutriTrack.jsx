@@ -704,9 +704,14 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   const d=data||{},upd=(k,v)=>setData({...d,[k]:v});
   // Water log: stored in localStorage by date, array of {ml, time}
   const lsKey = 'wl_' + (dateKey || '');
-  const [waterLog, setWaterLog] = useState(() => {
-    try { const s = typeof window !== 'undefined' && localStorage.getItem(lsKey); return s ? JSON.parse(s) : []; } catch(e) { return []; }
-  });
+  const [waterLog, setWaterLog] = useState([]);
+  // Reload log from localStorage when date changes
+  useEffect(() => {
+    try {
+      const s = typeof window !== 'undefined' && localStorage.getItem(lsKey);
+      setWaterLog(s ? JSON.parse(s) : []);
+    } catch(e) { setWaterLog([]); }
+  }, [lsKey]);
   const saveWaterLog = (log) => { setWaterLog(log); try { localStorage.setItem(lsKey, JSON.stringify(log)); } catch(e) {} };
   const waterMl = waterLog.length > 0 ? waterLog.reduce((s, e) => s + (e.ml || 0), 0) : (d.water || 0);
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
@@ -742,8 +747,8 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
       const[bh,bm]=parts(s.bed);const[wh,wm]=parts(s.wake);
       if(isNaN(bh)||isNaN(wh))return;
       let hrs=wh-bh+(wm-bm)/60;if(hrs<=0)hrs+=24;
-      if(hrs>=8&&hrs<=12)onCelebrate('sleep');
-    },5000);
+      // sleep celebration disabled
+    },2000);
   };
   useEffect(()=>()=>{if(sleepTimerRef.current)clearTimeout(sleepTimerRef.current)},[]);
   return <>
@@ -2437,31 +2442,15 @@ function buildAnalytics(days, meals, waterNorm) {
 }
 
 // ── Chart.js canvas wrapper ──
-// Deep clone that preserves functions (JSON.parse/stringify kills them)
-function cloneConfig(obj) {
-  if (obj == null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(cloneConfig);
-  const out = {};
-  for (const k in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, k)) {
-      out[k] = typeof obj[k] === 'function' ? obj[k] : cloneConfig(obj[k]);
-    }
-  }
-  return out;
-}
-
 function ChartCanvas({ config, width, height, style }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
-  const configRef = useRef(config);
-  configRef.current = config;
-  const depsKey = JSON.stringify(config, (k, v) => typeof v === 'function' ? '<<fn>>' : v);
   useEffect(() => {
     if (!canvasRef.current) return;
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    try { chartRef.current = new Chart(canvasRef.current, cloneConfig(configRef.current)); } catch(e) { console.error('ChartCanvas error',e); }
+    try { chartRef.current = new Chart(canvasRef.current, JSON.parse(JSON.stringify(config))); } catch(e) { console.error('ChartCanvas error',e); }
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
-  }, [depsKey]);
+  }, [JSON.stringify(config)]);
   return <canvas ref={canvasRef} width={width} height={height} style={{display:'block',...(style||{})}}/>;
 }
 
@@ -2588,18 +2577,23 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
       }},
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 9 }, color: C.muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
-        y: isStool ? {
-          min: -0.1, max: 1.1,
-          grid: { color: C.surfaceAlt, drawBorder: false },
-          ticks: { font: { size: 10 }, color: C.muted, stepSize: 1, autoSkip: false, maxTicksLimit: 2, callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '' },
-        } : {
-          beginAtZero: !isBedtime,
-          grid: { color: C.surfaceAlt, drawBorder: false },
-          ticks: {
-            font: { size: 10 }, color: C.muted, maxTicksLimit: 5,
-            ...(isBedtime ? { callback: v => fmtTime(v) } : {}),
-          },
-        }
+        y: (() => {
+          const isScale10 = metricKey === 'stress' || metricKey === 'energy' || metricKey === 'sleepQuality';
+          const isMood = metricKey === 'mood';
+          const base = {
+            beginAtZero: !isBedtime && !isStool,
+            grid: { color: C.surfaceAlt, drawBorder: false },
+            ticks: {
+              font: { size: 10 }, color: C.muted, maxTicksLimit: 5,
+              ...(isBedtime ? { callback: v => fmtTime(v) } : {}),
+              ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '' } : {}),
+            },
+          };
+          if (isStool) return { ...base, min: -0.15, max: 1.15, afterBuildTicks: axis => { axis.ticks = [{value:0},{value:1}]; } };
+          if (isScale10) return { ...base, min: 0, max: 10, ticks: { ...base.ticks, stepSize: 2 } };
+          if (isMood) return { ...base, min: 1, max: 5, ticks: { ...base.ticks, stepSize: 1 } };
+          return base;
+        })()
       },
       layout: { padding: { top: 20, bottom: 0, left: 0, right: 0 } },
     },
@@ -2894,26 +2888,16 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
             {insightText && <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',marginBottom:12,boxShadow:C.shadowCard}}>
               <div style={{fontSize:13,color:C.soft,lineHeight:1.5}}>{insightText}</div>
             </div>}
-            {/* Big chart — for bedtime show sleep duration chart instead */}
+            {/* Big chart */}
             <div style={{background:C.surface,borderRadius:20,padding:'16px 12px',marginBottom:20,boxShadow:C.shadowCard}}>
-              {m.key === 'bedtime' ? <>
-                <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:8}}>Часы сна по дням</div>
-                <DetailLineChart
-                  data={series?.sleepDuration||[]}
-                  color={mc.color}
-                  norm={null}
-                  metricKey="sleepDuration"
-                  range={range}
-                  height={280}
-                />
-              </> : <DetailLineChart
+              <DetailLineChart
                 data={series?.[m.key]||[]}
                 color={mc.color}
                 norm={m.norm}
                 metricKey={m.key}
                 range={range}
                 height={280}
-              />}
+              />
             </div>
             {/* Лёг/Встал table — after chart in sleepDuration modal */}
             {m.key === 'sleepDuration' && series?.bedtime && (() => {
@@ -4424,7 +4408,7 @@ export default function App(){
         </div>
       </button>
 
-      {list.map((c,i)=><div key={c.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,position:'relative',animation:`enter .35s ease ${i*0.04}s both`}}>
+      {list.map((c,i)=><div key={c.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,position:'relative',animation:`enter .35s ease ${i*0.04}s both`,zIndex:clientMenu===c.id?10000:1}}>
         <button onClick={()=>{setSelClient(c);setScreen('clientView');setDate(new Date())}} className="card-hover" style={{flex:1,display:'flex',alignItems:'center',gap:12,padding:'16px',borderRadius:18,border:'none',background:C.surface,cursor:'pointer',textAlign:'left',fontFamily:'inherit',boxShadow:C.shadowCard,transition:'all .2s',transform:'perspective(400px) rotateX(0)'}}
           onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-2px)';e.currentTarget.style.boxShadow=C.shadowHover}}
           onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow=C.shadowCard}}>
