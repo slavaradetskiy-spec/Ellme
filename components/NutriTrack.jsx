@@ -961,22 +961,24 @@ function Cal({sel,onSelect}){
   const today=new Date();
   const goWeek=dir=>{const d=new Date(sel);d.setDate(d.getDate()+dir*7);onSelect(d)};
   return <div style={{marginBottom:12}}>
-    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
-      <button onClick={()=>goWeek(-1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex',transform:'rotate(180deg)'}}>{I.chev}</button>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',marginBottom:6}}>
       <span style={{fontSize:16,fontWeight:600,fontFamily:'var(--fd)',color:C.text}}>{MO[sel.getMonth()]} {sel.getFullYear()}</span>
-      <button onClick={()=>goWeek(1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex'}}>{I.chev}</button>
     </div>
-    <div style={{display:'flex',justifyContent:'center',gap:4}}>
-      {days.map((d,i)=>{const s2=sameD(d,sel),td=sameD(d,today);
-        return <button key={i} onClick={()=>onSelect(new Date(d))} style={{
-          display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 9px',borderRadius:14,border:'none',minWidth:44,cursor:'pointer',fontFamily:'inherit',
-          background:s2?C.accent:'transparent',color:s2?'#fff':C.soft,transition:'all .2s',boxShadow:s2?'0 2px 10px rgba(45,95,63,.25)':'none',
-        }}>
-          <span style={{fontSize:10,fontWeight:500,opacity:.6,letterSpacing:'.04em'}}>{DS[d.getDay()]}</span>
-          <span style={{fontSize:18,fontWeight:700,marginTop:2,fontFamily:'var(--fd)'}}>{d.getDate()}</span>
-          {td&&!s2&&<div style={{width:4,height:4,borderRadius:'50%',background:C.accent,marginTop:2}}/>}
-        </button>;
-      })}
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
+      <button onClick={()=>goWeek(-1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex',transform:'rotate(180deg)',flexShrink:0}}>{I.chev}</button>
+      <div style={{display:'flex',justifyContent:'center',gap:4,flex:1}}>
+        {days.map((d,i)=>{const s2=sameD(d,sel),td=sameD(d,today);
+          return <button key={i} onClick={()=>onSelect(new Date(d))} style={{
+            display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 9px',borderRadius:14,border:'none',minWidth:44,cursor:'pointer',fontFamily:'inherit',
+            background:s2?C.accent:'transparent',color:s2?'#fff':C.soft,transition:'all .2s',boxShadow:s2?'0 2px 10px rgba(45,95,63,.25)':'none',
+          }}>
+            <span style={{fontSize:10,fontWeight:500,opacity:.6,letterSpacing:'.04em'}}>{DS[d.getDay()]}</span>
+            <span style={{fontSize:18,fontWeight:700,marginTop:2,fontFamily:'var(--fd)'}}>{d.getDate()}</span>
+            {td&&!s2&&<div style={{width:4,height:4,borderRadius:'50%',background:C.accent,marginTop:2}}/>}
+          </button>;
+        })}
+      </div>
+      <button onClick={()=>goWeek(1)} style={{background:'none',border:'none',cursor:'pointer',color:C.muted,padding:8,display:'flex',flexShrink:0}}>{I.chev}</button>
     </div>
   </div>;
 }
@@ -2460,7 +2462,7 @@ function ChartCanvas({ config, width, height, style }) {
   useEffect(() => {
     if (!canvasRef.current) return;
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    try { chartRef.current = new Chart(canvasRef.current, JSON.parse(JSON.stringify(config))); } catch(e) { console.error('ChartCanvas error',e); }
+    try { chartRef.current = new Chart(canvasRef.current, config); } catch(e) { console.error('ChartCanvas error',e); }
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
   }, [JSON.stringify(config)]);
   return <canvas ref={canvasRef} width={width} height={height} style={{display:'block',...(style||{})}}/>;
@@ -2604,10 +2606,10 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
           if (isStool) return { ...base, min: -0.15, max: 1.15, afterBuildTicks: axis => { axis.ticks = [{value:0},{value:1}]; } };
           if (isScale10) return { ...base, min: 0, max: 10, ticks: { ...base.ticks, stepSize: 2 } };
           if (isMood) return { ...base, min: 1, max: 5, ticks: { ...base.ticks, stepSize: 1 } };
-          return base;
+          return { ...base, grace: '15%' };
         })()
       },
-      layout: { padding: { top: 20, bottom: 0, left: 0, right: 0 } },
+      layout: { padding: { top: 36, bottom: 0, left: 0, right: 0 } },
     },
     plugins,
   };
