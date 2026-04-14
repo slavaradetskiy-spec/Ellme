@@ -2606,6 +2606,7 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
           if (isStool) return { ...base, min: -0.15, max: 1.15, afterBuildTicks: axis => { axis.ticks = [{value:0},{value:1}]; } };
           if (isScale10) return { ...base, min: 0, max: 10, ticks: { ...base.ticks, stepSize: 2 } };
           if (isMood) return { ...base, min: 1, max: 5, ticks: { ...base.ticks, stepSize: 1 } };
+          if (isBedtime) return { ...base, reverse: true, grace: '15%' };
           return { ...base, grace: '15%' };
         })()
       },
