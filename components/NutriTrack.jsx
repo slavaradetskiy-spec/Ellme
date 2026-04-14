@@ -1903,6 +1903,52 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     };
   }, []);
 
+  // Pull-to-refresh on the messages scroll area (swipe down at top to reload).
+  const [pullDist, setPullDist] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let startY = null;
+    let dist = 0;
+    const threshold = 70;
+    const onTouchStart = (e) => {
+      if (el.scrollTop > 0 || refreshing) return;
+      startY = e.touches[0].clientY;
+      dist = 0;
+    };
+    const onTouchMove = (e) => {
+      if (startY === null) return;
+      const dy = e.touches[0].clientY - startY;
+      if (dy > 0 && el.scrollTop <= 0) {
+        dist = Math.min(dy * 0.5, 120);
+        setPullDist(dist);
+      } else {
+        dist = 0;
+        setPullDist(0);
+      }
+    };
+    const onTouchEnd = () => {
+      if (dist >= threshold) {
+        setRefreshing(true);
+        setPullDist(0);
+        setTimeout(() => { try { window.location.reload(); } catch (e) {} }, 200);
+      } else {
+        setPullDist(0);
+      }
+      startY = null;
+      dist = 0;
+    };
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [refreshing]);
+
   // Resolve docId if not provided (client opens chat, needs to find
   // their doc). We pick the MOST RECENTLY created doc_clients link so
   // that if the client has history with both an old test account and a
@@ -2194,6 +2240,15 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>
     </div>
 
+    {/* Pull-to-refresh indicator (chat) */}
+    {(pullDist>0||refreshing)&&<div style={{position:'absolute',top:'calc(60px + env(safe-area-inset-top))',left:0,right:0,display:'flex',alignItems:'center',justifyContent:'center',height:Math.max(pullDist,refreshing?60:0),pointerEvents:'none',zIndex:5,transition:refreshing?'none':'height .1s'}}>
+      <div style={{width:36,height:36,borderRadius:'50%',background:C.surface,boxShadow:'0 2px 12px rgba(0,0,0,.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{transform:`rotate(${refreshing?360:Math.min(pullDist*3,360)}deg)`,transition:'transform .15s',animation:refreshing?'spin 1s linear infinite':'none'}}>
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+        </svg>
+      </div>
+    </div>}
     {/* Messages */}
     <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0,overscrollBehavior:'contain'}}>
       {!messagesLoading && messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
@@ -2606,6 +2661,7 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
           if (isStool) return { ...base, min: -0.15, max: 1.15, afterBuildTicks: axis => { axis.ticks = [{value:0},{value:1}]; } };
           if (isScale10) return { ...base, min: 0, max: 10, ticks: { ...base.ticks, stepSize: 2 } };
           if (isMood) return { ...base, min: 1, max: 5, ticks: { ...base.ticks, stepSize: 1 } };
+          if (isBedtime) return { ...base, reverse: true, grace: '15%' };
           return { ...base, grace: '15%' };
         })()
       },
@@ -2913,21 +2969,6 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
                 height={280}
               />
             </div>
-            {/* Лёг/Встал table — after chart in sleepDuration modal */}
-            {m.key === 'sleepDuration' && series?.bedtime && (() => {
-              const days = series.bedtime.filter(d => d.bedRaw || d.wakeRaw);
-              return days.length > 0 ? <div style={{background:C.surface,borderRadius:16,padding:'14px 16px',boxShadow:C.shadowCard}}>
-                <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:10}}>Лёг / Встал</div>
-                {days.map((d, i) => {
-                  const dateLabel = (() => { const p = (d.date||'').split('-'); return p.length===3 ? p[2]+'.'+p[1] : d.date; })();
-                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom: i < days.length-1 ? `1px solid ${C.surfaceAlt}` : 'none'}}>
-                    <span style={{fontSize:12,color:C.muted,minWidth:45}}>{dateLabel}</span>
-                    <span style={{fontSize:13,color:C.text}}>🛏 {d.bedRaw || '—'}</span>
-                    <span style={{fontSize:13,color:C.text}}>☀️ {d.wakeRaw || '—'}</span>
-                  </div>;
-                })}
-              </div> : null;
-            })()}
           </div>
         </div>;
       })()}
@@ -3340,7 +3381,7 @@ export default function App(){
   // IMPORTANT: showChatList must be declared ABOVE this useEffect — its
   // deps array is evaluated immediately and hits TDZ otherwise.
   const modalOpenRef=useRef(false);
-  useEffect(()=>{modalOpenRef.current=!!(chatModal||showChatList||screen==='analytics'||screen==='clientAnalytics')},[chatModal,showChatList,screen]);
+  useEffect(()=>{modalOpenRef.current=!!(chatModal||showChatList)},[chatModal,showChatList,screen]);
   // When the user clicks a day-tag in the chat, we close the modal,
   // navigate to that day, and remember the chat context here so a
   // floating "back to chat" button can reopen it.
