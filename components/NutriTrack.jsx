@@ -2816,11 +2816,11 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
           <div>
             <div style={{fontSize:12,color:C.soft,marginBottom:4}}>Начало</div>
-            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{width:'100%',padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box',maxWidth:'100%'}}/>
+            <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{display:'block',width:'100%',minWidth:0,padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box',maxWidth:'100%',WebkitAppearance:'none',appearance:'none',outline:'none'}}/>
           </div>
           <div>
             <div style={{fontSize:12,color:C.soft,marginBottom:4}}>Конец</div>
-            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{width:'100%',padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box',maxWidth:'100%'}}/>
+            <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{display:'block',width:'100%',minWidth:0,padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,fontSize:14,fontFamily:'inherit',background:C.surface,color:C.text,boxSizing:'border-box',maxWidth:'100%',WebkitAppearance:'none',appearance:'none',outline:'none'}}/>
           </div>
         </div>
         <div style={{display:'flex',gap:8,marginTop:20}}>
