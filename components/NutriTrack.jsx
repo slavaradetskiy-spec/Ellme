@@ -2787,16 +2787,18 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   const dayHeight = (date) => {
     const day = daysByDate[date];
     const meals = (mealsByDayId[day?.id] || []).filter(m => m.description || m.photo_url).length;
-    if (meals === 0) return 70;
+    if (meals === 0) return 50;
     const rows = Math.ceil(meals / 3);
-    // 34 day header, 310 per-row tile (photo 219 + ~75 text + 16
-    // margin), 10 row gap.
-    return 34 + rows * 310 + (rows - 1) * 10;
+    // 24 day header (14px font, 3 pad-b, 1 border, 6 margin-b),
+    // 230 per-row tile (8 pad + 180 photo + ~38 text + 4 pad),
+    // 10 inter-row gap, 14 day margin-bottom.
+    return 24 + rows * 230 + (rows - 1) * 10 + 14;
   };
   // Content box = 1123 − 48 (top) − 124 (bottom, incl. footer
   // reserve) = 951. Conservative 917 subtracts the first-diary-page
-  // heading (18 + 16 margin) so the same budget works for every
-  // diary page regardless of whether it carries the heading.
+  // heading (14 + 10 margin ≈ 24 + buffer) so the same budget works
+  // for every diary page regardless of whether it carries the
+  // heading.
   const MAX_BODY = 917;
   const diaryChunks = [];
   {
@@ -3008,55 +3010,52 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       const dayMeals = mealsByDayId[day?.id] || [];
       // Sort by meal_type order
       dayMeals.sort((a,b) => mealOrder.indexOf(a.meal_type) - mealOrder.indexOf(b.meal_type));
-      // Fixed 3-column square grid for every day: all photos same
-      // size regardless of how many there are. Photos are pre-baked
-      // collage data URIs (see photoCache) — square, no CORS, no
-      // squashing. 3 per row keeps the page layout consistent and
-      // the photo size predictable.
+      // Compact 3-col grid tuned to fit 9 meals (3 days × 3 tiles)
+      // on a single page with the footer. Each tile ≈ 230px tall:
+      //   8 pad + 180 square photo + text (meal type, 1-line desc,
+      //   hunger+feeling on one line) + 4 pad.
+      // Day header ≈ 24px. 3 days + margins + first-page heading
+      // all fit the 917px body budget.
       const visibleMeals = dayMeals.filter(m => m.description || m.photo_url);
-      const tilePx = 219; // (682 − 24 gap) / 3
-      const tileWidthCss = 'calc(33.333% - 8px)';
+      const tileWidthCss = 'calc(33.333% - 7px)';
       const mealHtml = visibleMeals.map(m => {
         const urls = getMealPhotoUrls(m);
         const cachedSrc = urls.length ? photoCache[urls.join('|')] : null;
         const imgBox = cachedSrc
-          ? `<img src="${cachedSrc}" style="display:block;width:${tilePx}px;height:${tilePx}px;border-radius:10px 10px 0 0"/>`
-          : `<div style="display:block;width:${tilePx}px;height:${tilePx}px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
-        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 110);
-        const hungerLine = m.hunger ? `<div style="font-size:10px;color:#6b7280;margin-top:3px">Голод до: ${m.hunger}</div>` : '';
-        const feelingLine = m.feeling ? `<div style="font-size:10px;color:#6b7280;margin-top:2px">После: ${m.feeling}</div>` : '';
+          ? `<img src="${cachedSrc}" style="display:block;width:180px;height:180px;border-radius:8px"/>`
+          : `<div style="display:block;width:180px;height:180px;background:#E5E7EB;border-radius:8px"></div>`;
+        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 90);
+        const metaParts = [];
+        if (m.hunger) metaParts.push('Голод: ' + m.hunger);
+        if (m.feeling) metaParts.push('После: ' + m.feeling);
+        const metaLine = metaParts.length ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaParts.join(' · ')}</div>` : '';
         return `
-          <div style="width:${tileWidthCss};box-sizing:border-box;background:#F9F7F2;border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="width:${tileWidthCss};box-sizing:border-box;background:#F9F7F2;border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;align-items:center">
             ${imgBox}
-            <div style="padding:6px 9px 9px">
-              <div style="font-size:10px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
-              ${descShort ? `<div style="font-size:11px;color:#1a1a1a;margin-top:3px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${descShort}</div>` : ''}
-              ${hungerLine}
-              ${feelingLine}
+            <div style="width:100%;margin-top:6px">
+              <div style="font-size:10px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
+              ${descShort ? `<div style="font-size:11px;color:#1a1a1a;margin-top:2px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis">${descShort}</div>` : ''}
+              ${metaLine}
             </div>
           </div>`;
       }).join('');
       const waterLine = day?.water_ml ? `Вода: ${day.water_ml} мл` : '';
-      // Stool — show the exact stored value (Норма / Диарея / Запор
-      // / Нет стула), not the collapsed Норма / Не норма pair.
       const stoolStr = day?.stool_state ? 'Стул: ' + day.stool_state : '';
       const extras = [waterLine, stoolStr].filter(Boolean).join(' · ');
       return `
-        <div style="margin-bottom:16px">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #E5E7EB">
-            <div style="font-size:16px;font-weight:700;color:#2D5F3F">${fmtDate(date)}</div>
-            <div style="font-size:11px;color:#6b7280">${extras}</div>
+        <div style="margin-bottom:14px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #E5E7EB">
+            <div style="font-size:14px;font-weight:700;color:#2D5F3F">${fmtDate(date)}</div>
+            <div style="font-size:10px;color:#6b7280">${extras}</div>
           </div>
-          ${mealHtml ? `<div style="display:flex;flex-wrap:wrap;gap:12px">${mealHtml}</div>` : '<div style="font-size:12px;color:#9ca3af;padding:6px 0">Нет записей</div>'}
+          ${mealHtml ? `<div style="display:flex;flex-wrap:wrap;gap:10px">${mealHtml}</div>` : '<div style="font-size:12px;color:#9ca3af;padding:4px 0">Нет записей</div>'}
         </div>`;
     }).join('');
     // 'Дневник питания · <range>' heading appears only on the first
-    // diary page. Later pages jump straight into the day blocks —
-    // cleaner and gives back ~35px of vertical space.
+    // diary page. Compact (14px font + 10 margin) so it barely cuts
+    // into the meal budget.
     const header = pageIdx === 0
-      ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-          <div style="font-size:18px;font-weight:700;color:#2D5F3F">Дневник питания · ${periodFromTo}</div>
-        </div>`
+      ? `<div style="font-size:14px;font-weight:700;color:#2D5F3F;margin-bottom:10px">Дневник питания · ${periodFromTo}</div>`
       : '';
     return `
       <div data-page="d${pageIdx}" style="${pageStyle}">
