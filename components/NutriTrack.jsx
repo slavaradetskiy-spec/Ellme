@@ -2777,13 +2777,11 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   const fmt1 = v => v==null||isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
   const fmtTimeM = m => { if (m==null) return '—'; let t=m; if (t>=1440)t-=1440; const h=Math.floor(t/60),mm=Math.round(t%60); return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
 
-  // Build hidden host
-  const host = document.createElement('div');
-  host.setAttribute('data-pdf-host','1');
-  host.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased;';
-  // Fixed A4 proportions (794×1123 @ 96dpi) with overflow:hidden so content
-  // never leaks into the next page — which used to squash the final image.
-  const pageStyle = 'width:794px;height:1123px;padding:48px 56px;box-sizing:border-box;background:#ffffff;overflow:hidden;position:relative;';
+  // Page-level style. Note: no outer pageStyle wrapper — we render one
+  // page at a time into its own host so html2canvas can't bleed into the
+  // next sibling (earlier bug: multi-page captures mixed days together).
+  const pageInnerStyle = 'padding:48px 56px;box-sizing:border-box;background:#ffffff;';
+  const pageStyle = 'width:794px;height:1123px;' + pageInnerStyle + 'overflow:hidden;position:relative;';
 
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
@@ -2925,28 +2923,38 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       <div style="display:flex;flex-wrap:wrap;gap:12px">${tiles}</div>
     </div>`;
 
-  host.innerHTML = pageProfile + diaryPages.join('') + pageAnalytics;
-  document.body.appendChild(host);
-
-  // Wait for all images to load (or fail) so html2canvas captures them
-  const imgs = Array.from(host.querySelectorAll('img'));
-  await Promise.all(imgs.map(img => new Promise(resolve => {
-    if (img.complete && img.naturalWidth > 0) { resolve(); return; }
-    img.onload = () => resolve();
-    img.onerror = () => { img.style.visibility='hidden'; resolve(); };
-    // safety timeout
-    setTimeout(() => resolve(), 6000);
-  })));
-
+  // Render each PDF page in its own isolated host, so html2canvas can
+  // never capture sibling content. Capture → toDataURL → addImage → tear
+  // down. We also pass explicit width/height/windowWidth to html2canvas
+  // so it doesn't accidentally expand.
+  const allPagesHtml = [pageProfile, ...diaryPages, pageAnalytics];
   const pdf = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
-  const pages = host.querySelectorAll('[data-page]');
-  for (let i = 0; i < pages.length; i++) {
-    const canvas = await html2canvas(pages[i], { useCORS: true, allowTaint: false, scale: 2, backgroundColor: '#ffffff', logging: false });
-    const img = canvas.toDataURL('image/jpeg', 0.85);
-    if (i > 0) pdf.addPage();
-    pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+  for (let i = 0; i < allPagesHtml.length; i++) {
+    const host = document.createElement('div');
+    host.setAttribute('data-pdf-host','1');
+    host.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;height:1123px;overflow:hidden;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased;';
+    host.innerHTML = allPagesHtml[i];
+    document.body.appendChild(host);
+    // Wait for images inside this page to load (or fail)
+    const imgs = Array.from(host.querySelectorAll('img'));
+    await Promise.all(imgs.map(img => new Promise(resolve => {
+      if (img.complete && img.naturalWidth > 0) { resolve(); return; }
+      img.onload = () => resolve();
+      img.onerror = () => { img.style.visibility='hidden'; resolve(); };
+      setTimeout(() => resolve(), 5000);
+    })));
+    try {
+      const canvas = await html2canvas(host, {
+        useCORS: true, allowTaint: false, scale: 2, backgroundColor: '#ffffff',
+        logging: false, width: 794, height: 1123, windowWidth: 794, windowHeight: 1123,
+      });
+      const img = canvas.toDataURL('image/jpeg', 0.88);
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    } finally {
+      try { document.body.removeChild(host); } catch(e) {}
+    }
   }
-  try { document.body.removeChild(host); } catch(e) {}
   const ds = new Date().toISOString().slice(0,10);
   pdf.save(`ELLME_${(profile?.name||'report').replace(/\s+/g,'_')}_${ds}.pdf`);
 }
