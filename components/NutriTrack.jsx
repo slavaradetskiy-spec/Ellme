@@ -3056,14 +3056,12 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       <div data-page="d${pageIdx}" style="${pageStyle}">
         ${header}
         ${dayBlocks || '<div style="color:#6b7280;font-size:13px">Нет данных за период</div>'}
-        ${pageFooter}
       </div>`;
   });
   if (diaryPages.length === 0) {
     diaryPages.push(`<div data-page="d0" style="${pageStyle}">
       <div style="font-size:18px;font-weight:700;color:#2D5F3F;margin-bottom:12px">Дневник питания · ${periodFromTo}</div>
       <div style="color:#6b7280;font-size:13px">Нет данных за период</div>
-      ${pageFooter}
     </div>`);
   }
 
@@ -3188,7 +3186,6 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         <div style="font-size:11px;color:#6b7280">${periodLabel}</div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:12px">${tiles}</div>
-      ${pageFooter}
     </div>`;
 
   // Render each PDF page in its own isolated host, so html2canvas can
