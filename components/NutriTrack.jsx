@@ -2838,6 +2838,12 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       const dayMeals = mealsByDayId[day?.id] || [];
       // Sort by meal_type order
       dayMeals.sort((a,b) => mealOrder.indexOf(a.meal_type) - mealOrder.indexOf(b.meal_type));
+      // Each meal = a tile with photo on TOP (landscape, full tile width)
+      // and meta + description below. Tiles are laid out in a 2-col grid
+      // per day → 4 meals fit in 2 rows, 3 meals fit in 2 rows with one
+      // empty slot, 2 meals fit in 1 row. Much denser than the old
+      // horizontal [photo | text] card which wasted space when
+      // descriptions were short.
       const mealHtml = dayMeals.filter(m => m.description || m.photo_url).map(m => {
         let photos = [];
         if (m.photo_url) {
@@ -2846,19 +2852,20 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         }
         const firstPhoto = photos[0];
         const imgBox = firstPhoto
-          ? `<img src="${firstPhoto}" crossorigin="anonymous" style="display:block;width:160px;height:160px;min-width:160px;max-width:160px;min-height:160px;max-height:160px;border-radius:12px;object-fit:cover;flex:0 0 160px"/>`
-          : `<div style="display:block;width:160px;height:160px;min-width:160px;max-width:160px;min-height:160px;max-height:160px;border-radius:12px;background:#E5E7EB;flex:0 0 160px"></div>`;
-        const descShort = ((m.description || '—').replace(/</g,'&lt;')).slice(0, 220);
-        const hungerLine = m.hunger ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">Голод до: ${m.hunger}</div>` : '';
-        const feelingLine = m.feeling ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">Самочувствие: ${m.feeling}</div>` : '';
+          ? `<img src="${firstPhoto}" crossorigin="anonymous" style="display:block;width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0"/>`
+          : `<div style="display:block;width:100%;height:160px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
+        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 140);
+        const metaParts = [];
+        if (m.hunger) metaParts.push('Голод: ' + m.hunger);
+        if (m.feeling) metaParts.push(m.feeling);
+        const metaLine = metaParts.length ? `<div style="font-size:11px;color:#6b7280;margin-top:3px">${metaParts.join(' · ')}</div>` : '';
         return `
-          <div style="display:flex;gap:14px;padding:12px 14px;background:#F9F7F2;border-radius:12px;margin-bottom:10px;width:100%;box-sizing:border-box;overflow:hidden">
+          <div style="width:calc(50% - 6px);box-sizing:border-box;background:#F9F7F2;border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
             ${imgBox}
-            <div style="flex:1 1 auto;min-width:0;max-width:calc(100% - 178px);overflow:hidden;display:flex;flex-direction:column;justify-content:center">
-              <div style="font-size:12px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
-              <div style="font-size:13px;color:#1a1a1a;margin-top:4px;line-height:1.45;word-break:break-word;overflow-wrap:anywhere">${descShort}</div>
-              ${hungerLine}
-              ${feelingLine}
+            <div style="padding:8px 10px 10px">
+              <div style="font-size:11px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
+              ${descShort ? `<div style="font-size:12px;color:#1a1a1a;margin-top:3px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${descShort}</div>` : ''}
+              ${metaLine}
             </div>
           </div>`;
       }).join('');
@@ -2866,12 +2873,12 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       const sleepLine = day?.sleep_bed || day?.sleep_wake ? `Сон: ${day?.sleep_bed || '—'} → ${day?.sleep_wake || '—'}` : '';
       const extras = [waterLine, sleepLine].filter(Boolean).join(' · ');
       return `
-        <div style="margin-bottom:20px">
+        <div style="margin-bottom:16px">
           <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #E5E7EB">
             <div style="font-size:16px;font-weight:700;color:#2D5F3F">${fmtDate(date)}</div>
             <div style="font-size:11px;color:#6b7280">${extras}</div>
           </div>
-          ${mealHtml || '<div style="font-size:12px;color:#9ca3af;padding:6px 0">Нет записей</div>'}
+          ${mealHtml ? `<div style="display:flex;flex-wrap:wrap;gap:12px">${mealHtml}</div>` : '<div style="font-size:12px;color:#9ca3af;padding:6px 0">Нет записей</div>'}
         </div>`;
     }).join('');
     return `
