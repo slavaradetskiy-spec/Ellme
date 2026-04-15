@@ -2789,12 +2789,15 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     const meals = (mealsByDayId[day?.id] || []).filter(m => m.description || m.photo_url).length;
     if (meals === 0) return 70;
     const rows = Math.ceil(meals / 3);
-    // 44 day header, 260 per-row tile, 10 row gap
-    return 44 + rows * 260 + (rows - 1) * 10;
+    // 34 day header, 310 per-row tile (photo 219 + ~75 text + 16
+    // margin), 10 row gap.
+    return 34 + rows * 310 + (rows - 1) * 10;
   };
-  // Page body = 1123 − 48 (top pad) − 90 (footer pad) = 985.
-  // Conservative 960 to leave a tiny buffer for font metric variance.
-  const MAX_BODY = 960;
+  // Content box = 1123 − 48 (top) − 124 (bottom, incl. footer
+  // reserve) = 951. Conservative 917 subtracts the first-diary-page
+  // heading (18 + 16 margin) so the same budget works for every
+  // diary page regardless of whether it carries the heading.
+  const MAX_BODY = 917;
   const diaryChunks = [];
   {
     let cur = [], curH = 0;
@@ -2817,13 +2820,16 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   const fmt1 = v => v==null||isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
   const fmtTimeM = m => { if (m==null) return '—'; let t=m; if (t>=1440)t-=1440; const h=Math.floor(t/60),mm=Math.round(t%60); return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
 
-  // Page-level style. Note: no outer pageStyle wrapper — we render one
-  // page at a time into its own host so html2canvas can't bleed into the
-  // next sibling (earlier bug: multi-page captures mixed days together).
-  // Bottom padding 90 reserves room for the absolute-positioned brand
-  // footer (~54×54 logo + 22px gap = 76, plus breathing) so content
-  // never overlaps it.
-  const pageInnerStyle = 'padding:48px 56px 90px 56px;box-sizing:border-box;background:#ffffff;';
+  // Page-level style. Fixed content box on every page:
+  //   top pad    48
+  //   side pad   56
+  //   bottom pad 124  ← 22 footer offset + 54 logo height + 48 gap
+  //                     above the footer (equal to the top pad, per
+  //                     user request — symmetric breathing room).
+  // Usable content area = 794 × 951 px at 96dpi. Every section
+  // (profile, diary, analytics) sizes itself to stay within this
+  // budget so the footer never touches content.
+  const pageInnerStyle = 'padding:48px 56px 124px 56px;box-sizing:border-box;background:#ffffff;';
   const pageStyle = 'width:794px;height:1123px;' + pageInnerStyle + 'overflow:hidden;position:relative;';
 
   // Preload every meal photo (or photo group) to a square same-origin
@@ -3056,12 +3062,14 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       <div data-page="d${pageIdx}" style="${pageStyle}">
         ${header}
         ${dayBlocks || '<div style="color:#6b7280;font-size:13px">Нет данных за период</div>'}
+        ${pageFooter}
       </div>`;
   });
   if (diaryPages.length === 0) {
     diaryPages.push(`<div data-page="d0" style="${pageStyle}">
       <div style="font-size:18px;font-weight:700;color:#2D5F3F;margin-bottom:12px">Дневник питания · ${periodFromTo}</div>
       <div style="color:#6b7280;font-size:13px">Нет данных за период</div>
+      ${pageFooter}
     </div>`);
   }
 
@@ -3158,34 +3166,39 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">${gridParts}${lineParts}${pointParts}${xParts}</svg>`;
   };
 
-  // 9 tiles in 2 cols = 5 rows. Budget per tile:
-  //   page body = 1123 − 48 (top pad) − 90 (footer pad) − 50 (page
-  //   header) − 48 (4 × 12 row gaps) = 887 → ÷ 5 rows ≈ 177px/tile.
-  // Tile interior: 12 pad + 14 label + 30 value + 95 chart + 8 pad
-  // = 159 — fits with a little buffer.
+  // 9 tiles in 2 cols = 5 rows, fit the 951px content box:
+  //   page header   30 + 14 margin = 44
+  //   available     951 − 44 = 907
+  //   row gaps      4 × 10 = 40
+  //   per-tile max  (907 − 40) / 5 ≈ 173
+  // Interior: 8 pad + 12 label + 26 value + 3 + 85 chart + 8 pad
+  // = 142. Comfortable fit, ~30px buffer per tile for font-metric
+  // variance. Relies on flex gap:10 for vertical spacing — no
+  // per-tile margin-bottom so the budget stays predictable.
   const tiles = metricDefs.map(m => {
     const s = summary?.[m.key];
     const val = m.key === 'stool' ? s?.pct : s?.avg;
     const statusLabel = s?.status?.label || '—';
     const statusColor = s?.status?.color || '#9ca3af';
-    const chartSvg = buildChartSvg(m.key, m.color, 322, 95);
+    const chartSvg = buildChartSvg(m.key, m.color, 322, 85);
     return `
-      <div style="background:#F9F7F2;border-radius:14px;padding:10px 12px 8px;width:calc(50% - 6px);box-sizing:border-box;margin-bottom:10px;display:flex;flex-direction:column">
+      <div style="background:#F9F7F2;border-radius:12px;padding:8px 12px;width:calc(50% - 5px);box-sizing:border-box;display:flex;flex-direction:column">
         <div style="display:flex;align-items:baseline;justify-content:space-between">
           <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${m.label}</div>
           <div style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</div>
         </div>
-        <div style="font-size:24px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:2px">${m.fmt(val).n}<span style="font-size:12px;color:#9ca3af;font-weight:400;font-family:-apple-system,sans-serif;margin-left:2px">${m.fmt(val).u}</span></div>
-        <div style="margin-top:4px">${chartSvg}</div>
+        <div style="font-size:22px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:2px">${m.fmt(val).n}<span style="font-size:11px;color:#9ca3af;font-weight:400;font-family:-apple-system,sans-serif;margin-left:2px">${m.fmt(val).u}</span></div>
+        <div style="margin-top:3px">${chartSvg}</div>
       </div>`;
   }).join('');
   const pageAnalytics = `
     <div data-page="a" style="${pageStyle}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div style="font-size:18px;font-weight:700;color:#2D5F3F">Аналитика</div>
         <div style="font-size:11px;color:#6b7280">${periodLabel}</div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:12px">${tiles}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">${tiles}</div>
+      ${pageFooter}
     </div>`;
 
   // Render each PDF page in its own isolated host, so html2canvas can
