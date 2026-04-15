@@ -2846,16 +2846,19 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         }
         const firstPhoto = photos[0];
         const imgBox = firstPhoto
-          ? `<img src="${firstPhoto}" crossorigin="anonymous" style="display:block;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;border-radius:8px;object-fit:cover;flex:0 0 64px"/>`
-          : `<div style="display:block;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;border-radius:8px;background:#E5E7EB;flex:0 0 64px"></div>`;
-        const descShort = ((m.description || '—').replace(/</g,'&lt;')).slice(0, 180);
+          ? `<img src="${firstPhoto}" crossorigin="anonymous" style="display:block;width:160px;height:160px;min-width:160px;max-width:160px;min-height:160px;max-height:160px;border-radius:12px;object-fit:cover;flex:0 0 160px"/>`
+          : `<div style="display:block;width:160px;height:160px;min-width:160px;max-width:160px;min-height:160px;max-height:160px;border-radius:12px;background:#E5E7EB;flex:0 0 160px"></div>`;
+        const descShort = ((m.description || '—').replace(/</g,'&lt;')).slice(0, 220);
+        const hungerLine = m.hunger ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">Голод до: ${m.hunger}</div>` : '';
+        const feelingLine = m.feeling ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">Самочувствие: ${m.feeling}</div>` : '';
         return `
-          <div style="display:flex;gap:10px;padding:10px 12px;background:#F9F7F2;border-radius:10px;margin-bottom:8px;width:100%;box-sizing:border-box;overflow:hidden">
+          <div style="display:flex;gap:14px;padding:12px 14px;background:#F9F7F2;border-radius:12px;margin-bottom:10px;width:100%;box-sizing:border-box;overflow:hidden">
             ${imgBox}
-            <div style="flex:1 1 auto;min-width:0;max-width:calc(100% - 74px);overflow:hidden">
-              <div style="font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.03em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
-              <div style="font-size:12px;color:#1a1a1a;margin-top:3px;line-height:1.4;word-break:break-word;overflow-wrap:anywhere">${descShort}</div>
-              ${m.feeling ? `<div style="font-size:11px;color:#6b7280;margin-top:3px">Самочувствие: ${m.feeling}</div>` : ''}
+            <div style="flex:1 1 auto;min-width:0;max-width:calc(100% - 178px);overflow:hidden;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:12px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
+              <div style="font-size:13px;color:#1a1a1a;margin-top:4px;line-height:1.45;word-break:break-word;overflow-wrap:anywhere">${descShort}</div>
+              ${hungerLine}
+              ${feelingLine}
             </div>
           </div>`;
       }).join('');
@@ -2888,47 +2891,117 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   }
 
   // === ANALYTICS PAGE ===
+  // Match the color palette used by the MC table on the live analytics screen.
   const metricDefs = [
-    { key:'water',         label:'Вода',                fmt: v => v==null ? '—' : Math.round(v) + ' мл' },
-    { key:'stool',         label:'Стул (% нормы)',      fmt: v => v==null ? '—' : Math.round(v) + '%' },
-    { key:'sleepDuration', label:'Длительность сна',    fmt: v => v==null ? '—' : fmt1(v) + ' ч' },
-    { key:'sleepQuality',  label:'Качество сна',        fmt: v => v==null ? '—' : fmt1(v) + '/10' },
-    { key:'bedtime',       label:'Время отхода ко сну', fmt: v => fmtTimeM(v) },
-    { key:'movement',      label:'Движение',            fmt: v => v==null ? '—' : Math.round(v) + ' мин' },
-    { key:'stress',        label:'Стресс',              fmt: v => v==null ? '—' : fmt1(v) + '/10' },
-    { key:'energy',        label:'Энергия',             fmt: v => v==null ? '—' : fmt1(v) + '/10' },
-    { key:'mood',          label:'Настроение',          fmt: v => v==null ? '—' : fmt1(v) + '/5' },
+    { key:'water',         label:'Вода',                color:'#7BC8E8', fmt: v => v==null ? '—' : Math.round(v) + ' мл' },
+    { key:'stool',         label:'Стул (% нормы)',      color:'#A47148', fmt: v => v==null ? '—' : Math.round(v) + '%' },
+    { key:'sleepDuration', label:'Длительность сна',    color:'#7B6FDB', fmt: v => v==null ? '—' : fmt1(v) + ' ч' },
+    { key:'sleepQuality',  label:'Качество сна',        color:'#9B7ED9', fmt: v => v==null ? '—' : fmt1(v) + '/10' },
+    { key:'bedtime',       label:'Время отхода ко сну', color:'#5B6FBB', fmt: v => fmtTimeM(v) },
+    { key:'movement',      label:'Движение',            color:'#3DB88A', fmt: v => v==null ? '—' : Math.round(v) + ' мин' },
+    { key:'stress',        label:'Стресс',              color:'#FF7675', fmt: v => v==null ? '—' : fmt1(v) + '/10' },
+    { key:'energy',        label:'Энергия',             color:'#E8A04D', fmt: v => v==null ? '—' : fmt1(v) + '/10' },
+    { key:'mood',          label:'Настроение',          color:'#F5A5C0', fmt: v => v==null ? '—' : fmt1(v) + '/5' },
   ];
+
+  // Build an SVG line chart that mirrors the in-app DetailLineChart:
+  // grid, min/mid/max Y-ticks, X-axis date labels, data points with
+  // value labels sitting above each point, and the bedtime axis
+  // inverted so "later" = "lower".
+  const buildChartSvg = (metricKey, color, W, H) => {
+    const padL = 34, padR = 12, padT = 18, padB = 22;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const raw = series?.[metricKey] || [];
+    const points = raw.map(d => ({
+      date: d.date,
+      v: metricKey === 'stool' ? (d.value === 1 ? 1 : d.value === 0 ? 0 : null) : (d.value != null && !isNaN(d.value) ? d.value : null),
+    }));
+    const valid = points.filter(p => p.v != null);
+    if (valid.length === 0) {
+      return `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#9ca3af" font-size="10" font-family="Arial">Нет данных</text></svg>`;
+    }
+    const vMin = Math.min(...valid.map(p=>p.v));
+    const vMax = Math.max(...valid.map(p=>p.v));
+    let yMin, yMax;
+    if (metricKey === 'stool') { yMin = -0.15; yMax = 1.15; }
+    else if (metricKey === 'sleepQuality' || metricKey === 'stress' || metricKey === 'energy') { yMin = 0; yMax = 10; }
+    else if (metricKey === 'mood') { yMin = 1; yMax = 5; }
+    else if (metricKey === 'water') { yMin = 0; yMax = Math.max(vMax * 1.15, (waterNorm||2200)); }
+    else {
+      const span = vMax - vMin || Math.max(1, Math.abs(vMax) * 0.2);
+      yMin = vMin - span * 0.05;
+      yMax = vMax + span * 0.18;
+    }
+    const invert = metricKey === 'bedtime';
+    const valToY = v => {
+      const n = (v - yMin) / (yMax - yMin);
+      return padT + (invert ? n : 1 - n) * plotH;
+    };
+    const idxToX = i => padL + (points.length <= 1 ? plotW/2 : (i / (points.length - 1)) * plotW);
+    const fmtVal = v => {
+      if (v == null) return '';
+      if (metricKey === 'bedtime') return fmtTimeM(v);
+      if (metricKey === 'stool') return v === 1 ? 'Н' : 'НН';
+      if (metricKey === 'water') return Math.round(v) + '';
+      if (metricKey === 'movement') return Math.round(v) + '';
+      return (Math.round(v*10)/10).toString().replace('.', ',');
+    };
+    // Grid + Y labels (3 ticks)
+    const ticks = metricKey === 'stool' ? [0, 1] : [yMin, (yMin+yMax)/2, yMax];
+    const gridParts = ticks.map(v => {
+      const y = valToY(v);
+      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${(W-padR).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#EEEDE6" stroke-width="1"/>` +
+        `<text x="${(padL-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" fill="#9ca3af" font-size="9" font-family="Arial">${fmtVal(v)}</text>`;
+    }).join('');
+    // X labels — skip some if many points
+    const xStride = Math.max(1, Math.ceil(points.length / 6));
+    const xParts = points.map((p, i) => {
+      if (i % xStride !== 0 && i !== points.length - 1) return '';
+      const label = p.date ? p.date.slice(8,10) + '.' + p.date.slice(5,7) : '';
+      return `<text x="${idxToX(i).toFixed(1)}" y="${(H-6).toFixed(1)}" text-anchor="middle" fill="#9ca3af" font-size="9" font-family="Arial">${label}</text>`;
+    }).join('');
+    // Line path — skip nulls (breaks the line)
+    const segments = [];
+    let currentSeg = [];
+    points.forEach((p, i) => {
+      if (p.v == null) {
+        if (currentSeg.length) { segments.push(currentSeg); currentSeg = []; }
+      } else {
+        currentSeg.push(`${idxToX(i).toFixed(1)},${valToY(p.v).toFixed(1)}`);
+      }
+    });
+    if (currentSeg.length) segments.push(currentSeg);
+    const lineParts = segments.map(seg => `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${seg.join(' ')}"/>`).join('');
+    // Points + value labels
+    const pointParts = points.map((p, i) => {
+      if (p.v == null) return '';
+      const x = idxToX(i), y = valToY(p.v);
+      const lbl = fmtVal(p.v);
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" fill="#ffffff" stroke="${color}" stroke-width="1.8"/>` +
+        `<text x="${x.toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle" fill="${color}" font-size="9" font-weight="600" font-family="Arial">${lbl}</text>`;
+    }).join('');
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">${gridParts}${lineParts}${pointParts}${xParts}</svg>`;
+  };
+
   const tiles = metricDefs.map(m => {
     const s = summary?.[m.key];
     const val = m.key === 'stool' ? s?.pct : s?.avg;
     const statusLabel = s?.status?.label || '—';
     const statusColor = s?.status?.color || '#9ca3af';
-    // mini chart from series
-    const data = (series?.[m.key] || []).map(d => (m.key === 'stool' ? (d.value === 1 ? 1 : d.value === 0 ? 0 : null) : d.value)).filter(v => v != null && !isNaN(v));
-    let sparkline = '';
-    if (data.length >= 2) {
-      const min = Math.min(...data), max = Math.max(...data);
-      const range = max - min || 1;
-      const W = 240, H = 44;
-      const pts = data.map((v, i) => {
-        const x = (i / (data.length - 1)) * W;
-        const y = H - ((v - min) / range) * H;
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      }).join(' ');
-      sparkline = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="margin-top:6px"><polyline fill="none" stroke="#2D5F3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/></svg>`;
-    }
+    const chartSvg = buildChartSvg(m.key, m.color, 322, 130);
     return `
-      <div style="background:#F9F7F2;border-radius:12px;padding:14px 16px;width:calc(50% - 6px);box-sizing:border-box;margin-bottom:12px;break-inside:avoid">
-        <div style="font-size:10px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${m.label}</div>
-        <div style="font-size:22px;font-weight:700;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1">${m.fmt(val)}</div>
-        <div style="font-size:10px;color:${statusColor};font-weight:600;margin-top:4px">${statusLabel}</div>
-        ${sparkline}
+      <div style="background:#F9F7F2;border-radius:14px;padding:14px 14px 10px;width:calc(50% - 6px);box-sizing:border-box;margin-bottom:12px;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${m.label}</div>
+          <div style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</div>
+        </div>
+        <div style="font-size:22px;font-weight:700;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:4px">${m.fmt(val)}</div>
+        <div style="margin-top:6px">${chartSvg}</div>
       </div>`;
   }).join('');
   const pageAnalytics = `
     <div data-page="a" style="${pageStyle}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <div style="font-size:18px;font-weight:700;color:#2D5F3F">Аналитика</div>
         <div style="font-size:11px;color:#6b7280">${periodLabel}</div>
       </div>
