@@ -2919,12 +2919,17 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     : `<div style="width:120px;height:120px;border-radius:60px;background:#E3EFE7;color:#2D5F3F;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700">${(profile?.name||'?').slice(0,1).toUpperCase()}</div>`;
   const pageProfile = `
     <div data-page="1" style="${pageStyle}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px">
-        <div style="font-family:'Instrument Serif',Georgia,serif;font-size:28px;color:#2D5F3F;letter-spacing:0.5px">ELLME</div>
-        <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Отчёт · ${periodLabel}</div>
+      <!-- Centered logo lockup: image + wordmark + tagline -->
+      <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:18px">
+        <img src="/icon-512.png" style="width:72px;height:72px;border-radius:18px;margin-bottom:10px;box-shadow:0 4px 14px rgba(45,95,63,.15)"/>
+        <div style="font-family:'Instrument Serif',Georgia,serif;font-size:40px;color:#2D5F3F;letter-spacing:1.5px;line-height:1">ELLME</div>
+        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.28em;margin-top:6px">Eat · Live · Love ME</div>
       </div>
-      <div style="height:1px;background:#E5E7EB;margin-bottom:32px"></div>
-      <div style="display:flex;gap:28px;align-items:center;margin-bottom:32px">
+      <div style="text-align:center;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;margin-bottom:22px">
+        Отчёт · ${periodFromTo}
+      </div>
+      <div style="height:1px;background:#E5E7EB;margin-bottom:28px"></div>
+      <div style="display:flex;gap:28px;align-items:center;margin-bottom:28px">
         ${avatar}
         <div>
           <div style="font-size:24px;font-weight:700;margin-bottom:4px">${profile?.name || '—'}</div>
@@ -2942,6 +2947,11 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         ${row('Норма воды', (waterNorm||2200) + ' мл')}
       </table>
       ${profile?.request ? `<div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#2D5F3F">Запрос</div><div style="font-size:13px;line-height:1.6;color:#1a1a1a;padding:14px 16px;background:#F4F1EB;border-radius:12px;white-space:pre-wrap">${profile.request}</div>` : ''}
+      <!-- Footer with site link -->
+      <div style="position:absolute;left:56px;right:56px;bottom:28px;display:flex;align-items:center;justify-content:center;gap:8px;padding-top:14px;border-top:1px solid #E5E7EB">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2D5F3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        <span style="font-size:12px;color:#2D5F3F;font-weight:600;letter-spacing:.04em">ellme.ru</span>
+      </div>
     </div>`;
 
   // === DIARY PAGES: 2 days per page ===
