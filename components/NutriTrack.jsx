@@ -2777,11 +2777,10 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     return dMeals.some(m => m.description || m.photo_url);
   };
   const dateList = (days || []).map(d => d.date).sort().filter(hasContent);
-  // 2 days per diary page (requested). The earlier squashing issue was
-  // caused by an unclosed <div/> placeholder nesting all subsequent
-  // cards — once fixed, 2 days fit comfortably within A4.
-  const diaryChunks = [];
-  for (let i = 0; i < dateList.length; i += 2) diaryChunks.push(dateList.slice(i, i + 2));
+  // 1 day per diary page. Gives each day plenty of room for up to 8
+  // meals in a 2-col grid, and avoids the edge case where a day with
+  // many snacks would clip the last row when packed 2-per-page.
+  const diaryChunks = dateList.map(d => [d]);
 
   const mealLabels = { breakfast:'Завтрак', lunch:'Обед', dinner:'Ужин', snack1:'Перекус 1', snack2:'Перекус 2', snack3:'Перекус 3', snack4:'Перекус 4', snack5:'Перекус 5' };
   const mealOrder = ['breakfast','lunch','dinner','snack1','snack2','snack3','snack4','snack5'];
@@ -2794,6 +2793,47 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   // next sibling (earlier bug: multi-page captures mixed days together).
   const pageInnerStyle = 'padding:48px 56px;box-sizing:border-box;background:#ffffff;';
   const pageStyle = 'width:794px;height:1123px;' + pageInnerStyle + 'overflow:hidden;position:relative;';
+
+  // Preload + cover-crop every meal photo to a data URI. html2canvas
+  // sometimes silently dropped remote images (CORS races, transient
+  // network errors → grey placeholders in the PDF). Baking the photos
+  // into same-origin data URIs via a canvas with cover semantics both
+  // fixes aspect ratio preservation and guarantees they render.
+  const coverToDataURL = (url, w, h) => new Promise(resolve => {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const timer = setTimeout(() => resolve(null), 7000);
+      img.onload = () => {
+        clearTimeout(timer);
+        try {
+          const cv = document.createElement('canvas');
+          cv.width = w * 2; cv.height = h * 2;
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#E5E7EB';
+          ctx.fillRect(0, 0, cv.width, cv.height);
+          const scale = Math.max(cv.width / img.naturalWidth, cv.height / img.naturalHeight);
+          const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+          ctx.drawImage(img, (cv.width - dw) / 2, (cv.height - dh) / 2, dw, dh);
+          resolve(cv.toDataURL('image/jpeg', 0.85));
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = () => { clearTimeout(timer); resolve(null); };
+      img.src = url;
+    } catch (e) { resolve(null); }
+  });
+  const photoCache = {};
+  const urlsToLoad = new Set();
+  (allMeals || []).forEach(m => {
+    if (!m.photo_url) return;
+    let photos = [];
+    if (m.photo_url.startsWith('[')) { try { photos = JSON.parse(m.photo_url); } catch(e) { photos = [m.photo_url]; } }
+    else photos = [m.photo_url];
+    if (photos[0]) urlsToLoad.add(photos[0]);
+  });
+  await Promise.all(Array.from(urlsToLoad).map(async u => {
+    photoCache[u] = await coverToDataURL(u, 335, 180);
+  }));
 
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
@@ -2851,16 +2891,13 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
           else photos = [m.photo_url];
         }
         const firstPhoto = photos[0];
-        // html2canvas ignores `object-fit:cover` on <img> and falls back to
-        // `fill`, which squashes non-landscape photos. Render the photo as
-        // a <div> with `background-image` + `background-size:cover` — that
-        // path html2canvas honors correctly. The inline hidden <img> with
-        // crossorigin="anonymous" forces the browser to fetch the asset
-        // through the CORS-enabled path so html2canvas can read the pixels.
-        const safeSrc = firstPhoto ? firstPhoto.replace(/"/g,'%22') : '';
-        const imgBox = firstPhoto
-          ? `<div style="position:relative;width:100%;height:160px;background-color:#E5E7EB;background-image:url(&quot;${safeSrc}&quot;);background-size:cover;background-position:center;background-repeat:no-repeat;border-radius:10px 10px 0 0"><img src="${safeSrc}" crossorigin="anonymous" aria-hidden="true" style="position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"/></div>`
-          : `<div style="display:block;width:100%;height:160px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
+        // Use the pre-processed same-origin data URI so aspect ratio is
+        // preserved (cover-cropped in a canvas) and html2canvas never has
+        // to deal with CORS for the photo.
+        const cachedSrc = firstPhoto ? photoCache[firstPhoto] : null;
+        const imgBox = cachedSrc
+          ? `<img src="${cachedSrc}" style="display:block;width:100%;height:180px;border-radius:10px 10px 0 0"/>`
+          : `<div style="display:block;width:100%;height:180px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
         const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 140);
         const metaParts = [];
         if (m.hunger) metaParts.push('Голод: ' + m.hunger);
