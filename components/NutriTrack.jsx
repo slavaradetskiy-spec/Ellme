@@ -2833,6 +2833,9 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     ctx.fillStyle = BG_PAD;
     ctx.fillRect(0, 0, cv.width, cv.height);
     const S = cv.width, GAP = 6;
+    // Helper — check aspect of an image.
+    const isPortrait = im => im.naturalHeight > im.naturalWidth * 1.05;
+    const isLandscape = im => im.naturalWidth > im.naturalHeight * 1.05;
     if (imgs.length === 1) {
       // Contain (show whole photo) for single-image meals.
       const im = imgs[0];
@@ -2840,17 +2843,45 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       const iw = im.naturalWidth * sc, ih = im.naturalHeight * sc;
       ctx.drawImage(im, (S - iw) / 2, (S - ih) / 2, iw, ih);
     } else if (imgs.length === 2) {
-      const w = (S - GAP) / 2;
-      drawCoverCell(ctx, imgs[0], 0, 0, w, S);
-      drawCoverCell(ctx, imgs[1], w + GAP, 0, w, S);
+      // Orient the split to reveal more of each photo.
+      const allLandscape = imgs.every(isLandscape);
+      const allPortrait  = imgs.every(isPortrait);
+      if (allLandscape) {
+        // Top/bottom split — each cell landscape-shaped.
+        const h = (S - GAP) / 2;
+        drawCoverCell(ctx, imgs[0], 0, 0, S, h);
+        drawCoverCell(ctx, imgs[1], 0, h + GAP, S, h);
+      } else {
+        // Side-by-side — default, works for portrait and mixed.
+        const w = (S - GAP) / 2;
+        drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+        drawCoverCell(ctx, imgs[1], w + GAP, 0, w, S);
+      }
     } else if (imgs.length === 3) {
-      const w = (S - GAP) / 2;
-      const h = (S - GAP) / 2;
-      drawCoverCell(ctx, imgs[0], 0, 0, w, S);
-      drawCoverCell(ctx, imgs[1], w + GAP, 0, w, h);
-      drawCoverCell(ctx, imgs[2], w + GAP, h + GAP, w, h);
+      const allLandscape = imgs.every(isLandscape);
+      const allPortrait  = imgs.every(isPortrait);
+      if (allLandscape) {
+        // Three stacked landscape rows.
+        const h = (S - GAP * 2) / 3;
+        drawCoverCell(ctx, imgs[0], 0, 0, S, h);
+        drawCoverCell(ctx, imgs[1], 0, h + GAP, S, h);
+        drawCoverCell(ctx, imgs[2], 0, (h + GAP) * 2, S, h);
+      } else if (allPortrait) {
+        // Three portrait columns.
+        const w = (S - GAP * 2) / 3;
+        drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+        drawCoverCell(ctx, imgs[1], w + GAP, 0, w, S);
+        drawCoverCell(ctx, imgs[2], (w + GAP) * 2, 0, w, S);
+      } else {
+        // Mixed: big left + two stacked right (default).
+        const w = (S - GAP) / 2;
+        const h = (S - GAP) / 2;
+        drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+        drawCoverCell(ctx, imgs[1], w + GAP, 0, w, h);
+        drawCoverCell(ctx, imgs[2], w + GAP, h + GAP, w, h);
+      }
     } else {
-      // 4
+      // 4 — 2×2 grid.
       const w = (S - GAP) / 2;
       const h = (S - GAP) / 2;
       drawCoverCell(ctx, imgs[0], 0, 0, w, h);
@@ -2920,42 +2951,42 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       const dayMeals = mealsByDayId[day?.id] || [];
       // Sort by meal_type order
       dayMeals.sort((a,b) => mealOrder.indexOf(a.meal_type) - mealOrder.indexOf(b.meal_type));
-      // Adaptive square-tile grid per day:
-      //   ≤ 4 meals → 2 cols, 335×335 photos (big, Instagram-feel)
-      //   ≥ 5 meals → 3 cols, 219×219 photos (still readable, all fit)
-      // Photos are already pre-baked into same-origin data URIs as
-      // square collages (see photoCache) — no CORS, no squashing.
+      // Fixed 3-column square grid for every day: all photos same
+      // size regardless of how many there are. Photos are pre-baked
+      // collage data URIs (see photoCache) — square, no CORS, no
+      // squashing. 3 per row keeps the page layout consistent and
+      // the photo size predictable.
       const visibleMeals = dayMeals.filter(m => m.description || m.photo_url);
-      const useThreeCol = visibleMeals.length > 4;
-      const tilePx = useThreeCol ? 219 : 335;
-      const tileWidthCss = useThreeCol ? 'calc(33.333% - 8px)' : 'calc(50% - 6px)';
-      const gapPx = useThreeCol ? 12 : 12;
+      const tilePx = 219; // (682 − 24 gap) / 3
+      const tileWidthCss = 'calc(33.333% - 8px)';
       const mealHtml = visibleMeals.map(m => {
         const urls = getMealPhotoUrls(m);
         const cachedSrc = urls.length ? photoCache[urls.join('|')] : null;
         const imgBox = cachedSrc
           ? `<img src="${cachedSrc}" style="display:block;width:${tilePx}px;height:${tilePx}px;border-radius:10px 10px 0 0"/>`
           : `<div style="display:block;width:${tilePx}px;height:${tilePx}px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
-        const descMax = useThreeCol ? 80 : 140;
-        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, descMax);
-        const metaParts = [];
-        if (m.hunger) metaParts.push('Голод: ' + m.hunger);
-        if (m.feeling) metaParts.push(m.feeling);
-        const metaLine = metaParts.length ? `<div style="font-size:${useThreeCol?10:11}px;color:#6b7280;margin-top:3px">${metaParts.join(' · ')}</div>` : '';
-        const descLines = useThreeCol ? 2 : 2;
+        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 110);
+        const hungerLine = m.hunger ? `<div style="font-size:10px;color:#6b7280;margin-top:3px">Голод до: ${m.hunger}</div>` : '';
+        const feelingLine = m.feeling ? `<div style="font-size:10px;color:#6b7280;margin-top:2px">После: ${m.feeling}</div>` : '';
         return `
           <div style="width:${tileWidthCss};box-sizing:border-box;background:#F9F7F2;border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
             ${imgBox}
-            <div style="padding:${useThreeCol?'6px 8px 8px':'8px 10px 10px'}">
-              <div style="font-size:${useThreeCol?10:11}px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
-              ${descShort ? `<div style="font-size:${useThreeCol?11:12}px;color:#1a1a1a;margin-top:3px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:${descLines};-webkit-box-orient:vertical;overflow:hidden">${descShort}</div>` : ''}
-              ${metaLine}
+            <div style="padding:6px 9px 9px">
+              <div style="font-size:10px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
+              ${descShort ? `<div style="font-size:11px;color:#1a1a1a;margin-top:3px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${descShort}</div>` : ''}
+              ${hungerLine}
+              ${feelingLine}
             </div>
           </div>`;
       }).join('');
       const waterLine = day?.water_ml ? `Вода: ${day.water_ml} мл` : '';
-      const sleepLine = day?.sleep_bed || day?.sleep_wake ? `Сон: ${day?.sleep_bed || '—'} → ${day?.sleep_wake || '—'}` : '';
-      const extras = [waterLine, sleepLine].filter(Boolean).join(' · ');
+      // Stool: show 'Норма' or 'Не норма' based on raw DB state.
+      const stoolStr = (() => {
+        const s = day?.stool_state;
+        if (!s) return '';
+        return 'Стул: ' + (s === 'normal' ? 'Норма' : 'Не норма');
+      })();
+      const extras = [waterLine, stoolStr].filter(Boolean).join(' · ');
       return `
         <div style="margin-bottom:16px">
           <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #E5E7EB">
@@ -2968,15 +2999,15 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     return `
       <div data-page="d${pageIdx}" style="${pageStyle}">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-          <div style="font-size:18px;font-weight:700;color:#2D5F3F">Дневник питания</div>
-          <div style="font-size:11px;color:#6b7280">${periodLabel} · стр. ${pageIdx+1}/${diaryChunks.length||1}</div>
+          <div style="font-size:18px;font-weight:700;color:#2D5F3F">Дневник питания · ${periodFromTo}</div>
+          <div style="font-size:11px;color:#6b7280">стр. ${pageIdx+1}/${diaryChunks.length||1}</div>
         </div>
         ${dayBlocks || '<div style="color:#6b7280;font-size:13px">Нет данных за период</div>'}
       </div>`;
   });
   if (diaryPages.length === 0) {
     diaryPages.push(`<div data-page="d0" style="${pageStyle}">
-      <div style="font-size:18px;font-weight:700;color:#2D5F3F;margin-bottom:12px">Дневник питания</div>
+      <div style="font-size:18px;font-weight:700;color:#2D5F3F;margin-bottom:12px">Дневник питания · ${periodFromTo}</div>
       <div style="color:#6b7280;font-size:13px">Нет данных за период</div>
     </div>`);
   }
