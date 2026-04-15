@@ -724,7 +724,6 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
   const waterPct=Math.min(100,waterPctRaw);
   const [showWaterLog, setShowWaterLog] = useState(false);
-  const [showWaterHint, setShowWaterHint] = useState(false);
   const addWater=(ml)=>{
     if(dis)return;
     const now = new Date();
@@ -760,7 +759,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   useEffect(()=>()=>{if(sleepTimerRef.current)clearTimeout(sleepTimerRef.current)},[]);
   return <>
     {/* Water — bottle style */}
-    <SecCard icon={I.drop} title={`Вода · ${waterMl} мл`} extra={<button onClick={e=>{e.stopPropagation();setShowWaterHint(!showWaterHint)}} style={{width:18,height:18,borderRadius:'50%',background:showWaterHint?C.accent:'#E3EFE7',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:showWaterHint?'#fff':C.accent,cursor:'pointer',flexShrink:0,border:'none',transition:'all .15s',marginRight:4}}>i</button>}>
+    <SecCard icon={I.drop} title={`Вода · ${waterMl} мл`}>
       <div style={{padding:'14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
           {/* Bottle visualization — tap to show/hide log */}
@@ -788,7 +787,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
               <div style={{height:'100%',width:`${waterPct}%`,borderRadius:3,background:waterPct>=100?C.accent:'#7BC8E8',transition:'width .5s'}}/>
             </div>
             <div style={{fontSize:11,color:waterPctRaw>=100?C.accent:C.muted,marginTop:4,fontWeight:waterPctRaw>=100?600:400}}>{waterPctRaw>=100?'Норма выполнена'+(waterMl>waterNorm?' (+' +(waterMl-waterNorm)+' мл)':''):'Осталось '+(waterNorm-waterMl)+' мл'}</div>
-            {showWaterHint&&<div style={{fontSize:11,color:C.soft,marginTop:6,padding:'8px 10px',background:C.surfaceAlt,borderRadius:10,lineHeight:1.4,animation:'enter .15s'}}>Вноси только воду и травяной чай</div>}
+            <div style={{fontSize:11,color:C.soft,marginTop:6,padding:'8px 10px',background:C.surfaceAlt,borderRadius:10,lineHeight:1.4}}>Вноси только воду и травяной чай</div>
           </div>
         </div>
         {/* Water log — history of additions */}
@@ -2750,13 +2749,210 @@ function generateInsights(summary, waterNorm) {
   return out.slice(0, 4);
 }
 
+// ─── PDF REPORT ─────────────────────────────────────────────────────────────
+// Build a multi-page PDF report: profile → diary (2 days/page) → analytics.
+// Uses html2canvas to rasterize DOM to PNG, then jsPDF to stitch them into A4.
+async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, summary, series, waterNorm, periodLabel, periodFromTo }) {
+  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ]);
+  // Group meals by date
+  const daysByDate = {};
+  (days || []).forEach(d => { daysByDate[d.date] = d; });
+  const mealsByDayId = {};
+  (allMeals || []).forEach(m => {
+    if (!mealsByDayId[m.diary_day_id]) mealsByDayId[m.diary_day_id] = [];
+    mealsByDayId[m.diary_day_id].push(m);
+  });
+  const dateList = (days || []).map(d => d.date).sort();
+  // Split meal list into chunks of 2 days per diary page
+  const diaryChunks = [];
+  for (let i = 0; i < dateList.length; i += 2) diaryChunks.push(dateList.slice(i, i + 2));
+
+  const mealLabels = { breakfast:'Завтрак', lunch:'Обед', dinner:'Ужин', snack1:'Перекус 1', snack2:'Перекус 2', snack3:'Перекус 3', snack4:'Перекус 4', snack5:'Перекус 5' };
+  const mealOrder = ['breakfast','lunch','dinner','snack1','snack2','snack3','snack4','snack5'];
+  const fmtDate = s => { const p=(s||'').split('-'); return p.length===3 ? `${p[2]}.${p[1]}.${p[0]}` : s; };
+  const fmt1 = v => v==null||isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
+  const fmtTimeM = m => { if (m==null) return '—'; let t=m; if (t>=1440)t-=1440; const h=Math.floor(t/60),mm=Math.round(t%60); return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
+
+  // Build hidden host
+  const host = document.createElement('div');
+  host.setAttribute('data-pdf-host','1');
+  host.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased;';
+  const pageStyle = 'width:794px;min-height:1123px;padding:48px 56px;box-sizing:border-box;background:#ffffff;';
+
+  // Profile row helper
+  const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
+
+  // === PAGE 1: PROFILE ===
+  const genderLabel = profile?.gender === 'female' ? 'Женский' : profile?.gender === 'male' ? 'Мужской' : (profile?.gender || '—');
+  const profilePhoto = photoUrl || profile?.photo_url;
+  const avatar = profilePhoto
+    ? `<img src="${profilePhoto}" crossorigin="anonymous" style="width:120px;height:120px;border-radius:60px;object-fit:cover;border:3px solid #E3EFE7"/>`
+    : `<div style="width:120px;height:120px;border-radius:60px;background:#E3EFE7;color:#2D5F3F;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700">${(profile?.name||'?').slice(0,1).toUpperCase()}</div>`;
+  const pageProfile = `
+    <div data-page="1" style="${pageStyle}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px">
+        <div style="font-family:'Instrument Serif',Georgia,serif;font-size:28px;color:#2D5F3F;letter-spacing:0.5px">ELLME</div>
+        <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Отчёт · ${periodLabel}</div>
+      </div>
+      <div style="height:1px;background:#E5E7EB;margin-bottom:32px"></div>
+      <div style="display:flex;gap:28px;align-items:center;margin-bottom:32px">
+        ${avatar}
+        <div>
+          <div style="font-size:24px;font-weight:700;margin-bottom:4px">${profile?.name || '—'}</div>
+          <div style="font-size:13px;color:#6b7280">${periodFromTo}</div>
+        </div>
+      </div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#2D5F3F">Профиль</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:28px">
+        ${row('Email', profile?.email)}
+        ${row('Телефон', profile?.phone)}
+        ${row('Возраст', profile?.age)}
+        ${row('Пол', genderLabel)}
+        ${row('Рост', profile?.height_cm ? profile.height_cm + ' см' : '—')}
+        ${row('Вес', profile?.weight_kg ? profile.weight_kg + ' кг' : '—')}
+        ${row('Норма воды', (waterNorm||2200) + ' мл')}
+      </table>
+      ${profile?.request ? `<div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#2D5F3F">Запрос</div><div style="font-size:13px;line-height:1.6;color:#1a1a1a;padding:14px 16px;background:#F4F1EB;border-radius:12px;white-space:pre-wrap">${profile.request}</div>` : ''}
+    </div>`;
+
+  // === DIARY PAGES: 2 days per page ===
+  const diaryPages = diaryChunks.map((chunk, pageIdx) => {
+    const dayBlocks = chunk.map(date => {
+      const day = daysByDate[date];
+      const dayMeals = mealsByDayId[day?.id] || [];
+      // Sort by meal_type order
+      dayMeals.sort((a,b) => mealOrder.indexOf(a.meal_type) - mealOrder.indexOf(b.meal_type));
+      const mealHtml = dayMeals.filter(m => m.description || m.photo_url).map(m => {
+        let photos = [];
+        if (m.photo_url) {
+          if (m.photo_url.startsWith('[')) { try { photos = JSON.parse(m.photo_url); } catch(e) { photos = [m.photo_url]; } }
+          else photos = [m.photo_url];
+        }
+        const firstPhoto = photos[0];
+        return `
+          <div style="display:flex;gap:10px;padding:8px 10px;background:#F9F7F2;border-radius:10px;margin-bottom:6px;break-inside:avoid">
+            ${firstPhoto ? `<img src="${firstPhoto}" crossorigin="anonymous" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0"/>` : `<div style="width:56px;height:56px;border-radius:8px;background:#E5E7EB;flex-shrink:0"/>`}
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.03em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
+              <div style="font-size:12px;color:#1a1a1a;margin-top:2px;line-height:1.4">${(m.description || '—').replace(/</g,'&lt;')}</div>
+              ${m.feeling ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">Самочувствие: ${m.feeling}</div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+      const waterLine = day?.water_ml ? `Вода: ${day.water_ml} мл` : '';
+      const sleepLine = day?.sleep_bed || day?.sleep_wake ? `Сон: ${day?.sleep_bed || '—'} → ${day?.sleep_wake || '—'}` : '';
+      const extras = [waterLine, sleepLine].filter(Boolean).join(' · ');
+      return `
+        <div style="margin-bottom:20px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #E5E7EB">
+            <div style="font-size:16px;font-weight:700;color:#2D5F3F">${fmtDate(date)}</div>
+            <div style="font-size:11px;color:#6b7280">${extras}</div>
+          </div>
+          ${mealHtml || '<div style="font-size:12px;color:#9ca3af;padding:6px 0">Нет записей</div>'}
+        </div>`;
+    }).join('');
+    return `
+      <div data-page="d${pageIdx}" style="${pageStyle}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+          <div style="font-size:18px;font-weight:700;color:#2D5F3F">Дневник питания</div>
+          <div style="font-size:11px;color:#6b7280">${periodLabel} · стр. ${pageIdx+1}/${diaryChunks.length||1}</div>
+        </div>
+        ${dayBlocks || '<div style="color:#6b7280;font-size:13px">Нет данных за период</div>'}
+      </div>`;
+  });
+  if (diaryPages.length === 0) {
+    diaryPages.push(`<div data-page="d0" style="${pageStyle}">
+      <div style="font-size:18px;font-weight:700;color:#2D5F3F;margin-bottom:12px">Дневник питания</div>
+      <div style="color:#6b7280;font-size:13px">Нет данных за период</div>
+    </div>`);
+  }
+
+  // === ANALYTICS PAGE ===
+  const metricDefs = [
+    { key:'water',         label:'Вода',                fmt: v => v==null ? '—' : Math.round(v) + ' мл' },
+    { key:'stool',         label:'Стул (% нормы)',      fmt: v => v==null ? '—' : Math.round(v) + '%' },
+    { key:'sleepDuration', label:'Длительность сна',    fmt: v => v==null ? '—' : fmt1(v) + ' ч' },
+    { key:'sleepQuality',  label:'Качество сна',        fmt: v => v==null ? '—' : fmt1(v) + '/10' },
+    { key:'bedtime',       label:'Время отхода ко сну', fmt: v => fmtTimeM(v) },
+    { key:'movement',      label:'Движение',            fmt: v => v==null ? '—' : Math.round(v) + ' мин' },
+    { key:'stress',        label:'Стресс',              fmt: v => v==null ? '—' : fmt1(v) + '/10' },
+    { key:'energy',        label:'Энергия',             fmt: v => v==null ? '—' : fmt1(v) + '/10' },
+    { key:'mood',          label:'Настроение',          fmt: v => v==null ? '—' : fmt1(v) + '/5' },
+  ];
+  const tiles = metricDefs.map(m => {
+    const s = summary?.[m.key];
+    const val = m.key === 'stool' ? s?.pct : s?.avg;
+    const statusLabel = s?.status?.label || '—';
+    const statusColor = s?.status?.color || '#9ca3af';
+    // mini chart from series
+    const data = (series?.[m.key] || []).map(d => (m.key === 'stool' ? (d.value === 1 ? 1 : d.value === 0 ? 0 : null) : d.value)).filter(v => v != null && !isNaN(v));
+    let sparkline = '';
+    if (data.length >= 2) {
+      const min = Math.min(...data), max = Math.max(...data);
+      const range = max - min || 1;
+      const W = 240, H = 44;
+      const pts = data.map((v, i) => {
+        const x = (i / (data.length - 1)) * W;
+        const y = H - ((v - min) / range) * H;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+      sparkline = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="margin-top:6px"><polyline fill="none" stroke="#2D5F3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/></svg>`;
+    }
+    return `
+      <div style="background:#F9F7F2;border-radius:12px;padding:14px 16px;width:calc(50% - 6px);box-sizing:border-box;margin-bottom:12px;break-inside:avoid">
+        <div style="font-size:10px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${m.label}</div>
+        <div style="font-size:22px;font-weight:700;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1">${m.fmt(val)}</div>
+        <div style="font-size:10px;color:${statusColor};font-weight:600;margin-top:4px">${statusLabel}</div>
+        ${sparkline}
+      </div>`;
+  }).join('');
+  const pageAnalytics = `
+    <div data-page="a" style="${pageStyle}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div style="font-size:18px;font-weight:700;color:#2D5F3F">Аналитика</div>
+        <div style="font-size:11px;color:#6b7280">${periodLabel}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px">${tiles}</div>
+    </div>`;
+
+  host.innerHTML = pageProfile + diaryPages.join('') + pageAnalytics;
+  document.body.appendChild(host);
+
+  // Wait for all images to load (or fail) so html2canvas captures them
+  const imgs = Array.from(host.querySelectorAll('img'));
+  await Promise.all(imgs.map(img => new Promise(resolve => {
+    if (img.complete && img.naturalWidth > 0) { resolve(); return; }
+    img.onload = () => resolve();
+    img.onerror = () => { img.style.visibility='hidden'; resolve(); };
+    // safety timeout
+    setTimeout(() => resolve(), 6000);
+  })));
+
+  const pdf = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+  const pages = host.querySelectorAll('[data-page]');
+  for (let i = 0; i < pages.length; i++) {
+    const canvas = await html2canvas(pages[i], { useCORS: true, allowTaint: false, scale: 2, backgroundColor: '#ffffff', logging: false });
+    const img = canvas.toDataURL('image/jpeg', 0.85);
+    if (i > 0) pdf.addPage();
+    pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+  }
+  try { document.body.removeChild(host); } catch(e) {}
+  const ds = new Date().toISOString().slice(0,10);
+  pdf.save(`ELLME_${(profile?.name||'report').replace(/\s+/g,'_')}_${ds}.pdf`);
+}
+
 // Main analytics screen
-function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange }) {
+function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange, pdfUserId }) {
   const [renderError, setRenderError] = useState(null);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [metricModal, setMetricModal] = useState(null); // metric key for fullscreen modal
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState('');
 
   const loading = !analytics || analytics.loading;
   let summary = null, series = null;
@@ -2851,11 +3047,55 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     }
   };
 
+  const handleDownloadPDF = async () => {
+    if (!pdfUserId || !supabase || pdfLoading) return;
+    setPdfLoading(true); setPdfError('');
+    try {
+      // Resolve period dates
+      let startStr, endStr;
+      if (range === 'custom' && customDateRange) {
+        startStr = customDateRange.start; endStr = customDateRange.end;
+      } else {
+        const daysBack = range === '3d' ? 3 : range === '5d' ? 5 : range === '1m' ? 30 : 7;
+        const end = new Date(), start = new Date();
+        start.setDate(start.getDate() - daysBack + 1);
+        startStr = dk(start); endStr = dk(end);
+      }
+      // Load profile
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', pdfUserId).maybeSingle();
+      // Load days with meals for the period (full rows, not the pruned analytics set)
+      const { data: fullDays } = await supabase.from('diary_days').select('*').eq('user_id', pdfUserId).gte('date', startStr).lte('date', endStr).order('date', { ascending: true });
+      const dayIds = (fullDays || []).map(d => d.id).filter(Boolean);
+      let allMeals = [];
+      if (dayIds.length) {
+        const { data: m } = await supabase.from('meals').select('*').in('diary_day_id', dayIds);
+        allMeals = m || [];
+      }
+      const periodFromTo = `${startStr.split('-').reverse().join('.')} – ${endStr.split('-').reverse().join('.')}`;
+      await generateReportPDF({
+        userId: pdfUserId,
+        profile: profile || {},
+        photoUrl: profile?.photo_url || null,
+        days: fullDays || [],
+        allMeals,
+        summary,
+        series,
+        waterNorm: waterNorm || 2200,
+        periodLabel,
+        periodFromTo,
+      });
+    } catch (e) {
+      console.error('PDF error:', e);
+      setPdfError(e?.message || 'Не удалось сформировать PDF');
+    }
+    setPdfLoading(false);
+  };
+
   return <div style={{animation:'slideRight .3s ease'}}>
     <TopBar left={onBack?<BackBtn onClick={onBack}/>:null} title={title||'Аналитика'} right={null}/>
 
     {/* Period tabs */}
-    <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
+    <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:12}}>
       {[['3d','3д'],['5d','5д'],['7d','7д'],['1m','1мес'],['custom','Свой']].map(([k,l]) => {
         const isActive = range===k || (k==='custom' && showCustomPicker);
         const label = k==='custom' && range==='custom' && customDateRange
@@ -2864,6 +3104,16 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
         return <button key={k} onClick={()=>{if(k==='custom'){if(!customStart||!customEnd){const e=new Date(),s=new Date();s.setDate(s.getDate()-6);setCustomStart(dk(s));setCustomEnd(dk(e))}setShowCustomPicker(true)}else{setShowCustomPicker(false);onRangeChange(k)}}} style={{flex:k==='custom'&&range==='custom'?1.4:1,padding:'10px 0',borderRadius:10,border:'none',background:isActive?C.surface:'transparent',color:isActive?C.accent:C.soft,fontSize:k==='custom'&&range==='custom'?10:12,fontWeight:isActive?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:isActive?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{label}</button>;
       })}
     </div>
+
+    {/* PDF download block */}
+    <button onClick={handleDownloadPDF} disabled={pdfLoading||loading} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,width:'100%',padding:'14px 16px',borderRadius:16,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:pdfLoading||loading?'default':'pointer',fontFamily:'inherit',marginBottom:16,boxShadow:'0 4px 14px rgba(45,95,63,.25)',opacity:pdfLoading||loading?.7:1,WebkitTapHighlightColor:'transparent',transition:'transform .15s,opacity .15s'}}
+      onTouchStart={e=>{if(!pdfLoading&&!loading)e.currentTarget.style.transform='scale(.98)'}} onTouchEnd={e=>e.currentTarget.style.transform='scale(1)'}>
+      {pdfLoading
+        ? <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:'spin 1s linear infinite'}}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>Формируем PDF…</>
+        : <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Скачать Дневник + Аналитика (PDF)</>
+      }
+    </button>
+    {pdfError && <div style={{padding:'10px 14px',borderRadius:12,background:C.dangerSoft||'#FEE',color:C.danger||'#c00',fontSize:12,marginBottom:12}}>{pdfError}</div>}
 
     {/* Custom date picker modal */}
     {showCustomPicker && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 32px'}} onClick={()=>setShowCustomPicker(false)}>
@@ -4285,6 +4535,7 @@ export default function App(){
     onBack={()=>setScreen('clientView')}
     waterNorm={selClient.waterNorm||waterNorm}
     title={(selClient.nick||selClient.name) + ' — аналитика'}
+    pdfUserId={selClient.id}
   />);
 
   // Own analytics (from profile)
@@ -4296,6 +4547,7 @@ export default function App(){
     onCustomDateRange={setCustomDateRange}
     onBack={null}
     waterNorm={waterNorm}
+    pdfUserId={user?.id}
   />);
 
   // ═══ CLIENT — MEAL DETAIL ═══
