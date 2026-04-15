@@ -2777,10 +2777,31 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     return dMeals.some(m => m.description || m.photo_url);
   };
   const dateList = (days || []).map(d => d.date).sort().filter(hasContent);
-  // 1 day per diary page. Gives each day plenty of room for up to 8
-  // meals in a 2-col grid, and avoids the edge case where a day with
-  // many snacks would clip the last row when packed 2-per-page.
-  const diaryChunks = dateList.map(d => [d]);
+  // Pack 2 days on a page if they fit, otherwise 1 per page. Estimate
+  // each day's vertical footprint from its meal count (3-col square
+  // grid → one row per 3 meals, ~269px + 12px row gap, plus ~54px
+  // day header). Page content box = 1027px; we reserve 46px for page
+  // header area and 44px for the bottom logo footer → 937px body.
+  const dayHeight = (date) => {
+    const day = daysByDate[date];
+    const meals = (mealsByDayId[day?.id] || []).filter(m => m.description || m.photo_url).length;
+    if (meals === 0) return 80;
+    const rows = Math.ceil(meals / 3);
+    return 54 + rows * 269 + (rows - 1) * 12;
+  };
+  const MAX_BODY = 937;
+  const diaryChunks = [];
+  for (let i = 0; i < dateList.length;) {
+    const d1 = dateList[i];
+    const d2 = dateList[i + 1];
+    if (d2 && dayHeight(d1) + dayHeight(d2) + 16 <= MAX_BODY) {
+      diaryChunks.push([d1, d2]);
+      i += 2;
+    } else {
+      diaryChunks.push([d1]);
+      i += 1;
+    }
+  }
 
   const mealLabels = { breakfast:'Завтрак', lunch:'Обед', dinner:'Ужин', snack1:'Перекус 1', snack2:'Перекус 2', snack3:'Перекус 3', snack4:'Перекус 4', snack5:'Перекус 5' };
   const mealOrder = ['breakfast','lunch','dinner','snack1','snack2','snack3','snack4','snack5'];
@@ -2911,6 +2932,13 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
 
+  // Per-page footer: small logo + ellme.ru, pinned to the bottom-
+  // right corner. Used on every page for consistent branding.
+  const pageFooter = `<div style="position:absolute;right:56px;bottom:24px;display:flex;align-items:center;gap:6px;opacity:.85">
+    <img src="/icon-512.png" style="width:18px;height:18px;border-radius:4px"/>
+    <span style="font-size:10px;color:#2D5F3F;font-weight:700;letter-spacing:.04em">ellme.ru</span>
+  </div>`;
+
   // === PAGE 1: PROFILE ===
   const genderLabel = profile?.gender === 'female' ? 'Женский' : profile?.gender === 'male' ? 'Мужской' : (profile?.gender || '—');
   const profilePhoto = photoUrl || profile?.photo_url;
@@ -2947,11 +2975,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         ${row('Норма воды', (waterNorm||2200) + ' мл')}
       </table>
       ${profile?.request ? `<div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#2D5F3F">Запрос</div><div style="font-size:13px;line-height:1.6;color:#1a1a1a;padding:14px 16px;background:#F4F1EB;border-radius:12px;white-space:pre-wrap">${profile.request}</div>` : ''}
-      <!-- Footer with site link -->
-      <div style="position:absolute;left:56px;right:56px;bottom:28px;display:flex;align-items:center;justify-content:center;gap:8px;padding-top:14px;border-top:1px solid #E5E7EB">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2D5F3F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-        <span style="font-size:12px;color:#2D5F3F;font-weight:600;letter-spacing:.04em">ellme.ru</span>
-      </div>
+      ${pageFooter}
     </div>`;
 
   // === DIARY PAGES: 2 days per page ===
@@ -2990,12 +3014,9 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
           </div>`;
       }).join('');
       const waterLine = day?.water_ml ? `Вода: ${day.water_ml} мл` : '';
-      // Stool: show 'Норма' or 'Не норма' based on raw DB state.
-      const stoolStr = (() => {
-        const s = day?.stool_state;
-        if (!s) return '';
-        return 'Стул: ' + (s === 'normal' ? 'Норма' : 'Не норма');
-      })();
+      // Stool — show the exact stored value (Норма / Диарея / Запор
+      // / Нет стула), not the collapsed Норма / Не норма pair.
+      const stoolStr = day?.stool_state ? 'Стул: ' + day.stool_state : '';
       const extras = [waterLine, stoolStr].filter(Boolean).join(' · ');
       return `
         <div style="margin-bottom:16px">
@@ -3006,19 +3027,26 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
           ${mealHtml ? `<div style="display:flex;flex-wrap:wrap;gap:12px">${mealHtml}</div>` : '<div style="font-size:12px;color:#9ca3af;padding:6px 0">Нет записей</div>'}
         </div>`;
     }).join('');
+    // 'Дневник питания · <range>' heading appears only on the first
+    // diary page. Later pages jump straight into the day blocks —
+    // cleaner and gives back ~35px of vertical space.
+    const header = pageIdx === 0
+      ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+          <div style="font-size:18px;font-weight:700;color:#2D5F3F">Дневник питания · ${periodFromTo}</div>
+        </div>`
+      : '';
     return `
       <div data-page="d${pageIdx}" style="${pageStyle}">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-          <div style="font-size:18px;font-weight:700;color:#2D5F3F">Дневник питания · ${periodFromTo}</div>
-          <div style="font-size:11px;color:#6b7280">стр. ${pageIdx+1}/${diaryChunks.length||1}</div>
-        </div>
+        ${header}
         ${dayBlocks || '<div style="color:#6b7280;font-size:13px">Нет данных за период</div>'}
+        ${pageFooter}
       </div>`;
   });
   if (diaryPages.length === 0) {
     diaryPages.push(`<div data-page="d0" style="${pageStyle}">
       <div style="font-size:18px;font-weight:700;color:#2D5F3F;margin-bottom:12px">Дневник питания · ${periodFromTo}</div>
       <div style="color:#6b7280;font-size:13px">Нет данных за период</div>
+      ${pageFooter}
     </div>`);
   }
 
@@ -3092,18 +3120,15 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       const label = p.date ? p.date.slice(8,10) + '.' + p.date.slice(5,7) : '';
       return `<text x="${idxToX(i).toFixed(1)}" y="${(H-6).toFixed(1)}" text-anchor="middle" fill="#9ca3af" font-size="9" font-family="Arial">${label}</text>`;
     }).join('');
-    // Line path — skip nulls (breaks the line)
-    const segments = [];
-    let currentSeg = [];
+    // Line path — connect ALL valid points into one continuous
+    // polyline (ignore null days instead of breaking the line).
+    const lineCoords = [];
     points.forEach((p, i) => {
-      if (p.v == null) {
-        if (currentSeg.length) { segments.push(currentSeg); currentSeg = []; }
-      } else {
-        currentSeg.push(`${idxToX(i).toFixed(1)},${valToY(p.v).toFixed(1)}`);
-      }
+      if (p.v != null) lineCoords.push(`${idxToX(i).toFixed(1)},${valToY(p.v).toFixed(1)}`);
     });
-    if (currentSeg.length) segments.push(currentSeg);
-    const lineParts = segments.map(seg => `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${seg.join(' ')}"/>`).join('');
+    const lineParts = lineCoords.length >= 2
+      ? `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${lineCoords.join(' ')}"/>`
+      : '';
     // Points + value labels
     const pointParts = points.map((p, i) => {
       if (p.v == null) return '';
@@ -3127,7 +3152,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
           <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${m.label}</div>
           <div style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</div>
         </div>
-        <div style="font-size:22px;font-weight:700;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:4px">${m.fmt(val)}</div>
+        <div style="font-size:24px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:4px">${m.fmt(val)}</div>
         <div style="margin-top:6px">${chartSvg}</div>
       </div>`;
   }).join('');
@@ -3138,6 +3163,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         <div style="font-size:11px;color:#6b7280">${periodLabel}</div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:12px">${tiles}</div>
+      ${pageFooter}
     </div>`;
 
   // Render each PDF page in its own isolated host, so html2canvas can
