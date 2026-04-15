@@ -2765,11 +2765,23 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     if (!mealsByDayId[m.diary_day_id]) mealsByDayId[m.diary_day_id] = [];
     mealsByDayId[m.diary_day_id].push(m);
   });
-  const dateList = (days || []).map(d => d.date).sort();
-  // One day per diary page — photos + multiple meal descriptions can easily
-  // exceed A4 height when two days are stacked, which caused ugly vertical
-  // compression on earlier iterations. One day always fits cleanly.
-  const diaryChunks = dateList.map(d => [d]);
+  // Skip days that have zero meal entries (neither photo nor description).
+  // An empty "Нет записей" page just wastes paper — the profile page
+  // already conveys the period bounds. User asked to merge pages 1+2 for
+  // reports that started on a blank day; this does exactly that by
+  // omitting the blank day entirely.
+  const hasContent = (date) => {
+    const day = daysByDate[date];
+    if (!day) return false;
+    const dMeals = mealsByDayId[day.id] || [];
+    return dMeals.some(m => m.description || m.photo_url);
+  };
+  const dateList = (days || []).map(d => d.date).sort().filter(hasContent);
+  // 2 days per diary page (requested). The earlier squashing issue was
+  // caused by an unclosed <div/> placeholder nesting all subsequent
+  // cards — once fixed, 2 days fit comfortably within A4.
+  const diaryChunks = [];
+  for (let i = 0; i < dateList.length; i += 2) diaryChunks.push(dateList.slice(i, i + 2));
 
   const mealLabels = { breakfast:'Завтрак', lunch:'Обед', dinner:'Ужин', snack1:'Перекус 1', snack2:'Перекус 2', snack3:'Перекус 3', snack4:'Перекус 4', snack5:'Перекус 5' };
   const mealOrder = ['breakfast','lunch','dinner','snack1','snack2','snack3','snack4','snack5'];
@@ -2835,7 +2847,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         const firstPhoto = photos[0];
         const imgBox = firstPhoto
           ? `<img src="${firstPhoto}" crossorigin="anonymous" style="display:block;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;border-radius:8px;object-fit:cover;flex:0 0 64px"/>`
-          : `<div style="display:block;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;border-radius:8px;background:#E5E7EB;flex:0 0 64px"/>`;
+          : `<div style="display:block;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;border-radius:8px;background:#E5E7EB;flex:0 0 64px"></div>`;
         const descShort = ((m.description || '—').replace(/</g,'&lt;')).slice(0, 180);
         return `
           <div style="display:flex;gap:10px;padding:10px 12px;background:#F9F7F2;border-radius:10px;margin-bottom:8px;width:100%;box-sizing:border-box;overflow:hidden">
