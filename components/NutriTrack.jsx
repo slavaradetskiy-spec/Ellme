@@ -3337,67 +3337,65 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
       })}
     </div>
 
-    {/* PDF download block — full-width, styled like a dark-green
-        metric tile. Big PDF-file icon, serif CTA, pill-shaped action. */}
-    <button onClick={handleDownloadPDF} disabled={pdfLoading||loading} style={{
-      display:'flex',alignItems:'center',gap:14,width:'100%',
-      padding:'16px 18px',borderRadius:18,border:'none',
+    {/* PDF download block — full-width tile. Text + pill-button on
+        the left, document icon on the right. Whole block is one big
+        clickable button; the pill is a visual affordance for where
+        to tap. */}
+    <button onClick={handleDownloadPDF} disabled={pdfLoading} type="button" style={{
+      display:'flex',alignItems:'center',gap:16,width:'100%',
+      padding:'20px 22px',borderRadius:18,border:'none',
       background:`linear-gradient(135deg, ${C.accent} 0%, #1E4530 100%)`,
       color:'#fff',textAlign:'left',fontFamily:'inherit',
-      cursor:pdfLoading||loading?'default':'pointer',
-      marginBottom:16,minHeight:132,
+      cursor:pdfLoading?'default':'pointer',
+      marginBottom:16,minHeight:138,
       boxShadow:'0 6px 18px rgba(45,95,63,.32)',
-      opacity:pdfLoading||loading?.75:1,
+      opacity:pdfLoading?.75:1,
       transition:'transform .15s ease, opacity .15s, box-shadow .2s',
       WebkitTapHighlightColor:'transparent',position:'relative',overflow:'hidden',
     }}
-      onTouchStart={e=>{if(!pdfLoading&&!loading)e.currentTarget.style.transform='scale(.985)'}}
+      onTouchStart={e=>{if(!pdfLoading)e.currentTarget.style.transform='scale(.985)'}}
       onTouchEnd={e=>e.currentTarget.style.transform='scale(1)'}
     >
-      {/* Subtle decorative circle behind content */}
-      <div aria-hidden="true" style={{position:'absolute',right:-30,top:-30,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.05)',pointerEvents:'none'}}/>
+      {/* Subtle decorative circle in the top-left for depth */}
+      <div aria-hidden="true" style={{position:'absolute',left:-40,top:-40,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.05)',pointerEvents:'none'}}/>
 
-      {/* Stylized PDF document icon (clean SVG) */}
-      <div style={{position:'relative',width:58,height:72,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <svg width="58" height="72" viewBox="0 0 58 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-          {/* Document outline with folded corner */}
-          <path d="M6 2 H38 L56 20 V66 A4 4 0 0 1 52 70 H6 A4 4 0 0 1 2 66 V6 A4 4 0 0 1 6 2 Z"
-            fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
-          {/* Folded corner */}
-          <path d="M38 2 V16 A4 4 0 0 0 42 20 H56"
-            fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
-          {/* "PDF" label */}
-          <text x="29" y="48" textAnchor="middle" fontSize="13" fontWeight="800"
-            fill="#ffffff" fontFamily="-apple-system, system-ui, sans-serif" letterSpacing="0.5">
-            PDF
-          </text>
-          {/* Two subtle content lines */}
-          <rect x="12" y="55" width="24" height="2" rx="1" fill="rgba(255,255,255,0.35)"/>
-          <rect x="12" y="60" width="34" height="2" rx="1" fill="rgba(255,255,255,0.22)"/>
-        </svg>
-      </div>
-
-      {/* Copy + CTA pill */}
-      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',justifyContent:'center',gap:4,position:'relative'}}>
-        <div style={{fontFamily:'var(--fd)',fontSize:19,fontWeight:400,lineHeight:1.15,color:'#fff',letterSpacing:'.01em'}}>
+      {/* Left: copy + pill CTA */}
+      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative',gap:4}}>
+        <div style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:400,lineHeight:1.15,color:'#fff',letterSpacing:'.01em'}}>
           Выгрузить информацию
         </div>
-        <div style={{fontSize:12,color:'rgba(255,255,255,.78)',lineHeight:1.35}}>
-          за выбранный период в PDF-файле
+        <div style={{fontSize:12,color:'rgba(255,255,255,.78)',lineHeight:1.4}}>
+          за выбранный период в формате PDF файла
         </div>
         <div style={{
-          display:'inline-flex',alignItems:'center',gap:7,marginTop:8,
-          padding:'8px 16px',borderRadius:100,
-          background:'rgba(255,255,255,.18)',
-          border:'1px solid rgba(255,255,255,.28)',
-          fontSize:13,fontWeight:600,color:'#fff',alignSelf:'flex-start',
-          backdropFilter:'blur(4px)',
+          display:'inline-flex',alignItems:'center',gap:7,marginTop:12,
+          padding:'9px 18px',borderRadius:100,
+          background:'#ffffff',color:C.accent,
+          fontSize:13,fontWeight:700,letterSpacing:'.01em',
+          alignSelf:'flex-start',pointerEvents:'none',
+          boxShadow:'0 2px 6px rgba(0,0,0,.08)',
         }}>
           {pdfLoading
             ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:'spin 1s linear infinite'}}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>Формируем…</>
             : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Скачать</>
           }
         </div>
+      </div>
+
+      {/* Right: stylized PDF document icon */}
+      <div style={{position:'relative',width:58,height:72,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="58" height="72" viewBox="0 0 58 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 2 H38 L56 20 V66 A4 4 0 0 1 52 70 H6 A4 4 0 0 1 2 66 V6 A4 4 0 0 1 6 2 Z"
+            fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
+          <path d="M38 2 V16 A4 4 0 0 0 42 20 H56"
+            fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
+          <text x="29" y="48" textAnchor="middle" fontSize="13" fontWeight="800"
+            fill="#ffffff" fontFamily="-apple-system, system-ui, sans-serif" letterSpacing="0.5">
+            PDF
+          </text>
+          <rect x="12" y="55" width="24" height="2" rx="1" fill="rgba(255,255,255,0.35)"/>
+          <rect x="12" y="60" width="34" height="2" rx="1" fill="rgba(255,255,255,0.22)"/>
+        </svg>
       </div>
     </button>
     {pdfError && <div style={{padding:'10px 14px',borderRadius:12,background:C.dangerSoft||'#FEE',color:C.danger||'#c00',fontSize:12,marginBottom:12}}>{pdfError}</div>}
