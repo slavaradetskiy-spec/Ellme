@@ -3347,16 +3347,24 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
       {/* Subtle decorative circle behind content */}
       <div aria-hidden="true" style={{position:'absolute',right:-30,top:-30,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.05)',pointerEvents:'none'}}/>
 
-      {/* Stylized PDF file icon */}
-      <div style={{
-        position:'relative',width:58,height:72,flexShrink:0,
-        background:'rgba(255,255,255,.12)',border:'1.5px solid rgba(255,255,255,.32)',
-        borderRadius:8,display:'flex',alignItems:'flex-end',justifyContent:'center',
-        paddingBottom:8,
-      }}>
-        <div style={{position:'absolute',top:0,right:0,width:16,height:16,background:'rgba(255,255,255,.22)',clipPath:'polygon(0 0, 100% 100%, 0 100%)'}}/>
-        <div style={{position:'absolute',top:4,right:4,width:10,height:10,border:'1.5px solid rgba(255,255,255,.45)',borderRight:'none',borderBottom:'none',borderRadius:'1px 0 0 0'}}/>
-        <span style={{fontSize:11,fontWeight:800,letterSpacing:'.14em',color:'#fff'}}>PDF</span>
+      {/* Stylized PDF document icon (clean SVG) */}
+      <div style={{position:'relative',width:58,height:72,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="58" height="72" viewBox="0 0 58 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+          {/* Document outline with folded corner */}
+          <path d="M6 2 H38 L56 20 V66 A4 4 0 0 1 52 70 H6 A4 4 0 0 1 2 66 V6 A4 4 0 0 1 6 2 Z"
+            fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
+          {/* Folded corner */}
+          <path d="M38 2 V16 A4 4 0 0 0 42 20 H56"
+            fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
+          {/* "PDF" label */}
+          <text x="29" y="48" textAnchor="middle" fontSize="13" fontWeight="800"
+            fill="#ffffff" fontFamily="-apple-system, system-ui, sans-serif" letterSpacing="0.5">
+            PDF
+          </text>
+          {/* Two subtle content lines */}
+          <rect x="12" y="55" width="24" height="2" rx="1" fill="rgba(255,255,255,0.35)"/>
+          <rect x="12" y="60" width="34" height="2" rx="1" fill="rgba(255,255,255,0.22)"/>
+        </svg>
       </div>
 
       {/* Copy + CTA pill */}
