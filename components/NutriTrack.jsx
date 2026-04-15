@@ -2777,11 +2777,13 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     return dMeals.some(m => m.description || m.photo_url);
   };
   const dateList = (days || []).map(d => d.date).sort().filter(hasContent);
-  // Pack 2 days on a page if they fit, otherwise 1 per page. Estimate
-  // each day's vertical footprint from its meal count (3-col square
-  // grid → one row per 3 meals, ~269px + 12px row gap, plus ~54px
-  // day header). Page content box = 1027px; we reserve 46px for page
-  // header area and 44px for the bottom logo footer → 937px body.
+  // Greedy bin-packing: accumulate days until the next one would
+  // overflow, then start a new page. Up to 9 meal tiles per page
+  // (3 days × 3 meals, or 1 day × 9, or any mix) fit comfortably.
+  // Estimated height per day: 54 (date header) + ceil(meals/3) rows
+  // × 269 + row gaps. Page content = 1123 − 48 (top pad) − 76
+  // (bigger logo footer = 54 + 22 gap) = 999 minus page-header slot
+  // 46 = 953 body budget. Using 920 gives breathing room.
   const dayHeight = (date) => {
     const day = daysByDate[date];
     const meals = (mealsByDayId[day?.id] || []).filter(m => m.description || m.photo_url).length;
@@ -2789,18 +2791,21 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     const rows = Math.ceil(meals / 3);
     return 54 + rows * 269 + (rows - 1) * 12;
   };
-  const MAX_BODY = 937;
+  const MAX_BODY = 920;
   const diaryChunks = [];
-  for (let i = 0; i < dateList.length;) {
-    const d1 = dateList[i];
-    const d2 = dateList[i + 1];
-    if (d2 && dayHeight(d1) + dayHeight(d2) + 16 <= MAX_BODY) {
-      diaryChunks.push([d1, d2]);
-      i += 2;
-    } else {
-      diaryChunks.push([d1]);
-      i += 1;
+  {
+    let cur = [], curH = 0;
+    for (const date of dateList) {
+      const h = dayHeight(date);
+      const addH = cur.length ? h + 16 : h; // 16px inter-day gap
+      if (cur.length && curH + addH > MAX_BODY) {
+        diaryChunks.push(cur);
+        cur = []; curH = 0;
+      }
+      cur.push(date);
+      curH += cur.length === 1 ? h : addH;
     }
+    if (cur.length) diaryChunks.push(cur);
   }
 
   const mealLabels = { breakfast:'Завтрак', lunch:'Обед', dinner:'Ужин', snack1:'Перекус 1', snack2:'Перекус 2', snack3:'Перекус 3', snack4:'Перекус 4', snack5:'Перекус 5' };
@@ -2932,12 +2937,24 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
 
-  // Per-page footer: small logo + ellme.ru, pinned to the bottom-
-  // right corner. Used on every page for consistent branding.
-  const pageFooter = `<div style="position:absolute;right:56px;bottom:24px;display:flex;align-items:center;gap:6px;opacity:.85">
-    <img src="/icon-512.png" style="width:18px;height:18px;border-radius:4px"/>
-    <span style="font-size:10px;color:#2D5F3F;font-weight:700;letter-spacing:.04em">ellme.ru</span>
-  </div>`;
+  // Per-page footer: logo lockup pinned bottom-LEFT, domain + short
+  // descriptor pinned bottom-RIGHT. Consistent brand row across
+  // every page of the report.
+  const pageFooter = `
+    <div style="position:absolute;left:56px;bottom:22px;display:flex;align-items:center;gap:12px">
+      <div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)">
+        <span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:1px;line-height:1.2">
+        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">E</span>at healthier</div>
+        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>isten to your body</div>
+        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>ive longer</div>
+      </div>
+    </div>
+    <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.25">
+      <div style="font-family:'Instrument Serif',Georgia,serif;font-size:20px;color:${C.accent};letter-spacing:.02em">ellme.ru</div>
+      <div style="font-size:10px;color:#6b7280;margin-top:2px;max-width:220px">пространство осознанного отношения к себе</div>
+    </div>`;
 
   // === PAGE 1: PROFILE ===
   const genderLabel = profile?.gender === 'female' ? 'Женский' : profile?.gender === 'male' ? 'Мужской' : (profile?.gender || '—');
@@ -2947,22 +2964,15 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     : `<div style="width:120px;height:120px;border-radius:60px;background:#E3EFE7;color:#2D5F3F;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700">${(profile?.name||'?').slice(0,1).toUpperCase()}</div>`;
   const pageProfile = `
     <div data-page="1" style="${pageStyle}">
-      <!-- Centered logo lockup: image + wordmark + tagline -->
-      <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:18px">
-        <img src="/icon-512.png" style="width:72px;height:72px;border-radius:18px;margin-bottom:10px;box-shadow:0 4px 14px rgba(45,95,63,.15)"/>
-        <div style="font-family:'Instrument Serif',Georgia,serif;font-size:40px;color:#2D5F3F;letter-spacing:1.5px;line-height:1">ELLME</div>
-        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.28em;margin-top:6px">Eat · Live · Love ME</div>
-      </div>
-      <div style="text-align:center;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.08em;margin-bottom:22px">
-        Отчёт · ${periodFromTo}
-      </div>
+      <!-- Bold report header (replaces the top logo lockup — brand
+           lives in the footer now) -->
+      <div style="font-family:'Instrument Serif',Georgia,serif;font-size:44px;color:#2D5F3F;line-height:1.05;margin-bottom:6px">Отчёт</div>
+      <div style="font-size:15px;font-weight:700;color:#1a1a1a;letter-spacing:.01em;margin-bottom:28px">${periodFromTo}</div>
       <div style="height:1px;background:#E5E7EB;margin-bottom:28px"></div>
+      <!-- Avatar + name (no duplicate date — already in the header) -->
       <div style="display:flex;gap:28px;align-items:center;margin-bottom:28px">
         ${avatar}
-        <div>
-          <div style="font-size:24px;font-weight:700;margin-bottom:4px">${profile?.name || '—'}</div>
-          <div style="font-size:13px;color:#6b7280">${periodFromTo}</div>
-        </div>
+        <div style="font-size:24px;font-weight:700">${profile?.name || '—'}</div>
       </div>
       <div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#2D5F3F">Профиль</div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:28px">
@@ -3052,16 +3062,19 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
 
   // === ANALYTICS PAGE ===
   // Match the color palette used by the MC table on the live analytics screen.
+  // Each fmt returns { n, u } — number and unit rendered separately
+  // so the unit ('мл','мин','ч','/10') can be set in a lighter sans
+  // while the big number keeps the serif headline feel.
   const metricDefs = [
-    { key:'water',         label:'Вода',                color:'#7BC8E8', fmt: v => v==null ? '—' : Math.round(v) + ' мл' },
-    { key:'stool',         label:'Стул (% нормы)',      color:'#A47148', fmt: v => v==null ? '—' : Math.round(v) + '%' },
-    { key:'sleepDuration', label:'Длительность сна',    color:'#7B6FDB', fmt: v => v==null ? '—' : fmt1(v) + ' ч' },
-    { key:'sleepQuality',  label:'Качество сна',        color:'#9B7ED9', fmt: v => v==null ? '—' : fmt1(v) + '/10' },
-    { key:'bedtime',       label:'Время отхода ко сну', color:'#5B6FBB', fmt: v => fmtTimeM(v) },
-    { key:'movement',      label:'Движение',            color:'#3DB88A', fmt: v => v==null ? '—' : Math.round(v) + ' мин' },
-    { key:'stress',        label:'Стресс',              color:'#FF7675', fmt: v => v==null ? '—' : fmt1(v) + '/10' },
-    { key:'energy',        label:'Энергия',             color:'#E8A04D', fmt: v => v==null ? '—' : fmt1(v) + '/10' },
-    { key:'mood',          label:'Настроение',          color:'#F5A5C0', fmt: v => v==null ? '—' : fmt1(v) + '/5' },
+    { key:'water',         label:'Вода',                color:'#7BC8E8', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' мл'} },
+    { key:'stool',         label:'Стул (% нормы)',      color:'#A47148', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' %'} },
+    { key:'sleepDuration', label:'Длительность сна',    color:'#7B6FDB', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' ч'} },
+    { key:'sleepQuality',  label:'Качество сна',        color:'#9B7ED9', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /10'} },
+    { key:'bedtime',       label:'Время отхода ко сну', color:'#5B6FBB', fmt: v => ({n: fmtTimeM(v), u:''}) },
+    { key:'movement',      label:'Движение',            color:'#3DB88A', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' мин'} },
+    { key:'stress',        label:'Стресс',              color:'#FF7675', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /10'} },
+    { key:'energy',        label:'Энергия',             color:'#E8A04D', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /10'} },
+    { key:'mood',          label:'Настроение',          color:'#F5A5C0', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /5'} },
   ];
 
   // Build an SVG line chart that mirrors the in-app DetailLineChart:
@@ -3152,7 +3165,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
           <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${m.label}</div>
           <div style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</div>
         </div>
-        <div style="font-size:24px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:4px">${m.fmt(val)}</div>
+        <div style="font-size:26px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:4px">${m.fmt(val).n}<span style="font-size:13px;color:#9ca3af;font-weight:400;font-family:-apple-system,sans-serif;margin-left:2px">${m.fmt(val).u}</span></div>
         <div style="margin-top:6px">${chartSvg}</div>
       </div>`;
   }).join('');
