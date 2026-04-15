@@ -2766,9 +2766,10 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     mealsByDayId[m.diary_day_id].push(m);
   });
   const dateList = (days || []).map(d => d.date).sort();
-  // Split meal list into chunks of 2 days per diary page
-  const diaryChunks = [];
-  for (let i = 0; i < dateList.length; i += 2) diaryChunks.push(dateList.slice(i, i + 2));
+  // One day per diary page — photos + multiple meal descriptions can easily
+  // exceed A4 height when two days are stacked, which caused ugly vertical
+  // compression on earlier iterations. One day always fits cleanly.
+  const diaryChunks = dateList.map(d => [d]);
 
   const mealLabels = { breakfast:'Завтрак', lunch:'Обед', dinner:'Ужин', snack1:'Перекус 1', snack2:'Перекус 2', snack3:'Перекус 3', snack4:'Перекус 4', snack5:'Перекус 5' };
   const mealOrder = ['breakfast','lunch','dinner','snack1','snack2','snack3','snack4','snack5'];
@@ -2780,7 +2781,9 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   const host = document.createElement('div');
   host.setAttribute('data-pdf-host','1');
   host.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased;';
-  const pageStyle = 'width:794px;min-height:1123px;padding:48px 56px;box-sizing:border-box;background:#ffffff;';
+  // Fixed A4 proportions (794×1123 @ 96dpi) with overflow:hidden so content
+  // never leaks into the next page — which used to squash the final image.
+  const pageStyle = 'width:794px;height:1123px;padding:48px 56px;box-sizing:border-box;background:#ffffff;overflow:hidden;position:relative;';
 
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
@@ -2832,13 +2835,17 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
           else photos = [m.photo_url];
         }
         const firstPhoto = photos[0];
+        const imgBox = firstPhoto
+          ? `<img src="${firstPhoto}" crossorigin="anonymous" style="display:block;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;border-radius:8px;object-fit:cover;flex:0 0 64px"/>`
+          : `<div style="display:block;width:64px;height:64px;min-width:64px;max-width:64px;min-height:64px;max-height:64px;border-radius:8px;background:#E5E7EB;flex:0 0 64px"/>`;
+        const descShort = ((m.description || '—').replace(/</g,'&lt;')).slice(0, 180);
         return `
-          <div style="display:flex;gap:10px;padding:8px 10px;background:#F9F7F2;border-radius:10px;margin-bottom:6px;break-inside:avoid">
-            ${firstPhoto ? `<img src="${firstPhoto}" crossorigin="anonymous" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0"/>` : `<div style="width:56px;height:56px;border-radius:8px;background:#E5E7EB;flex-shrink:0"/>`}
-            <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:10px;padding:10px 12px;background:#F9F7F2;border-radius:10px;margin-bottom:8px;width:100%;box-sizing:border-box;overflow:hidden">
+            ${imgBox}
+            <div style="flex:1 1 auto;min-width:0;max-width:calc(100% - 74px);overflow:hidden">
               <div style="font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.03em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
-              <div style="font-size:12px;color:#1a1a1a;margin-top:2px;line-height:1.4">${(m.description || '—').replace(/</g,'&lt;')}</div>
-              ${m.feeling ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">Самочувствие: ${m.feeling}</div>` : ''}
+              <div style="font-size:12px;color:#1a1a1a;margin-top:3px;line-height:1.4;word-break:break-word;overflow-wrap:anywhere">${descShort}</div>
+              ${m.feeling ? `<div style="font-size:11px;color:#6b7280;margin-top:3px">Самочувствие: ${m.feeling}</div>` : ''}
             </div>
           </div>`;
       }).join('');
