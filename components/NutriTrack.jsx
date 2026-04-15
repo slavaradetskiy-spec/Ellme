@@ -2787,11 +2787,14 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   const dayHeight = (date) => {
     const day = daysByDate[date];
     const meals = (mealsByDayId[day?.id] || []).filter(m => m.description || m.photo_url).length;
-    if (meals === 0) return 80;
+    if (meals === 0) return 70;
     const rows = Math.ceil(meals / 3);
-    return 54 + rows * 269 + (rows - 1) * 12;
+    // 44 day header, 260 per-row tile, 10 row gap
+    return 44 + rows * 260 + (rows - 1) * 10;
   };
-  const MAX_BODY = 920;
+  // Page body = 1123 − 48 (top pad) − 90 (footer pad) = 985.
+  // Conservative 960 to leave a tiny buffer for font metric variance.
+  const MAX_BODY = 960;
   const diaryChunks = [];
   {
     let cur = [], curH = 0;
@@ -2817,7 +2820,10 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   // Page-level style. Note: no outer pageStyle wrapper — we render one
   // page at a time into its own host so html2canvas can't bleed into the
   // next sibling (earlier bug: multi-page captures mixed days together).
-  const pageInnerStyle = 'padding:48px 56px;box-sizing:border-box;background:#ffffff;';
+  // Bottom padding 90 reserves room for the absolute-positioned brand
+  // footer (~54×54 logo + 22px gap = 76, plus breathing) so content
+  // never overlaps it.
+  const pageInnerStyle = 'padding:48px 56px 90px 56px;box-sizing:border-box;background:#ffffff;';
   const pageStyle = 'width:794px;height:1123px;' + pageInnerStyle + 'overflow:hidden;position:relative;';
 
   // Preload every meal photo (or photo group) to a square same-origin
@@ -2951,9 +2957,10 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>ive longer</div>
       </div>
     </div>
-    <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.25">
-      <div style="font-family:'Instrument Serif',Georgia,serif;font-size:20px;color:${C.accent};letter-spacing:.02em">ellme.ru</div>
-      <div style="font-size:10px;color:#6b7280;margin-top:2px;max-width:220px">пространство осознанного отношения к себе</div>
+    <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.3">
+      <div style="font-family:'Instrument Serif',Georgia,serif;font-size:22px;color:${C.accent};letter-spacing:.02em">ellme.ru</div>
+      <div style="font-size:10px;color:#6b7280;margin-top:3px">Пространство осознанного</div>
+      <div style="font-size:10px;color:#6b7280">отношения к себе</div>
     </div>`;
 
   // === PAGE 1: PROFILE ===
@@ -3153,20 +3160,25 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">${gridParts}${lineParts}${pointParts}${xParts}</svg>`;
   };
 
+  // 9 tiles in 2 cols = 5 rows. Budget per tile:
+  //   page body = 1123 − 48 (top pad) − 90 (footer pad) − 50 (page
+  //   header) − 48 (4 × 12 row gaps) = 887 → ÷ 5 rows ≈ 177px/tile.
+  // Tile interior: 12 pad + 14 label + 30 value + 95 chart + 8 pad
+  // = 159 — fits with a little buffer.
   const tiles = metricDefs.map(m => {
     const s = summary?.[m.key];
     const val = m.key === 'stool' ? s?.pct : s?.avg;
     const statusLabel = s?.status?.label || '—';
     const statusColor = s?.status?.color || '#9ca3af';
-    const chartSvg = buildChartSvg(m.key, m.color, 322, 130);
+    const chartSvg = buildChartSvg(m.key, m.color, 322, 95);
     return `
-      <div style="background:#F9F7F2;border-radius:14px;padding:14px 14px 10px;width:calc(50% - 6px);box-sizing:border-box;margin-bottom:12px;display:flex;flex-direction:column">
+      <div style="background:#F9F7F2;border-radius:14px;padding:10px 12px 8px;width:calc(50% - 6px);box-sizing:border-box;margin-bottom:10px;display:flex;flex-direction:column">
         <div style="display:flex;align-items:baseline;justify-content:space-between">
           <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${m.label}</div>
           <div style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</div>
         </div>
-        <div style="font-size:26px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:4px">${m.fmt(val).n}<span style="font-size:13px;color:#9ca3af;font-weight:400;font-family:-apple-system,sans-serif;margin-left:2px">${m.fmt(val).u}</span></div>
-        <div style="margin-top:6px">${chartSvg}</div>
+        <div style="font-size:24px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:2px">${m.fmt(val).n}<span style="font-size:12px;color:#9ca3af;font-weight:400;font-family:-apple-system,sans-serif;margin-left:2px">${m.fmt(val).u}</span></div>
+        <div style="margin-top:4px">${chartSvg}</div>
       </div>`;
   }).join('');
   const pageAnalytics = `
