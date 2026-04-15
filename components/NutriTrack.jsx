@@ -2794,45 +2794,87 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   const pageInnerStyle = 'padding:48px 56px;box-sizing:border-box;background:#ffffff;';
   const pageStyle = 'width:794px;height:1123px;' + pageInnerStyle + 'overflow:hidden;position:relative;';
 
-  // Preload + cover-crop every meal photo to a data URI. html2canvas
-  // sometimes silently dropped remote images (CORS races, transient
-  // network errors → grey placeholders in the PDF). Baking the photos
-  // into same-origin data URIs via a canvas with cover semantics both
-  // fixes aspect ratio preservation and guarantees they render.
-  const coverToDataURL = (url, w, h) => new Promise(resolve => {
+  // Preload every meal photo (or photo group) to a square same-origin
+  // data URI. html2canvas was previously dropping some remote images
+  // under CORS races and ignoring object-fit on <img>; baking into a
+  // canvas fixes both.
+  //
+  // Layout rules:
+  // - 1 photo: `contain` (whole image fits, beige padding to square)
+  // - 2+ photos: Google-Photos-style collage in a square — halves /
+  //   big-left-+-two-right / 2×2 — each cell cover-cropped.
+  const BG_PAD = '#F4F1EB';
+  const loadImage = url => new Promise(res => {
     try {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      const timer = setTimeout(() => resolve(null), 7000);
-      img.onload = () => {
-        clearTimeout(timer);
-        try {
-          const cv = document.createElement('canvas');
-          cv.width = w * 2; cv.height = h * 2;
-          const ctx = cv.getContext('2d');
-          ctx.fillStyle = '#E5E7EB';
-          ctx.fillRect(0, 0, cv.width, cv.height);
-          const scale = Math.max(cv.width / img.naturalWidth, cv.height / img.naturalHeight);
-          const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
-          ctx.drawImage(img, (cv.width - dw) / 2, (cv.height - dh) / 2, dw, dh);
-          resolve(cv.toDataURL('image/jpeg', 0.85));
-        } catch (e) { resolve(null); }
-      };
-      img.onerror = () => { clearTimeout(timer); resolve(null); };
+      const t = setTimeout(() => res(null), 7000);
+      img.onload = () => { clearTimeout(t); res(img); };
+      img.onerror = () => { clearTimeout(t); res(null); };
       img.src = url;
-    } catch (e) { resolve(null); }
+    } catch (e) { res(null); }
   });
-  const photoCache = {};
-  const urlsToLoad = new Set();
+  const drawCoverCell = (ctx, img, x, y, w, h) => {
+    const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+    const iw = img.naturalWidth * scale, ih = img.naturalHeight * scale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+    ctx.restore();
+  };
+  const buildSquareFromUrls = async (urls, size) => {
+    const imgs = (await Promise.all(urls.slice(0, 4).map(loadImage))).filter(Boolean);
+    if (imgs.length === 0) return null;
+    const cv = document.createElement('canvas');
+    cv.width = size * 2; cv.height = size * 2; // 2× for retina
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = BG_PAD;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    const S = cv.width, GAP = 6;
+    if (imgs.length === 1) {
+      // Contain (show whole photo) for single-image meals.
+      const im = imgs[0];
+      const sc = Math.min(S / im.naturalWidth, S / im.naturalHeight);
+      const iw = im.naturalWidth * sc, ih = im.naturalHeight * sc;
+      ctx.drawImage(im, (S - iw) / 2, (S - ih) / 2, iw, ih);
+    } else if (imgs.length === 2) {
+      const w = (S - GAP) / 2;
+      drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+      drawCoverCell(ctx, imgs[1], w + GAP, 0, w, S);
+    } else if (imgs.length === 3) {
+      const w = (S - GAP) / 2;
+      const h = (S - GAP) / 2;
+      drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+      drawCoverCell(ctx, imgs[1], w + GAP, 0, w, h);
+      drawCoverCell(ctx, imgs[2], w + GAP, h + GAP, w, h);
+    } else {
+      // 4
+      const w = (S - GAP) / 2;
+      const h = (S - GAP) / 2;
+      drawCoverCell(ctx, imgs[0], 0, 0, w, h);
+      drawCoverCell(ctx, imgs[1], w + GAP, 0, w, h);
+      drawCoverCell(ctx, imgs[2], 0, h + GAP, w, h);
+      drawCoverCell(ctx, imgs[3], w + GAP, h + GAP, w, h);
+    }
+    return cv.toDataURL('image/jpeg', 0.85);
+  };
+  const getMealPhotoUrls = (m) => {
+    if (!m?.photo_url) return [];
+    if (m.photo_url.startsWith('[')) { try { return JSON.parse(m.photo_url) || []; } catch(e) { return [m.photo_url]; } }
+    return [m.photo_url];
+  };
+  const photoCache = {}; // key (urls joined) → data URI
+  const keyed = new Map();
   (allMeals || []).forEach(m => {
-    if (!m.photo_url) return;
-    let photos = [];
-    if (m.photo_url.startsWith('[')) { try { photos = JSON.parse(m.photo_url); } catch(e) { photos = [m.photo_url]; } }
-    else photos = [m.photo_url];
-    if (photos[0]) urlsToLoad.add(photos[0]);
+    const urls = getMealPhotoUrls(m);
+    if (urls.length) keyed.set(urls.join('|'), urls);
   });
-  await Promise.all(Array.from(urlsToLoad).map(async u => {
-    photoCache[u] = await coverToDataURL(u, 335, 180);
+  await Promise.all(Array.from(keyed.entries()).map(async ([k, urls]) => {
+    // Bake at 335px (largest tile). 3-col tiles reuse the same URI
+    // scaled down via CSS — browser does the resampling cleanly.
+    photoCache[k] = await buildSquareFromUrls(urls, 335);
   }));
 
   // Profile row helper
@@ -2878,37 +2920,35 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
       const dayMeals = mealsByDayId[day?.id] || [];
       // Sort by meal_type order
       dayMeals.sort((a,b) => mealOrder.indexOf(a.meal_type) - mealOrder.indexOf(b.meal_type));
-      // Each meal = a tile with photo on TOP (landscape, full tile width)
-      // and meta + description below. Tiles are laid out in a 2-col grid
-      // per day → 4 meals fit in 2 rows, 3 meals fit in 2 rows with one
-      // empty slot, 2 meals fit in 1 row. Much denser than the old
-      // horizontal [photo | text] card which wasted space when
-      // descriptions were short.
-      const mealHtml = dayMeals.filter(m => m.description || m.photo_url).map(m => {
-        let photos = [];
-        if (m.photo_url) {
-          if (m.photo_url.startsWith('[')) { try { photos = JSON.parse(m.photo_url); } catch(e) { photos = [m.photo_url]; } }
-          else photos = [m.photo_url];
-        }
-        const firstPhoto = photos[0];
-        // Use the pre-processed same-origin data URI so aspect ratio is
-        // preserved (cover-cropped in a canvas) and html2canvas never has
-        // to deal with CORS for the photo.
-        const cachedSrc = firstPhoto ? photoCache[firstPhoto] : null;
+      // Adaptive square-tile grid per day:
+      //   ≤ 4 meals → 2 cols, 335×335 photos (big, Instagram-feel)
+      //   ≥ 5 meals → 3 cols, 219×219 photos (still readable, all fit)
+      // Photos are already pre-baked into same-origin data URIs as
+      // square collages (see photoCache) — no CORS, no squashing.
+      const visibleMeals = dayMeals.filter(m => m.description || m.photo_url);
+      const useThreeCol = visibleMeals.length > 4;
+      const tilePx = useThreeCol ? 219 : 335;
+      const tileWidthCss = useThreeCol ? 'calc(33.333% - 8px)' : 'calc(50% - 6px)';
+      const gapPx = useThreeCol ? 12 : 12;
+      const mealHtml = visibleMeals.map(m => {
+        const urls = getMealPhotoUrls(m);
+        const cachedSrc = urls.length ? photoCache[urls.join('|')] : null;
         const imgBox = cachedSrc
-          ? `<img src="${cachedSrc}" style="display:block;width:100%;height:180px;border-radius:10px 10px 0 0"/>`
-          : `<div style="display:block;width:100%;height:180px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
-        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 140);
+          ? `<img src="${cachedSrc}" style="display:block;width:${tilePx}px;height:${tilePx}px;border-radius:10px 10px 0 0"/>`
+          : `<div style="display:block;width:${tilePx}px;height:${tilePx}px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
+        const descMax = useThreeCol ? 80 : 140;
+        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, descMax);
         const metaParts = [];
         if (m.hunger) metaParts.push('Голод: ' + m.hunger);
         if (m.feeling) metaParts.push(m.feeling);
-        const metaLine = metaParts.length ? `<div style="font-size:11px;color:#6b7280;margin-top:3px">${metaParts.join(' · ')}</div>` : '';
+        const metaLine = metaParts.length ? `<div style="font-size:${useThreeCol?10:11}px;color:#6b7280;margin-top:3px">${metaParts.join(' · ')}</div>` : '';
+        const descLines = useThreeCol ? 2 : 2;
         return `
-          <div style="width:calc(50% - 6px);box-sizing:border-box;background:#F9F7F2;border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="width:${tileWidthCss};box-sizing:border-box;background:#F9F7F2;border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
             ${imgBox}
-            <div style="padding:8px 10px 10px">
-              <div style="font-size:11px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
-              ${descShort ? `<div style="font-size:12px;color:#1a1a1a;margin-top:3px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${descShort}</div>` : ''}
+            <div style="padding:${useThreeCol?'6px 8px 8px':'8px 10px 10px'}">
+              <div style="font-size:${useThreeCol?10:11}px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
+              ${descShort ? `<div style="font-size:${useThreeCol?11:12}px;color:#1a1a1a;margin-top:3px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:${descLines};-webkit-box-orient:vertical;overflow:hidden">${descShort}</div>` : ''}
               ${metaLine}
             </div>
           </div>`;
