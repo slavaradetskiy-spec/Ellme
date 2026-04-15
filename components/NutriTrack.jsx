@@ -2851,8 +2851,15 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
           else photos = [m.photo_url];
         }
         const firstPhoto = photos[0];
+        // html2canvas ignores `object-fit:cover` on <img> and falls back to
+        // `fill`, which squashes non-landscape photos. Render the photo as
+        // a <div> with `background-image` + `background-size:cover` — that
+        // path html2canvas honors correctly. The inline hidden <img> with
+        // crossorigin="anonymous" forces the browser to fetch the asset
+        // through the CORS-enabled path so html2canvas can read the pixels.
+        const safeSrc = firstPhoto ? firstPhoto.replace(/"/g,'%22') : '';
         const imgBox = firstPhoto
-          ? `<img src="${firstPhoto}" crossorigin="anonymous" style="display:block;width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0"/>`
+          ? `<div style="position:relative;width:100%;height:160px;background-color:#E5E7EB;background-image:url(&quot;${safeSrc}&quot;);background-size:cover;background-position:center;background-repeat:no-repeat;border-radius:10px 10px 0 0"><img src="${safeSrc}" crossorigin="anonymous" aria-hidden="true" style="position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"/></div>`
           : `<div style="display:block;width:100%;height:160px;background:#E5E7EB;border-radius:10px 10px 0 0"></div>`;
         const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 140);
         const metaParts = [];
