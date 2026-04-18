@@ -2959,8 +2959,10 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     const iw = logoImg.naturalWidth || 1024;
     const ih = logoImg.naturalHeight || 559;
     logoAspect = iw / ih;
-    const bakeH = 240;
-    const bakeW = Math.round(bakeH * logoAspect);
+    // Bake at native resolution so html2canvas has plenty of pixels
+    // to downsample from — no resampling loss vs the source.
+    const bakeH = ih;
+    const bakeW = iw;
     const lc = document.createElement('canvas');
     lc.width = bakeW; lc.height = bakeH;
     const lctx = lc.getContext('2d');
@@ -2969,27 +2971,22 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     lctx.drawImage(logoImg, 0, 0, bakeW, bakeH);
     logoDataUri = lc.toDataURL('image/png');
   }
-  const logoDispH = 40;
+  const logoDispH = 72;
   const logoDispW = Math.round(logoDispH * logoAspect);
 
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
 
-  // Per-page footer: wordmark pinned bottom-LEFT (with E/L/L tagline
-  // alongside), domain + short descriptor pinned bottom-RIGHT.
+  // Per-page footer: brand wordmark (with built-in E/L/L tagline)
+  // pinned bottom-LEFT, domain + short descriptor pinned bottom-RIGHT.
   // Consistent brand row across every page of the report.
   const logoMark = logoDataUri
     ? `<img src="${logoDataUri}" width="${logoDispW}" height="${logoDispH}" style="display:block;width:${logoDispW}px;height:${logoDispH}px;flex-shrink:0"/>`
     : `<div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"><span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span></div>`;
 
   const pageFooter = `
-    <div style="position:absolute;left:56px;bottom:22px;display:flex;align-items:center;gap:12px">
+    <div style="position:absolute;left:56px;bottom:22px;display:flex;align-items:center">
       ${logoMark}
-      <div style="display:flex;flex-direction:column;gap:1px;line-height:1.2">
-        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">E</span>at healthier</div>
-        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>isten to your body</div>
-        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>ive longer</div>
-      </div>
     </div>
     <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.3">
       <div style="font-family:'Instrument Serif',Georgia,serif;font-size:22px;color:${C.accent};letter-spacing:.02em">ellme.ru</div>
