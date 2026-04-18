@@ -2971,9 +2971,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     lctx.drawImage(logoImg, 0, 0, bakeW, bakeH);
     logoDataUri = lc.toDataURL('image/png');
   }
-  // Visual-weight match the right-side stack:
-  //   ellme.ru (22px × 1.3) + 3px gap + 2× descriptor (10px × 1.3) ≈ 56px
-  const logoDispH = 56;
+  const logoDispH = 80;
   const logoDispW = Math.round(logoDispH * logoAspect);
 
   // Profile row helper
