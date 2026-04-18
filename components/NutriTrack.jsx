@@ -2948,17 +2948,30 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     photoCache[k] = await buildSquareFromUrls(urls, 335);
   }));
 
+  // Pre-bake the brand logo to a data URI so html2canvas renders it
+  // reliably on every page (same trick as meal photos).
+  const logoImg = await loadImage('/logo-pdf.png');
+  let logoDataUri = '';
+  if (logoImg) {
+    const lc = document.createElement('canvas');
+    lc.width = 108; lc.height = 108;
+    lc.getContext('2d').drawImage(logoImg, 0, 0, 108, 108);
+    logoDataUri = lc.toDataURL('image/png');
+  }
+
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
 
   // Per-page footer: logo lockup pinned bottom-LEFT, domain + short
   // descriptor pinned bottom-RIGHT. Consistent brand row across
   // every page of the report.
+  const logoMark = logoDataUri
+    ? `<img src="${logoDataUri}" style="width:54px;height:54px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"/>`
+    : `<div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"><span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span></div>`;
+
   const pageFooter = `
     <div style="position:absolute;left:56px;bottom:22px;display:flex;align-items:center;gap:12px">
-      <div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)">
-        <span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span>
-      </div>
+      ${logoMark}
       <div style="display:flex;flex-direction:column;gap:1px;line-height:1.2">
         <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">E</span>at healthier</div>
         <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>isten to your body</div>
@@ -2967,8 +2980,8 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     </div>
     <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.3">
       <div style="font-family:'Instrument Serif',Georgia,serif;font-size:22px;color:${C.accent};letter-spacing:.02em">ellme.ru</div>
-      <div style="font-size:10px;color:#6b7280;margin-top:3px">Пространство осознанного</div>
-      <div style="font-size:10px;color:#6b7280">отношения к себе</div>
+      <div style="font-size:10px;color:#6b7280;margin-top:3px">Больше, чем дневник питания</div>
+      <div style="font-size:10px;color:#6b7280">Пространство заботы о себе</div>
     </div>`;
 
   // === PAGE 1: PROFILE ===
