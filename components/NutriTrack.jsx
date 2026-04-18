@@ -2987,7 +2987,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     : `<div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"><span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span></div>`;
 
   const pageFooter = `
-    <div style="position:absolute;left:56px;bottom:22px;display:flex;align-items:center">
+    <div style="position:absolute;left:56px;bottom:14px;display:flex;align-items:center">
       ${logoMark}
     </div>
     <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.3">
