@@ -3245,12 +3245,14 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     })));
     try {
       const canvas = await html2canvas(host, {
-        useCORS: true, allowTaint: false, scale: 2, backgroundColor: '#ffffff',
+        useCORS: true, allowTaint: false, scale: 2.5, backgroundColor: '#ffffff',
         logging: false, width: 794, height: 1123, windowWidth: 794, windowHeight: 1123,
       });
-      const img = canvas.toDataURL('image/jpeg', 0.88);
+      // Near-lossless JPEG + no re-compression in jsPDF: keeps the
+      // brand mark and fine text crisp without exploding file size.
+      const img = canvas.toDataURL('image/jpeg', 0.96);
       if (i > 0) pdf.addPage();
-      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'NONE');
     } finally {
       try { document.body.removeChild(host); } catch(e) {}
     }
