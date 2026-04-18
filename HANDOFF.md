@@ -8,69 +8,84 @@
 - **ПРАВИЛО: когда заполнение контекста сессии достигает ~90%, ОБЯЗАТЕЛЬНО предупредить пользователя заранее — чтобы успеть обновить HANDOFF.md и перейти в новую сессию без потери контекста.**
 - Staging: https://ellme-git-staging-slavaradetskiy-specs-projects.vercel.app
 - Prod: https://ellme.ru
+- Рабочая feature-ветка: `claude/review-ellme-handoff-BIR9T`
 
 ## Стек
-- Next.js 14 (app router) + React, Supabase, Chart.js, Vercel
-- Основной файл: `components/NutriTrack.jsx` (~4500 строк)
+- Next.js 14 (app router) + React, Supabase, Chart.js, jspdf, html2canvas, Vercel
+- Основной файл: `components/NutriTrack.jsx` (~4900 строк)
 - Supabase ref: `lcyrguguhiutdvdkptbs`
 
-## Последний merge в прод (d966ce7, 14 апр)
-Три вещи, пользователь протестил и подтвердил:
+---
 
-1. **`59543c9` — Уведомления: свои сообщения скрыты.**
-   NotificationsPanel (NutriTrack.jsx:1412) теперь фильтрует `.neq('sender_id', userId)` при загрузке + гард `if (payload.new?.sender_id === userId) return;` в realtime INSERT. Свои лайки/комменты не попадают в ленту колокольчика. Бейдж-счётчик в шапке уже использовал тот же фильтр — теперь совпадает со списком.
+## Что сделано в сессии PDF-экспорта
 
-2. **`28da85a` + `7f94c9d` — PWA-иконки + favicon.**
-   Мастер-логотип пользователя: `public/logo-source.png` (1024×1024). Из него сгенерены: icon-512, icon-192, apple-touch-icon 180, favicon-16, favicon-32, favicon.ico (bundle 16/32/48). `app/layout.js` — прописаны все link-теги (favicon.ico + PNG 16/32 + apple-touch 180). Пересобрать можно одной командой Python:
-   ```python
-   from PIL import Image
-   src = Image.open('public/logo-source.png').convert('RGBA')
-   for sz,nm in [(512,'icon-512.png'),(192,'icon-192.png'),(180,'apple-touch-icon.png'),(32,'favicon-32.png'),(16,'favicon-16.png')]:
-       src.resize((sz,sz), Image.LANCZOS).save('public/'+nm, optimize=True)
-   src.resize((48,48), Image.LANCZOS).save('public/favicon.ico', sizes=[(16,16),(32,32),(48,48)])
-   ```
+### Уже на prod (`a58b24b`, 14 апр):
+- Аналитика v3: 9 метрик, периоды 3д/5д/7д/1мес/Свой, линии везде, подписи значений на точках, инверсия Y для «Время отхода ко сну», 15% headroom, тап → фуллскрин-модал
+- Стрелки `<` `>` в дневнике опущены на строку дней недели, листают неделю
+- Pull-to-refresh на аналитике и в чате
+- Подсказка воды зафиксирована (кнопка `i` убрана)
+- Таблица «Лёг/Встал» убрана из модалки длительности сна
+- iOS: date-инпуты в «Свой период» не вылезают (`WebkitAppearance:'none'`)
 
-3. **`cc80417` — MealDetail: сброс времени + плитка не залипает.**
-   - `TimePick` (NutriTrack.jsx:356): справа от `мм` добавлена круглая кнопка × — видна только когда value непустое, по клику `onChange('')` (в БД пишется `NULL`).
-   - `getVisibleMeals` (NutriTrack.jsx:51): из `isFilled` убрал `|| d.time`. Теперь снэк появляется на главной только при наличии `text` или `photo`. Случайный тап по времени больше не прилепляет «Перекус N» к дневнику.
+### Только на staging (НЕ на prod), последний коммит `a90b538` + HANDOFF:
 
-## ⚠️ Открытые баги — жду инпут от пользователя
+**PDF-экспорт.** Кнопка — тёмно-зелёный блок под селектором периода на экране Аналитика.
 
-### 1. Вода прилипает ко всем дням недели (НЕ ВОСПРОИЗВЁЛ)
-Пользователь: «добавила воду сегодня — во все дни недели добавилась». По коду баг не находится:
-- localStorage key per-day: `wl_YYYY-MM-DD` (NutriTrack.jsx:706)
-- `diaries[pid][dk(date)]` — по ключу даты (NutriTrack.jsx:3852-3870)
-- Supabase upsert — `onConflict: 'user_id,date'`, одна строка (NutriTrack.jsx:3720-3734)
+**Структура PDF:**
+- **Стр. 1 (Профиль):** серифное «Отчёт» 44px + диапазон дат 15px bold, divider, аватар+имя, таблица (email/телефон/возраст/пол/рост/вес/норма воды), «Запрос»
+- **Стр. дневника:** жадная упаковка до 9 meal'ов на лист (3 дня × 3 meal'а). Заголовок «Дневник питания · 09.04.2026 – 15.04.2026» **только на 1-й diary-странице**
+- **Последняя стр.:** Аналитика — 9 тайлов 2-в-ряд, графики 85px, оси, подписи значений на точках, цвета метрик
 
-**Спросить перед фиксом:**
-- Где именно 660 видно на других днях — дневник или аналитика?
-- Сохраняется ли после F5 / релогина? Если да — баг в БД. Если нет — race/state на клиенте.
-- Дай user_id или email — могу глянуть `diary_days` через Supabase.
+**Meal-тайл (3 колонки/день):**
+- Фото 180×180 square, pre-baked в canvas → same-origin data:image/jpeg (cover, или collage)
+- Умный коллаж по ориентации: 2 landscape → top/bottom, 2 portrait → side-by-side, 3 → layout по ориентации, 4+ → 2×2
+- Снизу: тип+время, описание (1 line clamp, 90 chars), `Голод: X · После: Y` на одной строке
+- Tile height ~230
 
-### 2. «Сбросил время — цвет не поменялся» (НУЖЕН СКРИН)
-Цвет `MealTile` (NutriTrack.jsx:527) зависит только от `has = d.text || firstPhoto`, время не участвует. Варианты:
-- В приёме лежит текст/фото, плитка остаётся зелёной — это by design.
-- Vercel ещё не пересобрал prod → хардрелоад.
+**Футер-колонтитул (на КАЖДОЙ странице):**
+- Слева: зелёный круг `ELL·ME` + тэглайн «Eat healthier / Listen to your body / Live longer» (E/L/L зелёные)
+- Справа: `ellme.ru` 22px серифом + «Пространство осознанного / отношения к себе» на 2 строках
 
-Нужен скрин главной + детали приёма после сброса времени, тогда видно источник.
+**Геометрия страницы (единая):**
+- Top pad 48, side pad 56, **bottom pad 124** (= 22 footer offset + 54 logo + 48 breathing = симметрично top)
+- Content box: 794 × 951 px
+- MAX_BODY дневника: 917
+- dayHeight = 24 + rows × 230 + (rows-1) × 10 + 14 margin
 
-## Аналитика v3 — ГОТОВА и на проде
-9 метрик (energy, mood, movement, water, stress, stool, sleepDuration, bedtime, sleepQuality),
-периоды 3д/5д/7д/1мес/Свой с модалкой-календарём, фуллскрин-модалки по тапу на тайл
-с линейными графиками (`DetailLineChart`, `Sparkline`), health score (bedtime исключён),
-инсайты. Точка входа: функция `AnalyticsScreen` (NutriTrack.jsx:2688).
+**Техника:**
+- jsPDF + html2canvas — dynamic `import()`, в package.json добавлены
+- Каждая страница рендерится в СВОЁМ off-screen host с явными `width:794, height:1123, windowWidth/Height` — предотвращает bleed между siblings
+- Все фото pre-cached в photoCache через canvas (решает CORS-гонки и object-fit squash)
 
-## Известные баги (досье)
+---
+
+## Баг-хистори — ВАЖНО ПОМНИТЬ при любой работе с PDF / HTML-строками:
+- HTML `<div/>` — **НЕ самозакрывающийся**. Браузер парсит как `<div>`, дальше идёт nesting. Всегда писать `<div></div>` явно.
+- html2canvas **игнорирует** `object-fit:cover` на `<img>` — рендерит как `fill` (сплющивает). Фикс: canvas pre-bake в data:URI.
+- iOS Safari `<input type="date">` имеет intrinsic min-width, игнорит `width:100%`+`boxSizing`. Лечится `WebkitAppearance:'none'` + `appearance:'none'`.
+- Vercel Toolbar на staging-домене может накрывать нижний таб-бар на iPhone. Отключается в Vercel Dashboard → Settings → Toolbar → Off (доступ у юзера).
+- Instrument Serif не грузится в PDF-контексте → фолбек на Georgia. Georgia `font-weight:700` = реально жирный, всегда `font-weight:400` явно для больших значений.
+- TDZ: при добавлении useEffect ВСЕГДА проверять что deps объявлены ВЫШЕ.
+
+---
+
+## Открытые задачи (НЕ делать без подтверждения!)
+
+### Фото в приёмах пищи — 2 старых бага:
+1. **Крестик удаляет фото без подтверждения** — нужно модальное «Вы точно хотите удалить?». Юзер отменил уточнение в прошлой сессии (см. ранние сообщения). Спросить заново: нативный `confirm()` или стилизованная модалка, удалять ли из Storage или только из стейта.
+2. **Галерея нескольких фото** — нужен свайп между фото в приёме, не закрывая каждое. Спросить: горизонтальный свайп, индикатор точками, стрелки для десктопа.
+
+### Vercel Toolbar
+Юзер просил отключить, но не сделал в Dashboard. Напомнить если снова заметит «бар пропадает на стейдже».
+
+### Старые известные баги (не трогали):
 - iOS: экран обрезается после закрытия клавиатуры в дневнике
-- Safari убивает вкладку после простоя → перезагрузка
-- TDZ: при добавлении useEffect ВСЕГДА проверять что deps объявлены ВЫШЕ
-- **Фото в приёмах пищи:** крестик удаляет фото без confirm — нужен `window.confirm('Удалить фото?')`. *(Уже есть в коде NutriTrack.jsx:580, проверить что работает на iOS.)*
-- **Галерея фото:** если несколько фото в приёме — нужен свайп между ними без закрытия модалки.
+- Safari убивает вкладку после простоя → нужна перезагрузка
 
-## Миграции (применены)
+---
+
+## Когда пушить PDF на prod?
+Юзер тестит на staging. Последняя итерация (`a90b538`, 9 meal'ов/лист) ещё не подтверждена. **Спросить юзера перед merge → main.** Ветка staging впереди main на весь PDF-экспорт (~15 коммитов).
+
+## Миграции (применены на Supabase)
 - 005 chat_system, 006 chat_tags_reactions, 007 profiles_chat_partner_read
-
-## Полезно знать про код
-- `ChartCanvas` (NutriTrack.jsx:2445) использует `JSON.parse(JSON.stringify(config))` для клона — это СРЕЗАЕТ функции (плагины, tooltip callbacks, tick callbacks). Пока всё работает из-за специфики текущих конфигов, но если понадобится `afterDatasetsDraw` или кастомный formatter — нужно вернуть `cloneConfig()` (рекурсивный клон, сохраняющий function references). См. историю `59775ab`, `9378ad5` — фикс был, но откатился при мерджах.
-- `saveDayToDb` (NutriTrack.jsx:3720) — upsert с `onConflict: 'user_id,date'`. Обновляет одну строку по паре (user_id, date).
-- `setDay` (NutriTrack.jsx:3854) — дебаунс 1.5 с на автосохранение. `key = dk(date)` захватывается через closure — безопасно при смене даты до срабатывания.

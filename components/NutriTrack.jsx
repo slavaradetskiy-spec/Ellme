@@ -724,7 +724,6 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
   const waterPct=Math.min(100,waterPctRaw);
   const [showWaterLog, setShowWaterLog] = useState(false);
-  const [showWaterHint, setShowWaterHint] = useState(false);
   const addWater=(ml)=>{
     if(dis)return;
     const now = new Date();
@@ -760,7 +759,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   useEffect(()=>()=>{if(sleepTimerRef.current)clearTimeout(sleepTimerRef.current)},[]);
   return <>
     {/* Water — bottle style */}
-    <SecCard icon={I.drop} title={`Вода · ${waterMl} мл`} extra={<button onClick={e=>{e.stopPropagation();setShowWaterHint(!showWaterHint)}} style={{width:18,height:18,borderRadius:'50%',background:showWaterHint?C.accent:'#E3EFE7',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:showWaterHint?'#fff':C.accent,cursor:'pointer',flexShrink:0,border:'none',transition:'all .15s',marginRight:4}}>i</button>}>
+    <SecCard icon={I.drop} title={`Вода · ${waterMl} мл`}>
       <div style={{padding:'14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
           {/* Bottle visualization — tap to show/hide log */}
@@ -788,7 +787,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
               <div style={{height:'100%',width:`${waterPct}%`,borderRadius:3,background:waterPct>=100?C.accent:'#7BC8E8',transition:'width .5s'}}/>
             </div>
             <div style={{fontSize:11,color:waterPctRaw>=100?C.accent:C.muted,marginTop:4,fontWeight:waterPctRaw>=100?600:400}}>{waterPctRaw>=100?'Норма выполнена'+(waterMl>waterNorm?' (+' +(waterMl-waterNorm)+' мл)':''):'Осталось '+(waterNorm-waterMl)+' мл'}</div>
-            {showWaterHint&&<div style={{fontSize:11,color:C.soft,marginTop:6,padding:'8px 10px',background:C.surfaceAlt,borderRadius:10,lineHeight:1.4,animation:'enter .15s'}}>Вноси только воду и травяной чай</div>}
+            <div style={{fontSize:11,color:C.soft,marginTop:6,padding:'8px 10px',background:C.surfaceAlt,borderRadius:10,lineHeight:1.4}}>Вноси только воду и травяной чай</div>
           </div>
         </div>
         {/* Water log — history of additions */}
@@ -2750,13 +2749,515 @@ function generateInsights(summary, waterNorm) {
   return out.slice(0, 4);
 }
 
+// ─── PDF REPORT ─────────────────────────────────────────────────────────────
+// Build a multi-page PDF report: profile → diary (2 days/page) → analytics.
+// Uses html2canvas to rasterize DOM to PNG, then jsPDF to stitch them into A4.
+async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, summary, series, waterNorm, periodLabel, periodFromTo }) {
+  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ]);
+  // Group meals by date
+  const daysByDate = {};
+  (days || []).forEach(d => { daysByDate[d.date] = d; });
+  const mealsByDayId = {};
+  (allMeals || []).forEach(m => {
+    if (!mealsByDayId[m.diary_day_id]) mealsByDayId[m.diary_day_id] = [];
+    mealsByDayId[m.diary_day_id].push(m);
+  });
+  // Skip days that have zero meal entries (neither photo nor description).
+  // An empty "Нет записей" page just wastes paper — the profile page
+  // already conveys the period bounds. User asked to merge pages 1+2 for
+  // reports that started on a blank day; this does exactly that by
+  // omitting the blank day entirely.
+  const hasContent = (date) => {
+    const day = daysByDate[date];
+    if (!day) return false;
+    const dMeals = mealsByDayId[day.id] || [];
+    return dMeals.some(m => m.description || m.photo_url);
+  };
+  const dateList = (days || []).map(d => d.date).sort().filter(hasContent);
+  // Greedy bin-packing: accumulate days until the next one would
+  // overflow, then start a new page. Up to 9 meal tiles per page
+  // (3 days × 3 meals, or 1 day × 9, or any mix) fit comfortably.
+  // Estimated height per day: 54 (date header) + ceil(meals/3) rows
+  // × 269 + row gaps. Page content = 1123 − 48 (top pad) − 76
+  // (bigger logo footer = 54 + 22 gap) = 999 minus page-header slot
+  // 46 = 953 body budget. Using 920 gives breathing room.
+  const dayHeight = (date) => {
+    const day = daysByDate[date];
+    const meals = (mealsByDayId[day?.id] || []).filter(m => m.description || m.photo_url).length;
+    if (meals === 0) return 50;
+    const rows = Math.ceil(meals / 3);
+    // 24 day header (14px font, 3 pad-b, 1 border, 6 margin-b),
+    // 230 per-row tile (8 pad + 180 photo + ~38 text + 4 pad),
+    // 10 inter-row gap, 14 day margin-bottom.
+    return 24 + rows * 230 + (rows - 1) * 10 + 14;
+  };
+  // Content box = 1123 − 48 (top) − 124 (bottom, incl. footer
+  // reserve) = 951. Conservative 917 subtracts the first-diary-page
+  // heading (14 + 10 margin ≈ 24 + buffer) so the same budget works
+  // for every diary page regardless of whether it carries the
+  // heading.
+  const MAX_BODY = 917;
+  const diaryChunks = [];
+  {
+    let cur = [], curH = 0;
+    for (const date of dateList) {
+      const h = dayHeight(date);
+      const addH = cur.length ? h + 16 : h; // 16px inter-day gap
+      if (cur.length && curH + addH > MAX_BODY) {
+        diaryChunks.push(cur);
+        cur = []; curH = 0;
+      }
+      cur.push(date);
+      curH += cur.length === 1 ? h : addH;
+    }
+    if (cur.length) diaryChunks.push(cur);
+  }
+
+  const mealLabels = { breakfast:'Завтрак', lunch:'Обед', dinner:'Ужин', snack1:'Перекус 1', snack2:'Перекус 2', snack3:'Перекус 3', snack4:'Перекус 4', snack5:'Перекус 5' };
+  const mealOrder = ['breakfast','lunch','dinner','snack1','snack2','snack3','snack4','snack5'];
+  const fmtDate = s => { const p=(s||'').split('-'); return p.length===3 ? `${p[2]}.${p[1]}.${p[0]}` : s; };
+  const fmt1 = v => v==null||isNaN(v) ? '—' : (Math.round(v*10)/10).toString().replace('.', ',');
+  const fmtTimeM = m => { if (m==null) return '—'; let t=m; if (t>=1440)t-=1440; const h=Math.floor(t/60),mm=Math.round(t%60); return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
+
+  // Page-level style. Fixed content box on every page:
+  //   top pad    48
+  //   side pad   56
+  //   bottom pad 124  ← 22 footer offset + 54 logo height + 48 gap
+  //                     above the footer (equal to the top pad, per
+  //                     user request — symmetric breathing room).
+  // Usable content area = 794 × 951 px at 96dpi. Every section
+  // (profile, diary, analytics) sizes itself to stay within this
+  // budget so the footer never touches content.
+  const pageInnerStyle = 'padding:48px 56px 124px 56px;box-sizing:border-box;background:#ffffff;';
+  const pageStyle = 'width:794px;height:1123px;' + pageInnerStyle + 'overflow:hidden;position:relative;';
+
+  // Preload every meal photo (or photo group) to a square same-origin
+  // data URI. html2canvas was previously dropping some remote images
+  // under CORS races and ignoring object-fit on <img>; baking into a
+  // canvas fixes both.
+  //
+  // Layout rules:
+  // - 1 photo: `contain` (whole image fits, beige padding to square)
+  // - 2+ photos: Google-Photos-style collage in a square — halves /
+  //   big-left-+-two-right / 2×2 — each cell cover-cropped.
+  const BG_PAD = '#F4F1EB';
+  const loadImage = url => new Promise(res => {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const t = setTimeout(() => res(null), 7000);
+      img.onload = () => { clearTimeout(t); res(img); };
+      img.onerror = () => { clearTimeout(t); res(null); };
+      img.src = url;
+    } catch (e) { res(null); }
+  });
+  const drawCoverCell = (ctx, img, x, y, w, h) => {
+    const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+    const iw = img.naturalWidth * scale, ih = img.naturalHeight * scale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+    ctx.restore();
+  };
+  const buildSquareFromUrls = async (urls, size) => {
+    const imgs = (await Promise.all(urls.slice(0, 4).map(loadImage))).filter(Boolean);
+    if (imgs.length === 0) return null;
+    const cv = document.createElement('canvas');
+    cv.width = size * 2; cv.height = size * 2; // 2× for retina
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = BG_PAD;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    const S = cv.width, GAP = 6;
+    // Helper — check aspect of an image.
+    const isPortrait = im => im.naturalHeight > im.naturalWidth * 1.05;
+    const isLandscape = im => im.naturalWidth > im.naturalHeight * 1.05;
+    if (imgs.length === 1) {
+      // Contain (show whole photo) for single-image meals.
+      const im = imgs[0];
+      const sc = Math.min(S / im.naturalWidth, S / im.naturalHeight);
+      const iw = im.naturalWidth * sc, ih = im.naturalHeight * sc;
+      ctx.drawImage(im, (S - iw) / 2, (S - ih) / 2, iw, ih);
+    } else if (imgs.length === 2) {
+      // Orient the split to reveal more of each photo.
+      const allLandscape = imgs.every(isLandscape);
+      const allPortrait  = imgs.every(isPortrait);
+      if (allLandscape) {
+        // Top/bottom split — each cell landscape-shaped.
+        const h = (S - GAP) / 2;
+        drawCoverCell(ctx, imgs[0], 0, 0, S, h);
+        drawCoverCell(ctx, imgs[1], 0, h + GAP, S, h);
+      } else {
+        // Side-by-side — default, works for portrait and mixed.
+        const w = (S - GAP) / 2;
+        drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+        drawCoverCell(ctx, imgs[1], w + GAP, 0, w, S);
+      }
+    } else if (imgs.length === 3) {
+      const allLandscape = imgs.every(isLandscape);
+      const allPortrait  = imgs.every(isPortrait);
+      if (allLandscape) {
+        // Three stacked landscape rows.
+        const h = (S - GAP * 2) / 3;
+        drawCoverCell(ctx, imgs[0], 0, 0, S, h);
+        drawCoverCell(ctx, imgs[1], 0, h + GAP, S, h);
+        drawCoverCell(ctx, imgs[2], 0, (h + GAP) * 2, S, h);
+      } else if (allPortrait) {
+        // Three portrait columns.
+        const w = (S - GAP * 2) / 3;
+        drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+        drawCoverCell(ctx, imgs[1], w + GAP, 0, w, S);
+        drawCoverCell(ctx, imgs[2], (w + GAP) * 2, 0, w, S);
+      } else {
+        // Mixed: big left + two stacked right (default).
+        const w = (S - GAP) / 2;
+        const h = (S - GAP) / 2;
+        drawCoverCell(ctx, imgs[0], 0, 0, w, S);
+        drawCoverCell(ctx, imgs[1], w + GAP, 0, w, h);
+        drawCoverCell(ctx, imgs[2], w + GAP, h + GAP, w, h);
+      }
+    } else {
+      // 4 — 2×2 grid.
+      const w = (S - GAP) / 2;
+      const h = (S - GAP) / 2;
+      drawCoverCell(ctx, imgs[0], 0, 0, w, h);
+      drawCoverCell(ctx, imgs[1], w + GAP, 0, w, h);
+      drawCoverCell(ctx, imgs[2], 0, h + GAP, w, h);
+      drawCoverCell(ctx, imgs[3], w + GAP, h + GAP, w, h);
+    }
+    return cv.toDataURL('image/jpeg', 0.85);
+  };
+  const getMealPhotoUrls = (m) => {
+    if (!m?.photo_url) return [];
+    if (m.photo_url.startsWith('[')) { try { return JSON.parse(m.photo_url) || []; } catch(e) { return [m.photo_url]; } }
+    return [m.photo_url];
+  };
+  const photoCache = {}; // key (urls joined) → data URI
+  const keyed = new Map();
+  (allMeals || []).forEach(m => {
+    const urls = getMealPhotoUrls(m);
+    if (urls.length) keyed.set(urls.join('|'), urls);
+  });
+  await Promise.all(Array.from(keyed.entries()).map(async ([k, urls]) => {
+    // Bake at 335px (largest tile). 3-col tiles reuse the same URI
+    // scaled down via CSS — browser does the resampling cleanly.
+    photoCache[k] = await buildSquareFromUrls(urls, 335);
+  }));
+
+  // Pre-bake the brand logo to a data URI so html2canvas renders it
+  // reliably on every page (same trick as meal photos).
+  const logoImg = await loadImage('/logo-pdf.png');
+  let logoDataUri = '';
+  if (logoImg) {
+    const lc = document.createElement('canvas');
+    lc.width = 108; lc.height = 108;
+    lc.getContext('2d').drawImage(logoImg, 0, 0, 108, 108);
+    logoDataUri = lc.toDataURL('image/png');
+  }
+
+  // Profile row helper
+  const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
+
+  // Per-page footer: logo lockup pinned bottom-LEFT, domain + short
+  // descriptor pinned bottom-RIGHT. Consistent brand row across
+  // every page of the report.
+  const logoMark = logoDataUri
+    ? `<img src="${logoDataUri}" style="width:54px;height:54px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"/>`
+    : `<div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"><span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span></div>`;
+
+  const pageFooter = `
+    <div style="position:absolute;left:56px;bottom:22px;display:flex;align-items:center;gap:12px">
+      ${logoMark}
+      <div style="display:flex;flex-direction:column;gap:1px;line-height:1.2">
+        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">E</span>at healthier</div>
+        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>isten to your body</div>
+        <div style="font-size:11px;color:#1a1a1a"><span style="color:${C.accent};font-weight:700">L</span>ive longer</div>
+      </div>
+    </div>
+    <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.3">
+      <div style="font-family:'Instrument Serif',Georgia,serif;font-size:22px;color:${C.accent};letter-spacing:.02em">ellme.ru</div>
+      <div style="font-size:10px;color:#6b7280;margin-top:3px">Больше, чем дневник питания</div>
+      <div style="font-size:10px;color:#6b7280">Пространство заботы о себе</div>
+    </div>`;
+
+  // === PAGE 1: PROFILE ===
+  const genderLabel = profile?.gender === 'female' ? 'Женский' : profile?.gender === 'male' ? 'Мужской' : (profile?.gender || '—');
+  const profilePhoto = photoUrl || profile?.photo_url;
+  const avatar = profilePhoto
+    ? `<img src="${profilePhoto}" crossorigin="anonymous" style="width:120px;height:120px;border-radius:60px;object-fit:cover;border:3px solid #E3EFE7"/>`
+    : `<div style="width:120px;height:120px;border-radius:60px;background:#E3EFE7;color:#2D5F3F;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700">${(profile?.name||'?').slice(0,1).toUpperCase()}</div>`;
+  const pageProfile = `
+    <div data-page="1" style="${pageStyle}">
+      <!-- Bold report header (replaces the top logo lockup — brand
+           lives in the footer now) -->
+      <div style="font-family:'Instrument Serif',Georgia,serif;font-size:44px;color:#2D5F3F;line-height:1.05;margin-bottom:6px">Отчёт</div>
+      <div style="font-size:15px;font-weight:700;color:#1a1a1a;letter-spacing:.01em;margin-bottom:28px">${periodFromTo}</div>
+      <div style="height:1px;background:#E5E7EB;margin-bottom:28px"></div>
+      <!-- Avatar + name (no duplicate date — already in the header) -->
+      <div style="display:flex;gap:28px;align-items:center;margin-bottom:28px">
+        ${avatar}
+        <div style="font-size:24px;font-weight:700">${profile?.name || '—'}</div>
+      </div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#2D5F3F">Профиль</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:28px">
+        ${row('Email', profile?.email)}
+        ${row('Телефон', profile?.phone)}
+        ${row('Возраст', profile?.age)}
+        ${row('Пол', genderLabel)}
+        ${row('Рост', profile?.height_cm ? profile.height_cm + ' см' : '—')}
+        ${row('Вес', profile?.weight_kg ? profile.weight_kg + ' кг' : '—')}
+        ${row('Норма воды', (waterNorm||2200) + ' мл')}
+      </table>
+      ${profile?.request ? `<div style="font-size:14px;font-weight:700;margin-bottom:8px;color:#2D5F3F">Запрос</div><div style="font-size:13px;line-height:1.6;color:#1a1a1a;padding:14px 16px;background:#F4F1EB;border-radius:12px;white-space:pre-wrap">${profile.request}</div>` : ''}
+      ${pageFooter}
+    </div>`;
+
+  // === DIARY PAGES: 2 days per page ===
+  const diaryPages = diaryChunks.map((chunk, pageIdx) => {
+    const dayBlocks = chunk.map(date => {
+      const day = daysByDate[date];
+      const dayMeals = mealsByDayId[day?.id] || [];
+      // Sort by meal_type order
+      dayMeals.sort((a,b) => mealOrder.indexOf(a.meal_type) - mealOrder.indexOf(b.meal_type));
+      // Compact 3-col grid tuned to fit 9 meals (3 days × 3 tiles)
+      // on a single page with the footer. Each tile ≈ 230px tall:
+      //   8 pad + 180 square photo + text (meal type, 1-line desc,
+      //   hunger+feeling on one line) + 4 pad.
+      // Day header ≈ 24px. 3 days + margins + first-page heading
+      // all fit the 917px body budget.
+      const visibleMeals = dayMeals.filter(m => m.description || m.photo_url);
+      const tileWidthCss = 'calc(33.333% - 7px)';
+      const mealHtml = visibleMeals.map(m => {
+        const urls = getMealPhotoUrls(m);
+        const cachedSrc = urls.length ? photoCache[urls.join('|')] : null;
+        const imgBox = cachedSrc
+          ? `<img src="${cachedSrc}" style="display:block;width:180px;height:180px;border-radius:8px"/>`
+          : `<div style="display:block;width:180px;height:180px;background:#E5E7EB;border-radius:8px"></div>`;
+        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 90);
+        const metaParts = [];
+        if (m.hunger) metaParts.push('Голод: ' + m.hunger);
+        if (m.feeling) metaParts.push('После: ' + m.feeling);
+        const metaLine = metaParts.length ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${metaParts.join(' · ')}</div>` : '';
+        return `
+          <div style="width:${tileWidthCss};box-sizing:border-box;background:#F9F7F2;border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;align-items:center">
+            ${imgBox}
+            <div style="width:100%;margin-top:6px">
+              <div style="font-size:10px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
+              ${descShort ? `<div style="font-size:11px;color:#1a1a1a;margin-top:2px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis">${descShort}</div>` : ''}
+              ${metaLine}
+            </div>
+          </div>`;
+      }).join('');
+      const waterLine = day?.water_ml ? `Вода: ${day.water_ml} мл` : '';
+      const stoolStr = day?.stool_state ? 'Стул: ' + day.stool_state : '';
+      const extras = [waterLine, stoolStr].filter(Boolean).join(' · ');
+      return `
+        <div style="margin-bottom:14px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #E5E7EB">
+            <div style="font-size:14px;font-weight:700;color:#2D5F3F">${fmtDate(date)}</div>
+            <div style="font-size:10px;color:#6b7280">${extras}</div>
+          </div>
+          ${mealHtml ? `<div style="display:flex;flex-wrap:wrap;gap:10px">${mealHtml}</div>` : '<div style="font-size:12px;color:#9ca3af;padding:4px 0">Нет записей</div>'}
+        </div>`;
+    }).join('');
+    // 'Дневник питания · <range>' heading appears only on the first
+    // diary page. Compact (14px font + 10 margin) so it barely cuts
+    // into the meal budget.
+    const header = pageIdx === 0
+      ? `<div style="font-size:14px;font-weight:700;color:#2D5F3F;margin-bottom:10px">Дневник питания · ${periodFromTo}</div>`
+      : '';
+    return `
+      <div data-page="d${pageIdx}" style="${pageStyle}">
+        ${header}
+        ${dayBlocks || '<div style="color:#6b7280;font-size:13px">Нет данных за период</div>'}
+        ${pageFooter}
+      </div>`;
+  });
+  if (diaryPages.length === 0) {
+    diaryPages.push(`<div data-page="d0" style="${pageStyle}">
+      <div style="font-size:18px;font-weight:700;color:#2D5F3F;margin-bottom:12px">Дневник питания · ${periodFromTo}</div>
+      <div style="color:#6b7280;font-size:13px">Нет данных за период</div>
+      ${pageFooter}
+    </div>`);
+  }
+
+  // === ANALYTICS PAGE ===
+  // Match the color palette used by the MC table on the live analytics screen.
+  // Each fmt returns { n, u } — number and unit rendered separately
+  // so the unit ('мл','мин','ч','/10') can be set in a lighter sans
+  // while the big number keeps the serif headline feel.
+  const metricDefs = [
+    { key:'water',         label:'Вода',                color:'#7BC8E8', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' мл'} },
+    { key:'stool',         label:'Стул (% нормы)',      color:'#A47148', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' %'} },
+    { key:'sleepDuration', label:'Длительность сна',    color:'#7B6FDB', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' ч'} },
+    { key:'sleepQuality',  label:'Качество сна',        color:'#9B7ED9', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /10'} },
+    { key:'bedtime',       label:'Время отхода ко сну', color:'#5B6FBB', fmt: v => ({n: fmtTimeM(v), u:''}) },
+    { key:'movement',      label:'Движение',            color:'#3DB88A', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' мин'} },
+    { key:'stress',        label:'Стресс',              color:'#FF7675', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /10'} },
+    { key:'energy',        label:'Энергия',             color:'#E8A04D', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /10'} },
+    { key:'mood',          label:'Настроение',          color:'#F5A5C0', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /5'} },
+  ];
+
+  // Build an SVG line chart that mirrors the in-app DetailLineChart:
+  // grid, min/mid/max Y-ticks, X-axis date labels, data points with
+  // value labels sitting above each point, and the bedtime axis
+  // inverted so "later" = "lower".
+  const buildChartSvg = (metricKey, color, W, H) => {
+    const padL = 34, padR = 12, padT = 18, padB = 22;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const raw = series?.[metricKey] || [];
+    const points = raw.map(d => ({
+      date: d.date,
+      v: metricKey === 'stool' ? (d.value === 1 ? 1 : d.value === 0 ? 0 : null) : (d.value != null && !isNaN(d.value) ? d.value : null),
+    }));
+    const valid = points.filter(p => p.v != null);
+    if (valid.length === 0) {
+      return `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#9ca3af" font-size="10" font-family="Arial">Нет данных</text></svg>`;
+    }
+    const vMin = Math.min(...valid.map(p=>p.v));
+    const vMax = Math.max(...valid.map(p=>p.v));
+    let yMin, yMax;
+    if (metricKey === 'stool') { yMin = -0.15; yMax = 1.15; }
+    else if (metricKey === 'sleepQuality' || metricKey === 'stress' || metricKey === 'energy') { yMin = 0; yMax = 10; }
+    else if (metricKey === 'mood') { yMin = 1; yMax = 5; }
+    else if (metricKey === 'water') { yMin = 0; yMax = Math.max(vMax * 1.15, (waterNorm||2200)); }
+    else {
+      const span = vMax - vMin || Math.max(1, Math.abs(vMax) * 0.2);
+      yMin = vMin - span * 0.05;
+      yMax = vMax + span * 0.18;
+    }
+    const invert = metricKey === 'bedtime';
+    const valToY = v => {
+      const n = (v - yMin) / (yMax - yMin);
+      return padT + (invert ? n : 1 - n) * plotH;
+    };
+    const idxToX = i => padL + (points.length <= 1 ? plotW/2 : (i / (points.length - 1)) * plotW);
+    const fmtVal = v => {
+      if (v == null) return '';
+      if (metricKey === 'bedtime') return fmtTimeM(v);
+      if (metricKey === 'stool') return v === 1 ? 'Н' : 'НН';
+      if (metricKey === 'water') return Math.round(v) + '';
+      if (metricKey === 'movement') return Math.round(v) + '';
+      return (Math.round(v*10)/10).toString().replace('.', ',');
+    };
+    // Grid + Y labels (3 ticks)
+    const ticks = metricKey === 'stool' ? [0, 1] : [yMin, (yMin+yMax)/2, yMax];
+    const gridParts = ticks.map(v => {
+      const y = valToY(v);
+      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${(W-padR).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#EEEDE6" stroke-width="1"/>` +
+        `<text x="${(padL-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" fill="#9ca3af" font-size="9" font-family="Arial">${fmtVal(v)}</text>`;
+    }).join('');
+    // X labels — skip some if many points
+    const xStride = Math.max(1, Math.ceil(points.length / 6));
+    const xParts = points.map((p, i) => {
+      if (i % xStride !== 0 && i !== points.length - 1) return '';
+      const label = p.date ? p.date.slice(8,10) + '.' + p.date.slice(5,7) : '';
+      return `<text x="${idxToX(i).toFixed(1)}" y="${(H-6).toFixed(1)}" text-anchor="middle" fill="#9ca3af" font-size="9" font-family="Arial">${label}</text>`;
+    }).join('');
+    // Line path — connect ALL valid points into one continuous
+    // polyline (ignore null days instead of breaking the line).
+    const lineCoords = [];
+    points.forEach((p, i) => {
+      if (p.v != null) lineCoords.push(`${idxToX(i).toFixed(1)},${valToY(p.v).toFixed(1)}`);
+    });
+    const lineParts = lineCoords.length >= 2
+      ? `<polyline fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${lineCoords.join(' ')}"/>`
+      : '';
+    // Points + value labels
+    const pointParts = points.map((p, i) => {
+      if (p.v == null) return '';
+      const x = idxToX(i), y = valToY(p.v);
+      const lbl = fmtVal(p.v);
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" fill="#ffffff" stroke="${color}" stroke-width="1.8"/>` +
+        `<text x="${x.toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle" fill="${color}" font-size="9" font-weight="600" font-family="Arial">${lbl}</text>`;
+    }).join('');
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">${gridParts}${lineParts}${pointParts}${xParts}</svg>`;
+  };
+
+  // 9 tiles in 2 cols = 5 rows, fit the 951px content box:
+  //   page header   30 + 14 margin = 44
+  //   available     951 − 44 = 907
+  //   row gaps      4 × 10 = 40
+  //   per-tile max  (907 − 40) / 5 ≈ 173
+  // Interior: 8 pad + 12 label + 26 value + 3 + 85 chart + 8 pad
+  // = 142. Comfortable fit, ~30px buffer per tile for font-metric
+  // variance. Relies on flex gap:10 for vertical spacing — no
+  // per-tile margin-bottom so the budget stays predictable.
+  const tiles = metricDefs.map(m => {
+    const s = summary?.[m.key];
+    const val = m.key === 'stool' ? s?.pct : s?.avg;
+    const statusLabel = s?.status?.label || '—';
+    const statusColor = s?.status?.color || '#9ca3af';
+    const chartSvg = buildChartSvg(m.key, m.color, 322, 85);
+    return `
+      <div style="background:#F9F7F2;border-radius:12px;padding:8px 12px;width:calc(50% - 5px);box-sizing:border-box;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${m.label}</div>
+          <div style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</div>
+        </div>
+        <div style="font-size:22px;font-weight:400;color:#1a1a1a;font-family:'Instrument Serif',Georgia,serif;line-height:1.1;margin-top:2px">${m.fmt(val).n}<span style="font-size:11px;color:#9ca3af;font-weight:400;font-family:-apple-system,sans-serif;margin-left:2px">${m.fmt(val).u}</span></div>
+        <div style="margin-top:3px">${chartSvg}</div>
+      </div>`;
+  }).join('');
+  const pageAnalytics = `
+    <div data-page="a" style="${pageStyle}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:18px;font-weight:700;color:#2D5F3F">Аналитика</div>
+        <div style="font-size:11px;color:#6b7280">${periodLabel}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">${tiles}</div>
+      ${pageFooter}
+    </div>`;
+
+  // Render each PDF page in its own isolated host, so html2canvas can
+  // never capture sibling content. Capture → toDataURL → addImage → tear
+  // down. We also pass explicit width/height/windowWidth to html2canvas
+  // so it doesn't accidentally expand.
+  const allPagesHtml = [pageProfile, ...diaryPages, pageAnalytics];
+  const pdf = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+  for (let i = 0; i < allPagesHtml.length; i++) {
+    const host = document.createElement('div');
+    host.setAttribute('data-pdf-host','1');
+    host.style.cssText = 'position:fixed;left:-20000px;top:0;width:794px;height:1123px;overflow:hidden;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#1a1a1a;-webkit-font-smoothing:antialiased;';
+    host.innerHTML = allPagesHtml[i];
+    document.body.appendChild(host);
+    // Wait for images inside this page to load (or fail)
+    const imgs = Array.from(host.querySelectorAll('img'));
+    await Promise.all(imgs.map(img => new Promise(resolve => {
+      if (img.complete && img.naturalWidth > 0) { resolve(); return; }
+      img.onload = () => resolve();
+      img.onerror = () => { img.style.visibility='hidden'; resolve(); };
+      setTimeout(() => resolve(), 5000);
+    })));
+    try {
+      const canvas = await html2canvas(host, {
+        useCORS: true, allowTaint: false, scale: 2, backgroundColor: '#ffffff',
+        logging: false, width: 794, height: 1123, windowWidth: 794, windowHeight: 1123,
+      });
+      const img = canvas.toDataURL('image/jpeg', 0.88);
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    } finally {
+      try { document.body.removeChild(host); } catch(e) {}
+    }
+  }
+  const ds = new Date().toISOString().slice(0,10);
+  pdf.save(`ELLME_${(profile?.name||'report').replace(/\s+/g,'_')}_${ds}.pdf`);
+}
+
 // Main analytics screen
-function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange }) {
+function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange, pdfUserId }) {
   const [renderError, setRenderError] = useState(null);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [metricModal, setMetricModal] = useState(null); // metric key for fullscreen modal
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState('');
 
   const loading = !analytics || analytics.loading;
   let summary = null, series = null;
@@ -2851,11 +3352,55 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
     }
   };
 
+  const handleDownloadPDF = async () => {
+    if (!pdfUserId || !supabase || pdfLoading) return;
+    setPdfLoading(true); setPdfError('');
+    try {
+      // Resolve period dates
+      let startStr, endStr;
+      if (range === 'custom' && customDateRange) {
+        startStr = customDateRange.start; endStr = customDateRange.end;
+      } else {
+        const daysBack = range === '3d' ? 3 : range === '5d' ? 5 : range === '1m' ? 30 : 7;
+        const end = new Date(), start = new Date();
+        start.setDate(start.getDate() - daysBack + 1);
+        startStr = dk(start); endStr = dk(end);
+      }
+      // Load profile
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', pdfUserId).maybeSingle();
+      // Load days with meals for the period (full rows, not the pruned analytics set)
+      const { data: fullDays } = await supabase.from('diary_days').select('*').eq('user_id', pdfUserId).gte('date', startStr).lte('date', endStr).order('date', { ascending: true });
+      const dayIds = (fullDays || []).map(d => d.id).filter(Boolean);
+      let allMeals = [];
+      if (dayIds.length) {
+        const { data: m } = await supabase.from('meals').select('*').in('diary_day_id', dayIds);
+        allMeals = m || [];
+      }
+      const periodFromTo = `${startStr.split('-').reverse().join('.')} – ${endStr.split('-').reverse().join('.')}`;
+      await generateReportPDF({
+        userId: pdfUserId,
+        profile: profile || {},
+        photoUrl: profile?.photo_url || null,
+        days: fullDays || [],
+        allMeals,
+        summary,
+        series,
+        waterNorm: waterNorm || 2200,
+        periodLabel,
+        periodFromTo,
+      });
+    } catch (e) {
+      console.error('PDF error:', e);
+      setPdfError(e?.message || 'Не удалось сформировать PDF');
+    }
+    setPdfLoading(false);
+  };
+
   return <div style={{animation:'slideRight .3s ease'}}>
     <TopBar left={onBack?<BackBtn onClick={onBack}/>:null} title={title||'Аналитика'} right={null}/>
 
     {/* Period tabs */}
-    <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:16}}>
+    <div style={{display:'flex',gap:4,background:C.surfaceAlt,padding:4,borderRadius:14,marginBottom:12}}>
       {[['3d','3д'],['5d','5д'],['7d','7д'],['1m','1мес'],['custom','Свой']].map(([k,l]) => {
         const isActive = range===k || (k==='custom' && showCustomPicker);
         const label = k==='custom' && range==='custom' && customDateRange
@@ -2864,6 +3409,69 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
         return <button key={k} onClick={()=>{if(k==='custom'){if(!customStart||!customEnd){const e=new Date(),s=new Date();s.setDate(s.getDate()-6);setCustomStart(dk(s));setCustomEnd(dk(e))}setShowCustomPicker(true)}else{setShowCustomPicker(false);onRangeChange(k)}}} style={{flex:k==='custom'&&range==='custom'?1.4:1,padding:'10px 0',borderRadius:10,border:'none',background:isActive?C.surface:'transparent',color:isActive?C.accent:C.soft,fontSize:k==='custom'&&range==='custom'?10:12,fontWeight:isActive?600:400,cursor:'pointer',fontFamily:'inherit',boxShadow:isActive?'0 1px 4px rgba(0,0,0,.06)':'none',transition:'all .15s'}}>{label}</button>;
       })}
     </div>
+
+    {/* PDF download block — full-width tile. Text + pill-button on
+        the left, document icon on the right. Whole block is one big
+        clickable button; the pill is a visual affordance for where
+        to tap. */}
+    <button onClick={handleDownloadPDF} disabled={pdfLoading} type="button" style={{
+      display:'flex',alignItems:'center',gap:16,width:'100%',
+      padding:'20px 22px',borderRadius:18,border:'none',
+      background:`linear-gradient(135deg, ${C.accent} 0%, #1E4530 100%)`,
+      color:'#fff',textAlign:'left',fontFamily:'inherit',
+      cursor:pdfLoading?'default':'pointer',
+      marginBottom:16,minHeight:138,
+      boxShadow:'0 6px 18px rgba(45,95,63,.32)',
+      opacity:pdfLoading?.75:1,
+      transition:'transform .15s ease, opacity .15s, box-shadow .2s',
+      WebkitTapHighlightColor:'transparent',position:'relative',overflow:'hidden',
+    }}
+      onTouchStart={e=>{if(!pdfLoading)e.currentTarget.style.transform='scale(.985)'}}
+      onTouchEnd={e=>e.currentTarget.style.transform='scale(1)'}
+    >
+      {/* Subtle decorative circle in the top-left for depth */}
+      <div aria-hidden="true" style={{position:'absolute',left:-40,top:-40,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.05)',pointerEvents:'none'}}/>
+
+      {/* Left: copy + pill CTA */}
+      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative',gap:4}}>
+        <div style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:400,lineHeight:1.15,color:'#fff',letterSpacing:'.01em'}}>
+          Выгрузить информацию
+        </div>
+        <div style={{fontSize:12,color:'rgba(255,255,255,.78)',lineHeight:1.4}}>
+          за выбранный период в формате PDF файла
+        </div>
+        <div style={{
+          display:'inline-flex',alignItems:'center',gap:7,marginTop:12,
+          padding:'9px 18px',borderRadius:100,
+          background:'#ffffff',color:C.accent,
+          fontSize:13,fontWeight:700,letterSpacing:'.01em',
+          alignSelf:'flex-start',pointerEvents:'none',
+          boxShadow:'0 2px 6px rgba(0,0,0,.08)',
+        }}>
+          {pdfLoading
+            ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:'spin 1s linear infinite'}}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>Формируем…</>
+            : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Скачать</>
+          }
+        </div>
+      </div>
+
+      {/* Right: stylized PDF document icon */}
+      <div style={{position:'relative',width:58,height:72,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="58" height="72" viewBox="0 0 58 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 2 H38 L56 20 V66 A4 4 0 0 1 52 70 H6 A4 4 0 0 1 2 66 V6 A4 4 0 0 1 6 2 Z"
+            fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
+          <path d="M38 2 V16 A4 4 0 0 0 42 20 H56"
+            fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.5)" strokeWidth="1.8" strokeLinejoin="round"/>
+          <text x="29" y="48" textAnchor="middle" fontSize="13" fontWeight="800"
+            fill="#ffffff" fontFamily="-apple-system, system-ui, sans-serif" letterSpacing="0.5">
+            PDF
+          </text>
+          <rect x="12" y="55" width="24" height="2" rx="1" fill="rgba(255,255,255,0.35)"/>
+          <rect x="12" y="60" width="34" height="2" rx="1" fill="rgba(255,255,255,0.22)"/>
+        </svg>
+      </div>
+    </button>
+    {pdfError && <div style={{padding:'10px 14px',borderRadius:12,background:C.dangerSoft||'#FEE',color:C.danger||'#c00',fontSize:12,marginBottom:12}}>{pdfError}</div>}
 
     {/* Custom date picker modal */}
     {showCustomPicker && <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 32px'}} onClick={()=>setShowCustomPicker(false)}>
@@ -4285,6 +4893,7 @@ export default function App(){
     onBack={()=>setScreen('clientView')}
     waterNorm={selClient.waterNorm||waterNorm}
     title={(selClient.nick||selClient.name) + ' — аналитика'}
+    pdfUserId={selClient.id}
   />);
 
   // Own analytics (from profile)
@@ -4296,6 +4905,7 @@ export default function App(){
     onCustomDateRange={setCustomDateRange}
     onBack={null}
     waterNorm={waterNorm}
+    pdfUserId={user?.id}
   />);
 
   // ═══ CLIENT — MEAL DETAIL ═══
