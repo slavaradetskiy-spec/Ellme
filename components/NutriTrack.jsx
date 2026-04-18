@@ -2950,23 +2950,36 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
 
   // Pre-bake the brand logo to a data URI so html2canvas renders it
   // reliably on every page (same trick as meal photos).
+  // logo-pdf.png is a horizontal wordmark — preserve its native
+  // aspect ratio when baking to the offscreen canvas.
   const logoImg = await loadImage('/logo-pdf.png');
   let logoDataUri = '';
+  let logoAspect = 1024 / 559;
   if (logoImg) {
+    const iw = logoImg.naturalWidth || 1024;
+    const ih = logoImg.naturalHeight || 559;
+    logoAspect = iw / ih;
+    const bakeH = 240;
+    const bakeW = Math.round(bakeH * logoAspect);
     const lc = document.createElement('canvas');
-    lc.width = 108; lc.height = 108;
-    lc.getContext('2d').drawImage(logoImg, 0, 0, 108, 108);
+    lc.width = bakeW; lc.height = bakeH;
+    const lctx = lc.getContext('2d');
+    lctx.imageSmoothingEnabled = true;
+    lctx.imageSmoothingQuality = 'high';
+    lctx.drawImage(logoImg, 0, 0, bakeW, bakeH);
     logoDataUri = lc.toDataURL('image/png');
   }
+  const logoDispH = 40;
+  const logoDispW = Math.round(logoDispH * logoAspect);
 
   // Profile row helper
   const row = (label, value) => `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;width:42%;vertical-align:top">${label}</td><td style="padding:6px 0;color:#1a1a1a;font-size:13px;font-weight:500">${value || '—'}</td></tr>`;
 
-  // Per-page footer: logo lockup pinned bottom-LEFT, domain + short
-  // descriptor pinned bottom-RIGHT. Consistent brand row across
-  // every page of the report.
+  // Per-page footer: wordmark pinned bottom-LEFT (with E/L/L tagline
+  // alongside), domain + short descriptor pinned bottom-RIGHT.
+  // Consistent brand row across every page of the report.
   const logoMark = logoDataUri
-    ? `<img src="${logoDataUri}" style="width:54px;height:54px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"/>`
+    ? `<img src="${logoDataUri}" width="${logoDispW}" height="${logoDispH}" style="display:block;width:${logoDispW}px;height:${logoDispH}px;flex-shrink:0"/>`
     : `<div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"><span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span></div>`;
 
   const pageFooter = `
