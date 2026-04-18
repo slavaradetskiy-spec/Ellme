@@ -2952,26 +2952,34 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   // reliably on every page (same trick as meal photos).
   // logo-pdf.png is a horizontal wordmark — preserve its native
   // aspect ratio when baking to the offscreen canvas.
+  // logo-pdf.png has ~20% transparent padding top/bottom. Crop to
+  // the tight content box during bake so the PNG's visible edge is
+  // its actual edge — then bottom:22 aligns with the right stack.
   const logoImg = await loadImage('/logo-pdf.png');
   let logoDataUri = '';
-  let logoAspect = 1024 / 559;
+  let logoAspect = 860 / 331; // cropped content aspect (fallback)
   if (logoImg) {
     const iw = logoImg.naturalWidth || 1024;
     const ih = logoImg.naturalHeight || 559;
-    logoAspect = iw / ih;
-    // Bake at native resolution so html2canvas has plenty of pixels
-    // to downsample from — no resampling loss vs the source.
-    const bakeH = ih;
-    const bakeW = iw;
+    // Measured content box (in native 1024×559 pixels)
+    const CROP = { l: 128, t: 113, w: 860, h: 331 };
+    // Scale crop if the file dimensions ever change proportionally
+    const sx = iw / 1024, sy = ih / 559;
+    const cx = Math.round(CROP.l * sx);
+    const cy = Math.round(CROP.t * sy);
+    const cw = Math.round(CROP.w * sx);
+    const ch = Math.round(CROP.h * sy);
+    logoAspect = cw / ch;
     const lc = document.createElement('canvas');
-    lc.width = bakeW; lc.height = bakeH;
+    lc.width = cw; lc.height = ch;
     const lctx = lc.getContext('2d');
     lctx.imageSmoothingEnabled = true;
     lctx.imageSmoothingQuality = 'high';
-    lctx.drawImage(logoImg, 0, 0, bakeW, bakeH);
+    lctx.drawImage(logoImg, cx, cy, cw, ch, 0, 0, cw, ch);
     logoDataUri = lc.toDataURL('image/png');
   }
-  const logoDispH = 80;
+  // Match the right-stack visual weight (ellme.ru + 2 descriptor lines ≈ 56px)
+  const logoDispH = 56;
   const logoDispW = Math.round(logoDispH * logoAspect);
 
   // Profile row helper
@@ -2985,7 +2993,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     : `<div style="width:54px;height:54px;border-radius:50%;background:${C.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(45,95,63,.25)"><span style="font-family:'Instrument Serif',Georgia,serif;font-size:15px;color:#fff;letter-spacing:1.5px;font-weight:400">ELL·ME</span></div>`;
 
   const pageFooter = `
-    <div style="position:absolute;left:56px;bottom:14px;display:flex;align-items:center">
+    <div style="position:absolute;left:56px;bottom:22px;display:flex;align-items:center">
       ${logoMark}
     </div>
     <div style="position:absolute;right:56px;bottom:22px;text-align:right;line-height:1.3">
