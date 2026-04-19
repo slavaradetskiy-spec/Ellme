@@ -3587,51 +3587,48 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
         </div>)}
       </div>}
 
-      {/* ─── КЛИЕНТЫ ПОД НАБЛЮДЕНИЕМ — table with pinned Client column ─── */}
-      <div style={{background:C.surface,borderRadius:20,padding:'20px 0',marginBottom:14,boxShadow:C.shadowCard,animation:'enter .45s ease'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 20px',marginBottom:14}}>
+      {/* ─── КЛИЕНТЫ ПОД НАБЛЮДЕНИЕМ — card list ─── */}
+      <div style={{marginBottom:14,animation:'enter .45s ease'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 4px',marginBottom:10}}>
           <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase'}}>Клиенты под наблюдением</div>
           <div style={{padding:'3px 9px',borderRadius:8,background:C.accentSoft,color:C.accent,fontSize:10,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase'}}>сегодня</div>
         </div>
-
-        {watch.length === 0 && <div style={{fontSize:13,color:C.soft,padding:'10px 20px'}}>Нет активных клиентов.</div>}
-
-        {watch.length > 0 && <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
-          <div style={{minWidth:640,position:'relative'}}>
-            {/* Header */}
-            <div style={{display:'grid',gridTemplateColumns:'170px 90px 90px 170px 110px 110px',alignItems:'end',padding:'0 20px 10px',fontSize:10,fontWeight:600,letterSpacing:0.8,color:C.muted,textTransform:'uppercase',borderBottom:`1px solid ${C.tileBorder}`,gap:0}}>
-              <div style={{position:'sticky',left:20,background:C.surface,paddingRight:12,zIndex:2}}>Клиент</div>
-              <div>Индекс</div>
-              <div>Тренд</div>
-              <div>Ключевой флаг</div>
-              <div>Приверженность</div>
-              <div style={{textAlign:'right'}}>Действие</div>
-            </div>
-            {/* Rows */}
-            {watch.map(r => {
-              const aSt = actionStyle(r.action);
-              const sc = scoreColor(r.score);
-              const name = r.client.nick || r.client.name || '—';
-              return <div key={r.client.id} style={{display:'grid',gridTemplateColumns:'170px 90px 90px 170px 110px 110px',alignItems:'center',padding:'14px 20px',borderBottom:`1px solid ${C.tileBorder}`,gap:0}}>
-                {/* Pinned client cell */}
-                <button onClick={()=>onOpenClient(r.client)} style={{position:'sticky',left:20,background:C.surface,paddingRight:12,zIndex:1,border:'none',padding:'0 12px 0 0',cursor:'pointer',fontFamily:'inherit',textAlign:'left',minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{name}</div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.3,marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.sub}</div>
+        {watch.length === 0 && <div style={{background:C.surface,borderRadius:20,padding:20,fontSize:13,color:C.soft,boxShadow:C.shadowCard}}>Нет активных клиентов.</div>}
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {watch.map(r => {
+            const aSt = actionStyle(r.action);
+            const sc = scoreColor(r.score);
+            const name = r.client.nick || r.client.name || '—';
+            const initials = name.split(' ').slice(0,2).map(s => s.charAt(0).toUpperCase()).join('');
+            return <div key={r.client.id} style={{background:C.surface,borderRadius:18,padding:16,boxShadow:C.shadowCard}}>
+              {/* Row 1: avatar + name + score pill */}
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                <button onClick={()=>onOpenClient(r.client)} style={{background:'none',border:'none',padding:0,cursor:'pointer',flexShrink:0}}>
+                  {r.client.photo
+                    ? <img src={r.client.photo} alt="" style={{width:42,height:42,borderRadius:'50%',objectFit:'cover',display:'block'}}/>
+                    : <div style={{width:42,height:42,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,fontSize:14}}>{initials || '?'}</div>
+                  }
                 </button>
-                <div style={{fontSize:13,color:sc,fontWeight:600}}>{r.score == null ? '—' : `${r.score}/100`}</div>
-                <div style={{fontSize:12,color:trendColor(r.trend),fontWeight:600}}>{r.trend == null ? 'нет тренда' : `${trendArrow(r.trend)} ${r.trend > 0 ? '+' : ''}${r.trend}`}</div>
-                <div style={{fontSize:12,color:C.text,lineHeight:1.35,paddingRight:12}}>{r.flag}</div>
-                <div style={{fontSize:12,color:C.soft}}>{r.adherence}/7 дней</div>
-                <div style={{textAlign:'right'}}>
-                  <button onClick={()=>onOpenChat(r.client)} style={{padding:'6px 11px',borderRadius:8,border:'none',background:aSt.bg,color:aSt.fg,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>{r.action}</button>
+                <button onClick={()=>onOpenClient(r.client)} style={{flex:1,minWidth:0,background:'none',border:'none',padding:0,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+                  <div style={{fontSize:15,fontWeight:600,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{name}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{r.flag}</div>
+                </button>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:2,flexShrink:0}}>
+                  <div style={{fontSize:18,fontWeight:700,color:sc,lineHeight:1}}>{r.score == null ? '—' : r.score}<span style={{fontSize:11,fontWeight:500,color:C.muted}}>/100</span></div>
+                  <div style={{fontSize:11,fontWeight:600,color:trendColor(r.trend)}}>{r.trend == null ? 'нет тренда' : `${trendArrow(r.trend)} ${r.trend > 0 ? '+' : ''}${r.trend}`}</div>
                 </div>
-              </div>;
-            })}
-            {/* Hint that more columns exist */}
-            <div style={{position:'absolute',top:0,right:0,bottom:0,width:24,background:`linear-gradient(to right, transparent, ${C.surface})`,pointerEvents:'none'}}/>
-          </div>
-        </div>}
-        <div style={{fontSize:10,color:C.muted,textAlign:'center',marginTop:10,padding:'0 20px'}}>← свайп для всех колонок →</div>
+              </div>
+              {/* Row 2: adherence dots + action button */}
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{display:'flex',gap:3,flex:1}}>
+                  {[...Array(7)].map((_,i) => <div key={i} style={{flex:1,height:6,borderRadius:3,background: i < r.adherence ? C.accent : C.tile}}/>)}
+                </div>
+                <div style={{fontSize:11,color:C.soft,flexShrink:0,minWidth:48,textAlign:'right'}}>{r.adherence}/7 дн.</div>
+                <button onClick={()=>onOpenChat(r.client)} style={{padding:'7px 12px',borderRadius:10,border:'none',background:aSt.bg,color:aSt.fg,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>{r.action}</button>
+              </div>
+            </div>;
+          })}
+        </div>
       </div>
 
       {/* ─── ГИПОТЕЗА НЕДЕЛИ ─── */}
