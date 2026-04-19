@@ -3270,6 +3270,254 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   pdf.save(`ELLME_${(profile?.name||'report').replace(/\s+/g,'_')}_${ds}.pdf`);
 }
 
+// ─── DOC DASHBOARD ──────────────────────────────────────────────────────────
+// Aggregated nutritionist dashboard: state index, key domains, priorities,
+// watch list, hypothesis of the week, and habits — across all active clients.
+function generateHypothesis(group) {
+  // Pick the worst-performing domain in the group; suggest a tactical bet.
+  const domains = [
+    { k:'sleep', l:'сну', val: group.sleep, hi:'ночное потребление сахара или поздний ужин', bet:'просить сдвинуть ужин на 19:00 и убирать кофе после 14:00' },
+    { k:'stress', l:'стрессу', val: group.stress, hi:'дефицит дневного восстановления', bet:'добавить 1 дыхательную практику между обедом и ужином' },
+    { k:'energy', l:'энергии', val: group.energy, hi:'низкое потребление воды и белка на завтраке', bet:'фиксировать 25–30г белка в первый приём пищи' },
+    { k:'water', l:'воде', val: group.water, hi:'утренний дефицит жидкости', bet:'200мл воды до кофе и +250мл к каждому приёму пищи' },
+    { k:'movement', l:'движению', val: group.movement, hi:'малоподвижный график без триггеров', bet:'договориться о коротких 10-минутных прогулках после еды' },
+  ].filter(d => d.val != null);
+  if (!domains.length) return null;
+  domains.sort((a,b) => a.val - b.val);
+  const w = domains[0];
+  return {
+    title: `Слабее всего — по ${w.l}`,
+    hi: w.hi,
+    bet: w.bet,
+  };
+}
+
+function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]); // [{client, score, prevScore, trend, weakDomain, adherence, summary}]
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!supabase) { setLoading(false); return; }
+      const active = clients.filter(c => c.status === 'active');
+      if (!active.length) { setLoading(false); setRows([]); return; }
+      try {
+        const ids = active.map(c => c.id);
+        // Last 14 days window for trend (current 7 vs prior 7)
+        const end = new Date();
+        const start = new Date(); start.setDate(start.getDate() - 13);
+        const startStr = dk(start), endStr = dk(end);
+        const { data: days } = await supabase.from('diary_days')
+          .select('*').in('user_id', ids).gte('date', startStr).lte('date', endStr)
+          .order('date', { ascending: true });
+        const safeDays = days || [];
+        const dayIds = safeDays.map(d => d.id).filter(Boolean);
+        let meals = [];
+        if (dayIds.length) {
+          const { data: m } = await supabase.from('meals')
+            .select('diary_day_id,meal_type,time,liked').in('diary_day_id', dayIds);
+          meals = m || [];
+        }
+        // Group days+meals by user_id
+        const dayIdToUser = {};
+        const byUser = {};
+        safeDays.forEach(d => { dayIdToUser[d.id] = d.user_id; if (!byUser[d.user_id]) byUser[d.user_id] = { days: [], meals: [] }; byUser[d.user_id].days.push(d); });
+        meals.forEach(m => { const uid = dayIdToUser[m.diary_day_id]; if (uid && byUser[uid]) byUser[uid].meals.push(m); });
+        // Per-client metrics
+        const today = new Date(); today.setHours(0,0,0,0);
+        const splitDate = new Date(); splitDate.setDate(splitDate.getDate() - 7); splitDate.setHours(0,0,0,0);
+        const splitStr = dk(splitDate);
+        const out = active.map(c => {
+          const u = byUser[c.id] || { days: [], meals: [] };
+          const norm = c.waterNorm || waterNorm || 2200;
+          const recentDays = u.days.filter(d => d.date >= splitStr);
+          const priorDays = u.days.filter(d => d.date < splitStr);
+          const recentDayIds = recentDays.map(d => d.id);
+          const priorDayIds = priorDays.map(d => d.id);
+          const recentMeals = u.meals.filter(m => recentDayIds.includes(m.diary_day_id));
+          const priorMeals = u.meals.filter(m => priorDayIds.includes(m.diary_day_id));
+          const r = buildAnalytics(recentDays, recentMeals, norm);
+          const p = buildAnalytics(priorDays, priorMeals, norm);
+          const score = computeHealthScore(r.summary, norm);
+          const prevScore = computeHealthScore(p.summary, norm);
+          const trend = (score != null && prevScore != null) ? Math.round((score - prevScore) * 10) / 10 : null;
+          // Weak domain in current week
+          const sm = r.summary || {};
+          const cand = [
+            { k:'sleep', l:'Сон', v: sm.sleepDuration?.avg != null ? (sm.sleepDuration.avg >= 7 && sm.sleepDuration.avg <= 9 ? 10 : Math.max(0, 10 - Math.abs(sm.sleepDuration.avg - 8) * 2.5)) : null },
+            { k:'stress', l:'Стресс', v: sm.stress?.avg != null ? (10 - sm.stress.avg) : null },
+            { k:'energy', l:'Энергия', v: sm.energy?.avg },
+            { k:'mood', l:'Настроение', v: sm.mood?.avg != null ? sm.mood.avg / 5 * 10 : null },
+            { k:'water', l:'Вода', v: sm.water?.avg != null ? Math.min(10, sm.water.avg / norm * 10) : null },
+            { k:'movement', l:'Движение', v: sm.movement?.avg != null ? Math.min(10, sm.movement.avg / 6) : null },
+          ].filter(x => x.v != null);
+          cand.sort((a,b) => a.v - b.v);
+          const weakDomain = cand[0] ? cand[0].l : null;
+          const weakKey = cand[0] ? cand[0].k : null;
+          // Adherence — % of last 7 days with any data
+          const filledDates = new Set(recentDays.filter(d => d.water_ml != null || d.sleep_bed || d.stress_level != null || d.energy != null || d.mood != null).map(d => d.date));
+          const adherence = Math.round(filledDates.size / 7 * 100);
+          return { client: c, score, prevScore, trend, weakDomain, weakKey, adherence, summary: sm, recentDays: recentDays.length };
+        });
+        if (!cancelled) { setRows(out); setLoading(false); }
+      } catch (e) {
+        console.error('DocDashboard load error:', e);
+        if (!cancelled) { setError(e.message || 'Ошибка загрузки'); setLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clients, waterNorm]);
+
+  // ── Aggregates across the whole client base ──
+  const withScore = rows.filter(r => r.score != null);
+  const groupIndex = withScore.length ? Math.round(withScore.reduce((s,r) => s + r.score, 0) / withScore.length * 10) / 10 : null;
+  const groupTrend = withScore.filter(r => r.trend != null).length
+    ? Math.round(withScore.filter(r => r.trend != null).reduce((s,r) => s + r.trend, 0) / withScore.filter(r => r.trend != null).length * 10) / 10
+    : null;
+  // Per-domain group averages (raw values, normalised in hypothesis)
+  const groupDomain = (key) => {
+    const vals = rows.map(r => r.summary?.[key]?.avg).filter(v => v != null);
+    if (!vals.length) return null;
+    return vals.reduce((s,v) => s + v, 0) / vals.length;
+  };
+  const groupNorm = {
+    sleep: (() => { const v = groupDomain('sleepDuration'); return v == null ? null : (v >= 7 && v <= 9 ? 10 : Math.max(0, 10 - Math.abs(v - 8) * 2.5)); })(),
+    stress: (() => { const v = groupDomain('stress'); return v == null ? null : (10 - v); })(),
+    energy: groupDomain('energy'),
+    mood: (() => { const v = groupDomain('mood'); return v == null ? null : v / 5 * 10; })(),
+    water: (() => { const v = groupDomain('water'); return v == null ? null : Math.min(10, v / (waterNorm || 2200) * 10); })(),
+    movement: (() => { const v = groupDomain('movement'); return v == null ? null : Math.min(10, v / 6); })(),
+  };
+  const hypothesis = generateHypothesis(groupNorm);
+
+  // Watch list — clients with low score, declining trend, or low adherence
+  const watch = rows.filter(r => (r.score != null && r.score < 6) || (r.trend != null && r.trend <= -0.5) || (r.adherence < 50 && r.recentDays > 0))
+    .sort((a,b) => (a.score ?? 99) - (b.score ?? 99))
+    .slice(0, 6);
+
+  // Domain ranking (best→worst) for "Ключевые домены" — based on group-normalised values
+  const domains = [
+    { k:'sleep', l:'Сон', v: groupNorm.sleep, c:'#7F77DD' },
+    { k:'energy', l:'Энергия', v: groupNorm.energy, c:'#EF9F27' },
+    { k:'mood', l:'Настроение', v: groupNorm.mood, c:'#E07BAD' },
+    { k:'stress', l:'Стресс', v: groupNorm.stress, c:'#D85A30' },
+    { k:'water', l:'Вода', v: groupNorm.water, c:'#378ADD' },
+    { k:'movement', l:'Движение', v: groupNorm.movement, c:'#0F6E56' },
+  ].filter(d => d.v != null).sort((a,b) => b.v - a.v);
+
+  // ── Render ──
+  const pillBg = (v) => v == null ? '#999' : v >= 8 ? C.accent : v >= 6 ? C.warm : C.danger;
+  const trendArrow = (t) => t == null ? '·' : t > 0.1 ? '↑' : t < -0.1 ? '↓' : '→';
+  const trendColor = (t) => t == null ? C.muted : t > 0.1 ? C.accent : t < -0.1 ? C.danger : C.soft;
+
+  return <>
+    <TopBar
+      left={<button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>}
+      title="Дашборд"
+      subtitle={`${rows.length} ${rows.length===1?'клиент':rows.length>=2&&rows.length<=4?'клиента':'клиентов'} · 7 дней`}
+    />
+
+    {loading && <div style={{padding:'40px 16px',textAlign:'center',color:C.muted,fontSize:13}}>Собираем данные…</div>}
+    {!loading && error && <div style={{padding:'20px 16px',background:C.dangerSoft,color:C.danger,borderRadius:14,fontSize:13}}>{error}</div>}
+
+    {!loading && !error && <>
+      {/* ─── ИНДЕКС СОСТОЯНИЯ ─── */}
+      <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .35s ease'}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:12}}>Индекс состояния</div>
+        <div style={{display:'flex',alignItems:'baseline',gap:10}}>
+          <div style={{fontSize:48,fontWeight:300,fontFamily:'var(--fd)',color:groupIndex==null?C.muted:pillBg(groupIndex),lineHeight:1}}>{groupIndex == null ? '—' : fmt1(groupIndex)}</div>
+          <div style={{fontSize:14,color:C.soft}}>/ 10</div>
+          {groupTrend != null && <div style={{marginLeft:'auto',fontSize:13,fontWeight:600,color:trendColor(groupTrend),display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:18}}>{trendArrow(groupTrend)}</span>{groupTrend > 0 ? '+' : ''}{fmt1(groupTrend)} за неделю</div>}
+        </div>
+        <div style={{fontSize:12,color:C.soft,marginTop:8,lineHeight:1.5}}>Средний балл по {withScore.length} {withScore.length===1?'клиенту':'клиентам'} c данными за последние 7 дней.</div>
+      </div>
+
+      {/* ─── КЛЮЧЕВЫЕ ДОМЕНЫ ─── */}
+      {domains.length > 0 && <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .4s ease'}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:14}}>Ключевые домены</div>
+        {domains.map(d => <div key={d.k} style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5,fontSize:13}}>
+            <span style={{color:C.text,fontWeight:500}}>{d.l}</span>
+            <span style={{color:d.c,fontWeight:600}}>{fmt1(d.v)}/10</span>
+          </div>
+          <div style={{height:6,borderRadius:3,background:C.tile,overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${Math.min(100, d.v * 10)}%`,background:d.c,borderRadius:3,transition:'width .4s'}}/>
+          </div>
+        </div>)}
+      </div>}
+
+      {/* ─── ПРИОРИТЕТЫ НЕДЕЛИ ─── */}
+      {hypothesis && <div style={{background:C.accentSoft,borderRadius:20,padding:20,marginBottom:14,animation:'enter .45s ease',border:`1px solid ${C.accent}22`}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.accent,textTransform:'uppercase',marginBottom:10}}>Гипотеза недели</div>
+        <div style={{fontSize:16,fontWeight:600,color:C.text,marginBottom:8,lineHeight:1.3}}>{hypothesis.title}</div>
+        <div style={{fontSize:13,color:C.soft,lineHeight:1.5,marginBottom:10}}>Возможный фактор — {hypothesis.hi}.</div>
+        <div style={{fontSize:13,color:C.text,lineHeight:1.5,padding:'12px 14px',background:C.surface,borderRadius:12}}><b style={{color:C.accent}}>Тактическая ставка:</b> {hypothesis.bet}.</div>
+      </div>}
+
+      {/* ─── КЛИЕНТЫ ПОД НАБЛЮДЕНИЕМ ─── */}
+      <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .5s ease'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase'}}>Клиенты под наблюдением</div>
+          <div style={{fontSize:11,color:C.muted}}>{watch.length}</div>
+        </div>
+        {watch.length === 0 && <div style={{fontSize:13,color:C.soft,padding:'10px 0'}}>Никого в зоне риска — все идут хорошо.</div>}
+        {watch.map(r => <div key={r.client.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderTop:`1px solid ${C.tileBorder}`}}>
+          <button onClick={()=>onOpenClient(r.client)} style={{flex:1,display:'flex',alignItems:'center',gap:12,background:'none',border:'none',padding:0,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+            {r.client.photo
+              ? <img src={r.client.photo} alt="" style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0}}/>
+              : <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,fontSize:14,flexShrink:0}}>{(r.client.nick||r.client.name||'?').charAt(0).toUpperCase()}</div>
+            }
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.client.nick || r.client.name}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2}}>{r.weakDomain ? `↓ ${r.weakDomain}` : 'нет данных'} · {r.adherence}% дней</div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+              <div style={{padding:'4px 9px',borderRadius:10,background:pillBg(r.score)+'1A',color:pillBg(r.score),fontWeight:600,fontSize:13}}>{r.score == null ? '—' : fmt1(r.score)}</div>
+              {r.trend != null && <div style={{fontSize:12,color:trendColor(r.trend),fontWeight:600}}>{trendArrow(r.trend)}</div>}
+            </div>
+          </button>
+          <button onClick={()=>onOpenChat(r.client)} title="Написать" style={{background:C.accentSoft,border:'none',width:34,height:34,borderRadius:10,cursor:'pointer',color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+        </div>)}
+      </div>
+
+      {/* ─── НЕДЕЛЯ КЛИЕНТА — full ranking ─── */}
+      <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .55s ease'}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:14}}>Неделя клиента</div>
+        {rows.length === 0 && <div style={{fontSize:13,color:C.soft}}>Ни одного активного клиента.</div>}
+        {rows.sort((a,b) => (b.score ?? -1) - (a.score ?? -1)).map(r => <button key={r.client.id} onClick={()=>onOpenClient(r.client)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:`1px solid ${C.tileBorder}`,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+          <div style={{width:6,height:32,borderRadius:3,background:r.score==null?C.muted:pillBg(r.score),flexShrink:0}}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,color:C.text,fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.client.nick || r.client.name}</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:2}}>{r.recentDays > 0 ? `${r.recentDays} ${r.recentDays===1?'день':r.recentDays<5?'дня':'дней'} · ${r.adherence}%` : 'нет записей'}</div>
+          </div>
+          <div style={{fontSize:14,fontWeight:600,color:r.score==null?C.muted:pillBg(r.score),minWidth:36,textAlign:'right'}}>{r.score == null ? '—' : fmt1(r.score)}</div>
+          {r.trend != null && <div style={{fontSize:12,color:trendColor(r.trend),fontWeight:600,minWidth:34,textAlign:'right'}}>{trendArrow(r.trend)}{r.trend > 0 ? '+' : ''}{fmt1(r.trend)}</div>}
+        </button>)}
+      </div>
+
+      {/* ─── ПРИВЫЧКИ ПОДДЕРЖКИ ─── */}
+      <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:80,boxShadow:C.shadowCard,animation:'enter .6s ease'}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:12}}>Привычки поддержки</div>
+        {[
+          { l:'Записать гипотезу недели в общий чат', d:'Помогает клиентам видеть рамку и держать фокус.' },
+          { l:'Связаться с теми, кто < 50% адхеренса', d:`Сейчас таких ${rows.filter(r=>r.adherence<50&&r.recentDays>0).length}.` },
+          { l:'Отметить рост у тех, чей тренд +', d:`Положительная динамика у ${rows.filter(r=>r.trend!=null&&r.trend>0.1).length}.` },
+        ].map((h,i) => <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 0',borderTop:i===0?'none':`1px solid ${C.tileBorder}`}}>
+          <div style={{width:8,height:8,borderRadius:'50%',background:C.accent,marginTop:6,flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,color:C.text,fontWeight:500,marginBottom:2}}>{h.l}</div>
+            <div style={{fontSize:11,color:C.muted,lineHeight:1.4}}>{h.d}</div>
+          </div>
+        </div>)}
+      </div>
+    </>}
+  </>;
+}
+
 // Main analytics screen
 function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange, pdfUserId }) {
   const [renderError, setRenderError] = useState(null);
@@ -4727,6 +4975,7 @@ export default function App(){
       // Doc tabs: diary (myDiary) / clients (home) / chat / profile
       if (screen === 'myDiary' || screen === 'myMealDetail') return 'diary';
       if (screen === 'analytics') return 'diary'; // own analytics opens from myDiary
+      if (screen === 'docDashboard') return 'clients';
       return 'clients';
     }
     // Client tabs: diary / analytics / chat / profile
@@ -4923,6 +5172,15 @@ export default function App(){
   // ═══ PROFILE ═══
   if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb} onOpenAnalytics={()=>setScreen('analytics')}/>);
 
+  // Nutritionist aggregated dashboard
+  if(isDoc && screen==='docDashboard') return shell(<DocDashboard
+    clients={clients}
+    waterNorm={waterNorm}
+    onBack={()=>setScreen('home')}
+    onOpenClient={(c)=>{setSelClient(c);setScreen('clientView');}}
+    onOpenChat={(c)=>openChat(c.id, c.nick||c.name, user.id, null)}
+  />);
+
   // Client analytics viewed by the nutritionist
   if(screen==='clientAnalytics'&&selClient) return shell(<AnalyticsScreen
     analytics={analytics}
@@ -5097,7 +5355,7 @@ export default function App(){
       <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/>}/>
 
       {/* Nutritionist dashboard banner — opens aggregated analytics */}
-      <button onClick={()=>{setAnalytics(null);setAnalyticsRange('7d');setScreen('analytics')}} style={{width:'100%',padding:'20px 22px',borderRadius:20,border:'none',background:C.accent,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:16,marginBottom:14,boxShadow:'0 6px 20px rgba(45,95,63,.22)',transition:'all .25s',transform:'perspective(400px) rotateX(0)',textAlign:'left'}}
+      <button onClick={()=>setScreen('docDashboard')} style={{width:'100%',padding:'20px 22px',borderRadius:20,border:'none',background:C.accent,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:16,marginBottom:14,boxShadow:'0 6px 20px rgba(45,95,63,.22)',transition:'all .25s',transform:'perspective(400px) rotateX(0)',textAlign:'left'}}
         onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-3px)';e.currentTarget.style.boxShadow='0 10px 28px rgba(45,95,63,.28)'}}
         onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow='0 6px 20px rgba(45,95,63,.22)'}}>
         <div style={{flex:1,minWidth:0}}>
