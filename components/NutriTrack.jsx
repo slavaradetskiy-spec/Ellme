@@ -3343,7 +3343,7 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
         const byUser = {};
         safeDays.forEach(d => { dayIdToUser[d.id] = d.user_id; if (!byUser[d.user_id]) byUser[d.user_id] = { days: [], meals: [] }; byUser[d.user_id].days.push(d); });
         meals.forEach(m => { const uid = dayIdToUser[m.diary_day_id]; if (uid && byUser[uid]) byUser[uid].meals.push(m); });
-        const splitDate = new Date(); splitDate.setDate(splitDate.getDate() - 7); splitDate.setHours(0,0,0,0);
+        const splitDate = new Date(); splitDate.setDate(splitDate.getDate() - 6); splitDate.setHours(0,0,0,0);
         const splitStr = dk(splitDate);
 
         const out = active.map(c => {
@@ -3365,7 +3365,7 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
           const sm = r.summary || {};
 
           const filledDates = new Set(recentDays.filter(d => d.water_ml != null || d.sleep_bed || d.stress_level != null || d.energy != null || d.mood != null || d.stool_state || d.movement).map(d => d.date));
-          const adherence = filledDates.size; // 0..7
+          const adherence = Math.min(7, filledDates.size); // 0..7
 
           // Late bedtime today/recent: >=00:30 ⇒ raw normalized minutes ≥ 1470
           const lateBedDays = recentDays.filter(d => {
@@ -3438,6 +3438,10 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
           const perUser = {};
           dayDays.forEach(d => { if (!perUser[d.user_id]) perUser[d.user_id] = []; perUser[d.user_id].push(d); });
           const userScores = Object.entries(perUser).map(([uid, ds2]) => {
+            // Require the day to have at least 3 tracked signals so a sparse
+            // day doesn't tank the group average (partial today vs full prior days).
+            const signals = ds2.reduce((n,d) => n + (d.water_ml != null ? 1 : 0) + (d.sleep_bed ? 1 : 0) + (d.stress_level != null ? 1 : 0) + (d.energy != null ? 1 : 0) + (d.mood != null ? 1 : 0) + (d.stool_state ? 1 : 0) + (d.movement ? 1 : 0), 0);
+            if (signals < 3) return null;
             const ums = dayMeals.filter(m => ds2.some(x => x.id === m.diary_day_id));
             const r = buildAnalytics(ds2, ums, waterNorm || 2200);
             const s = computeHealthScore(r.summary, waterNorm || 2200);
@@ -3511,9 +3515,9 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
   const stressClients = rows.filter(r => r.stressStreak >= 2);
   const lowVarietyClients = rows.filter(r => r.summary?.stool?.pct != null && r.summary.stool.pct < 60);
   const priorities = [
-    lateClients.length >= 2 && {
+    lateClients.length >= 1 && {
       icon:'🌙', title:'Поздний отход ко сну',
-      sub:`у ${lateClients.length} клиентов сон позже 00:30`,
+      sub:`у ${lateClients.length} ${lateClients.length===1?'клиента':'клиентов'} сон позже 00:30`,
       tag:'средний риск', tagBg:'#FEF1E5', tagFg:'#C98B5F',
     },
     stressClients.length >= 1 && {
@@ -3521,9 +3525,9 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
       sub:`${stressClients.length} ${stressClients.length===1?'клиент отмечает':stressClients.length<5?'клиента отмечают':'клиентов отмечают'} 7—8/10 второй день подряд`,
       tag:'внимание', tagBg:'#FDEEEC', tagFg:'#B8453A',
     },
-    lowVarietyClients.length >= 2 && {
+    lowVarietyClients.length >= 1 && {
       icon:'🥦', title:'Мало цельной растительной еды',
-      sub:`по фото в ${lowVarietyClients.length} дневниках не хватает овощей и бобовых`,
+      sub:`по фото в ${lowVarietyClients.length} ${lowVarietyClients.length===1?'дневнике':'дневниках'} не хватает овощей и бобовых`,
       tag:'разобрать', tagBg:'#EDE9E1', tagFg:'#6B6B6B',
     },
   ].filter(Boolean);
@@ -3583,51 +3587,63 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
         </div>)}
       </div>}
 
-      {/* ─── КЛИЕНТЫ ПОД НАБЛЮДЕНИЕМ ─── */}
-      <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .45s ease'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+      {/* ─── КЛИЕНТЫ ПОД НАБЛЮДЕНИЕМ — card list ─── */}
+      <div style={{marginBottom:14,animation:'enter .45s ease'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 4px',marginBottom:10}}>
           <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase'}}>Клиенты под наблюдением</div>
           <div style={{padding:'3px 9px',borderRadius:8,background:C.accentSoft,color:C.accent,fontSize:10,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase'}}>сегодня</div>
         </div>
-
-        {/* Column header — table-style */}
-        <div style={{display:'grid',gridTemplateColumns:'1.4fr 0.7fr 0.7fr 1.4fr 1fr 1fr',gap:8,padding:'0 0 8px',fontSize:10,fontWeight:600,letterSpacing:0.6,color:C.muted,textTransform:'uppercase',borderBottom:`1px solid ${C.tileBorder}`}}>
-          <div>Клиент</div><div>Индекс</div><div>Тренд</div><div>Ключевой флаг</div><div>Привержен.</div><div style={{textAlign:'right'}}>Действие</div>
+        {watch.length === 0 && <div style={{background:C.surface,borderRadius:20,padding:20,fontSize:13,color:C.soft,boxShadow:C.shadowCard}}>Нет активных клиентов.</div>}
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {watch.map(r => {
+            const aSt = actionStyle(r.action);
+            const sc = scoreColor(r.score);
+            const name = r.client.nick || r.client.name || '—';
+            const initials = name.split(' ').slice(0,2).map(s => s.charAt(0).toUpperCase()).join('');
+            return <div key={r.client.id} style={{background:C.surface,borderRadius:18,padding:16,boxShadow:C.shadowCard}}>
+              {/* Row 1: avatar + name + score pill */}
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                <button onClick={()=>onOpenClient(r.client)} style={{background:'none',border:'none',padding:0,cursor:'pointer',flexShrink:0}}>
+                  {r.client.photo
+                    ? <img src={r.client.photo} alt="" style={{width:42,height:42,borderRadius:'50%',objectFit:'cover',display:'block'}}/>
+                    : <div style={{width:42,height:42,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,fontSize:14}}>{initials || '?'}</div>
+                  }
+                </button>
+                <button onClick={()=>onOpenClient(r.client)} style={{flex:1,minWidth:0,background:'none',border:'none',padding:0,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+                  <div style={{fontSize:15,fontWeight:600,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{name}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{r.flag}</div>
+                </button>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:2,flexShrink:0}}>
+                  <div style={{fontSize:18,fontWeight:700,color:sc,lineHeight:1}}>{r.score == null ? '—' : r.score}<span style={{fontSize:11,fontWeight:500,color:C.muted}}>/100</span></div>
+                  <div style={{fontSize:11,fontWeight:600,color:trendColor(r.trend)}}>{r.trend == null ? 'нет тренда' : `${trendArrow(r.trend)} ${r.trend > 0 ? '+' : ''}${r.trend}`}</div>
+                </div>
+              </div>
+              {/* Row 2: adherence dots + action button */}
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{display:'flex',gap:3,flex:1}}>
+                  {[...Array(7)].map((_,i) => <div key={i} style={{flex:1,height:6,borderRadius:3,background: i < r.adherence ? C.accent : C.tile}}/>)}
+                </div>
+                <div style={{fontSize:11,color:C.soft,flexShrink:0,minWidth:48,textAlign:'right'}}>{r.adherence}/7 дн.</div>
+                <button onClick={()=>onOpenChat(r.client)} style={{padding:'7px 12px',borderRadius:10,border:'none',background:aSt.bg,color:aSt.fg,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>{r.action}</button>
+              </div>
+            </div>;
+          })}
         </div>
-
-        {watch.length === 0 && <div style={{fontSize:13,color:C.soft,padding:'14px 0'}}>Нет активных клиентов.</div>}
-        {watch.map(r => {
-          const aSt = actionStyle(r.action);
-          return <div key={r.client.id} style={{display:'grid',gridTemplateColumns:'1.4fr 0.7fr 0.7fr 1.4fr 1fr 1fr',gap:8,alignItems:'center',padding:'14px 0',borderTop:`1px solid ${C.tileBorder}`}}>
-            <button onClick={()=>onOpenClient(r.client)} style={{background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'inherit',textAlign:'left',minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.client.nick || r.client.name}</div>
-              <div style={{fontSize:10.5,color:C.muted,lineHeight:1.3,marginTop:2}}>{r.sub}</div>
-            </button>
-            <div style={{fontSize:13,color:C.text,fontWeight:500}}>{r.score == null ? '—' : `${r.score}/100`}</div>
-            <div style={{fontSize:12,color:trendColor(r.trend),fontWeight:600}}>{r.trend == null ? 'нет тренда' : `${trendArrow(r.trend)} ${r.trend > 0 ? '+' : ''}${r.trend}`}</div>
-            <div style={{fontSize:12,color:C.text,lineHeight:1.35}}>{r.flag}</div>
-            <div style={{fontSize:12,color:C.soft}}>{r.adherence}/7 дней</div>
-            <div style={{textAlign:'right'}}>
-              <button onClick={()=>onOpenChat(r.client)} style={{padding:'6px 11px',borderRadius:8,border:'none',background:aSt.bg,color:aSt.fg,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>{r.action}</button>
-            </div>
-          </div>;
-        })}
       </div>
 
       {/* ─── ГИПОТЕЗА НЕДЕЛИ ─── */}
       {hypothesis && <div style={{background:C.accentSoft,borderRadius:20,padding:20,marginBottom:14,animation:'enter .5s ease',border:`1px solid ${C.accent}22`}}>
         <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.accent,textTransform:'uppercase',marginBottom:6}}>Гипотеза недели</div>
         <div style={{fontSize:12,color:C.soft,marginBottom:10}}>{hypothesis.title}</div>
-        <div style={{fontSize:13,color:C.text,lineHeight:1.55,marginBottom:14}}>{hypothesis.body}</div>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
-          <div style={{fontSize:11,color:C.soft}}>использовать в рекомендациях</div>
-          <button onClick={()=>{}} style={{padding:'8px 14px',borderRadius:10,border:`1px solid ${C.accent}`,background:'transparent',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',letterSpacing:0.4,textTransform:'uppercase'}}>Открыть детали</button>
-        </div>
+        <div style={{fontSize:13,color:C.text,lineHeight:1.55}}>{hypothesis.body}</div>
       </div>}
 
-      {/* ─── НЕДЕЛЯ КЛИЕНТА — group day strip ─── */}
+      {/* ─── НЕДЕЛЯ ГРУППЫ — avg score per day ─── */}
       {dayBars.length > 0 && <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .55s ease'}}>
-        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:14}}>Неделя клиента</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase'}}>Неделя группы</div>
+          <div style={{fontSize:10,color:C.muted}}>средний балл по дню</div>
+        </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',gap:6}}>
           {dayBars.map((b,i) => {
             const isToday = i === dayBars.length - 1;
