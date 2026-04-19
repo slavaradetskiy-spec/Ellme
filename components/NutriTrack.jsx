@@ -4903,9 +4903,9 @@ export default function App(){
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
             flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
             border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
-            background:active?'#F0F0F0':'transparent',
+            background:active?C.accentSoft:'transparent',
             borderRadius:14,margin:'4px 3px',
-            color:active?'#333333':'#99A2AD',
+            color:active?C.accent:'#99A2AD',
             transition:'all .15s',WebkitTapHighlightColor:'transparent',
             padding:'6px 0',
           }}>
