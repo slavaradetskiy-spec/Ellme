@@ -721,7 +721,8 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     } catch(e) { setWaterLog([]); }
   }, [lsKey]);
   const saveWaterLog = (log) => { setWaterLog(log); try { localStorage.setItem(lsKey, JSON.stringify(log)); } catch(e) {} };
-  const waterMl = waterLog.length > 0 ? waterLog.reduce((s, e) => s + (e.ml || 0), 0) : (d.water || 0);
+  // d.water is the source of truth. Log is a local UX aid for showing recent additions.
+  const waterMl = d.water || 0;
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
   const waterPct=Math.min(100,waterPctRaw);
   const [showWaterLog, setShowWaterLog] = useState(false);
@@ -730,16 +731,16 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     const now = new Date();
     const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
     const newLog = [...waterLog, { ml, time }];
-    const total = newLog.reduce((s, e) => s + (e.ml || 0), 0);
+    const total = (d.water || 0) + ml;
     saveWaterLog(newLog);
     upd('water', total);
     if(waterMl<waterNorm&&total>=waterNorm&&onCelebrate)onCelebrate('water');
   };
   const removeWaterEntry = (idx) => {
+    const entry = waterLog[idx];
     const newLog = waterLog.filter((_, i) => i !== idx);
-    const total = newLog.reduce((s, e) => s + (e.ml || 0), 0);
     saveWaterLog(newLog);
-    upd('water', total);
+    upd('water', Math.max(0, (d.water || 0) - (entry?.ml || 0)));
   };
   // Debounced sleep celebration — waits 2s after the last change so the
   // user has time to set BOTH hours AND minutes before the confetti
@@ -909,16 +910,42 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           <Lbl>Практики расслабления</Lbl>
           {(()=>{
             const PRACTICES=['Дыхание','Медитация','Йога','Массаж','Ванна','Музыка','Другое'];
-            const selected=Array.isArray(d.stress?.practicesList)?d.stress.practicesList:[];
-            const toggleP=(p)=>{if(dis)return;const next=selected.includes(p)?selected.filter(x=>x!==p):[...selected,p];upd('stress',{...(d.stress||{}),practicesList:next})};
-            return <>
+            const rawList=Array.isArray(d.stress?.practicesList)?d.stress.practicesList:[];
+            const selected=rawList.map(p=>typeof p==='string'?{type:p,duration:null}:p);
+            const hasType=(t)=>selected.some(x=>x.type===t);
+            const toggleP=(p)=>{
+              if(dis)return;
+              const next=hasType(p)?selected.filter(x=>x.type!==p):[...selected,{type:p,duration:10}];
+              upd('stress',{...(d.stress||{}),practicesList:next});
+            };
+            const setPDur=(p,dur)=>{
+              if(dis)return;
+              const next=selected.map(x=>x.type===p?{...x,duration:dur}:x);
+              upd('stress',{...(d.stress||{}),practicesList:next});
+            };
+            return <div style={{display:'flex',flexDirection:'column',gap:10}}>
               <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                 {dis
-                  ? selected.length>0?selected.map(p=><Chip key={p} sel dis>{p}</Chip>):<span style={{fontSize:13,color:C.muted}}>—</span>
-                  : PRACTICES.map(p=><Chip key={p} sel={selected.includes(p)} onClick={()=>toggleP(p)}>{p}</Chip>)
+                  ? selected.length>0?selected.map(p=><Chip key={p.type} sel dis>{p.type}{p.duration?' · '+p.duration+' мин':''}</Chip>):<span style={{fontSize:13,color:C.muted}}>—</span>
+                  : PRACTICES.map(p=><Chip key={p} sel={hasType(p)} onClick={()=>toggleP(p)}>{p}</Chip>)
                 }
               </div>
-            </>;
+              {!dis&&selected.map(p=>(
+                <div key={p.type} style={{background:C.surfaceAlt,borderRadius:14,padding:'10px 14px'}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.accent,marginBottom:6}}>{p.type}</div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:14}}>
+                    <button onClick={()=>setPDur(p.type,Math.max(5,(p.duration||10)-5))}
+                      style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:18,fontWeight:600,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+                    <div style={{minWidth:70,textAlign:'center'}}>
+                      <span style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{p.duration||10}</span>
+                      <span style={{fontSize:12,color:C.muted,marginLeft:4}}>мин</span>
+                    </div>
+                    <button onClick={()=>setPDur(p.type,(p.duration||10)+5)}
+                      style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:18,fontWeight:600,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+                  </div>
+                </div>
+              ))}
+            </div>;
           })()}
         </div>
         <div><Lbl>Детали практики</Lbl><Area value={d.stress?.practices} onChange={v=>upd('stress',{...(d.stress||{}),practices:v})} placeholder="Подробности, длительность..." dis={dis} rows={2} showMic={!dis}/></div>
@@ -4311,6 +4338,43 @@ function Login({onLogin}){
   </div>;
 }
 
+// ═══ INTRO SPLASH ═══
+function IntroSplash(){
+  const LINES=['Ешь осознанно','Живи в моменте','Люби себя'];
+  const [text,setText]=useState(['','','']);
+  const [activeLine,setActiveLine]=useState(-1);
+  useEffect(()=>{
+    const timers=[];
+    const CHAR_MS=55, GAP_MS=240, START_MS=700;
+    let t=START_MS;
+    LINES.forEach((line,li)=>{
+      timers.push(setTimeout(()=>setActiveLine(li),t));
+      for(let i=1;i<=line.length;i++){
+        timers.push(setTimeout(()=>{
+          setText(prev=>{const next=[...prev];next[li]=line.slice(0,i);return next});
+        },t+i*CHAR_MS));
+      }
+      t+=line.length*CHAR_MS+GAP_MS;
+    });
+    return()=>timers.forEach(clearTimeout);
+  },[]);
+  return <div style={{position:'fixed',inset:0,background:'#F4F1EB',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:32,zIndex:100000,animation:'fadeIn .3s'}}>
+    <div style={{width:120,height:120,borderRadius:'50%',background:'linear-gradient(135deg,#2D5F3F,#4A8C5C)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 12px 40px rgba(45,95,63,.3)',animation:'scaleIn .7s cubic-bezier(.34,1.56,.64,1)'}}>
+      <span style={{fontSize:30,fontFamily:"'Instrument Serif',Georgia,serif",color:'#fff',letterSpacing:2.5,fontStyle:'italic'}}>ELLME</span>
+    </div>
+    <div style={{display:'flex',flexDirection:'column',gap:8,alignItems:'center',minHeight:108}}>
+      {LINES.map((line,i)=>{
+        const done=text[i].length>=line.length;
+        const typing=i===activeLine&&!done;
+        return <div key={i} style={{fontSize:17,color:'#2D5F3F',fontWeight:500,minHeight:24,letterSpacing:.3,opacity:i<=activeLine?1:0,transition:'opacity .3s'}}>
+          {text[i]}
+          {typing&&<span style={{marginLeft:1,opacity:.7,animation:'blink .9s steps(1) infinite'}}>|</span>}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 // ═══ MAIN APP ═══
 export default function App(){
   const[user,setUser]=useState(null);
@@ -4318,6 +4382,18 @@ export default function App(){
   useEffect(()=>{userRef.current=user},[user]);
   const[authLoading,setAuthLoading]=useState(!!supabase);
   const[loadingPhase,setLoadingPhase]=useState('Идёт загрузка, это может занять несколько секунд...');
+  const[showIntro,setShowIntro]=useState(()=>{
+    if(typeof window==='undefined')return false;
+    try{return!sessionStorage.getItem('ellme_intro_seen')}catch(e){return true}
+  });
+  useEffect(()=>{
+    if(!showIntro)return;
+    const t=setTimeout(()=>{
+      try{sessionStorage.setItem('ellme_intro_seen','1')}catch(e){}
+      setShowIntro(false);
+    },3600);
+    return()=>clearTimeout(t);
+  },[showIntro]);
   const[isOffline,setIsOffline]=useState(typeof navigator!=='undefined'&&!navigator.onLine);
   const[showOnlineBanner,setShowOnlineBanner]=useState(false);
   useEffect(()=>{
@@ -4793,7 +4869,13 @@ export default function App(){
         meals, water: day.water_ml || 0, supplements: day.supplements || '',
         sleep: { wake: day.sleep_wake, bed: day.sleep_bed, quality: day.sleep_quality },
         movement: day.movement || '',
-        stress: { level: day.stress_level, practices: day.stress_practices || '' },
+        stress: (()=>{
+          const raw = day.stress_practices || '';
+          if (raw && raw.startsWith('{')) {
+            try { const o = JSON.parse(raw); return { level: day.stress_level, practices: o.text || '', practicesList: Array.isArray(o.list) ? o.list : [] }; } catch(e) {}
+          }
+          return { level: day.stress_level, practices: raw, practicesList: [] };
+        })(),
         stoolState: day.stool_state, stoolNote: day.stool_note || '',
         well: { energy: day.energy, mood: day.mood, comment: day.day_comment || '' },
         _dayId: day.id,
@@ -4810,7 +4892,7 @@ export default function App(){
         water_ml: dayData.water || 0, supplements: dayData.supplements || '',
         sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
         movement: dayData.movement || '',
-        stress_level: dayData.stress?.level || null, stress_practices: dayData.stress?.practices || '',
+        stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
         stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
         energy: dayData.well?.energy || null, mood: dayData.well?.mood != null ? dayData.well.mood : null,
         day_comment: dayData.well?.comment || '',
@@ -4899,7 +4981,7 @@ export default function App(){
           water_ml: dayData.water || 0, supplements: dayData.supplements || '',
           sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
           movement: dayData.movement || '',
-          stress_level: dayData.stress?.level || null, stress_practices: dayData.stress?.practices || '',
+          stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
           stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
           energy: dayData.well?.energy || null, mood: dayData.well?.mood != null ? dayData.well.mood : null,
           day_comment: dayData.well?.comment || '',
@@ -4927,6 +5009,9 @@ export default function App(){
   };
 
   // ── Loading state ──
+  if (showIntro) {
+    return <><style>{CSS}</style><IntroSplash/></>;
+  }
   if (authLoading) {
     return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
       <ProgressBar duration={4} label={loadingPhase}/>
