@@ -3,14 +3,21 @@ import './globals.css'
 export const metadata = {
   title: 'ELLME – дневник питания',
   description: 'Больше, чем дневник питания — пространство заботы о себе. Подходит для самостоятельного ведения или совместной работы с нутрициологом.',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover',
   manifest: '/manifest.json',
-  themeColor: '#2D5F3F',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'ELLME',
   },
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#2D5F3F',
 }
 
 export default function RootLayout({ children }) {

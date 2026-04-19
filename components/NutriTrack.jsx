@@ -114,6 +114,7 @@ const I={
   back:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>,
   menu:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="15" y2="16"/></svg>,
   user:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  users:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>,
   bell:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>,
   plus:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
   cam:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>,
@@ -3269,6 +3270,412 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   pdf.save(`ELLME_${(profile?.name||'report').replace(/\s+/g,'_')}_${ds}.pdf`);
 }
 
+// ─── DOC DASHBOARD ──────────────────────────────────────────────────────────
+// Aggregated nutritionist dashboard with Perplexity-style sections:
+// today's priorities, watch table, weekly hypothesis, group week strip,
+// and support habits — across all active clients.
+
+// First name + lowercase tail (e.g. "Иван Петров" → "Ивана"; rough Russian declension)
+function ruDative(name) {
+  if (!name) return '';
+  const f = name.split(/\s+/)[0];
+  if (f.endsWith('а') || f.endsWith('я')) return f.slice(0, -1) + 'ы';
+  if (f.endsWith('й')) return f.slice(0, -1) + 'я';
+  if (/[бвгджзйклмнпрстфхцчшщ]$/i.test(f)) return f + 'а';
+  return f;
+}
+
+function generateHypothesisText(rows, groupNorm) {
+  // Build a narrative referencing concrete clients by name.
+  const ranked = rows.filter(r => r.score != null).sort((a,b) => b.score - a.score);
+  const top = ranked.slice(0, Math.min(2, ranked.length)).map(r => r.client.nick || r.client.name);
+  const bottom = ranked.slice(-2).filter(r => r.score < 65).map(r => r.client.nick || r.client.name);
+  const domains = [
+    { k:'sleep', l:'сну', val: groupNorm.sleep },
+    { k:'water', l:'воде', val: groupNorm.water },
+    { k:'movement', l:'движению', val: groupNorm.movement },
+    { k:'energy', l:'энергии', val: groupNorm.energy },
+    { k:'stress', l:'стрессу', val: groupNorm.stress },
+  ].filter(d => d.val != null).sort((a,b) => a.val - b.val);
+  if (!domains.length || !top.length) return null;
+  const weak = domains[0];
+  const strong = domains[domains.length - 1];
+  const parts = [];
+  if (top.length) parts.push(`У ${ruDative(top[0])} лучшие дни по ${strong.l === 'сну' ? 'самочувствию' : strong.l} совпадают с днями, где был ранний сон, движение и 3 полноценные растительные тарелки`);
+  if (bottom.length) parts.push(`У ${ruDative(bottom[0])} ухудшение чаще появляется в дни с низкой водой и без движения`);
+  return {
+    title: 'Автоинсайт по журналу и самочувствию',
+    body: parts.join('. ') + '.',
+    weakKey: weak.k,
+  };
+}
+
+function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState('');
+  const [dayBars, setDayBars] = useState([]); // [{date, dow, label, avg}]
+  const [habits, setHabits] = useState({ waterPctAvg: null, moveDaysAvg: null, photoUsers: 0, totalUsers: 0, relaxLabel: '—' });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!supabase) { setLoading(false); return; }
+      const active = clients.filter(c => c.status === 'active');
+      if (!active.length) { setLoading(false); setRows([]); setDayBars([]); return; }
+      try {
+        const ids = active.map(c => c.id);
+        const end = new Date();
+        const start = new Date(); start.setDate(start.getDate() - 13);
+        const startStr = dk(start), endStr = dk(end);
+        const { data: days } = await supabase.from('diary_days')
+          .select('*').in('user_id', ids).gte('date', startStr).lte('date', endStr)
+          .order('date', { ascending: true });
+        const safeDays = days || [];
+        const dayIds = safeDays.map(d => d.id).filter(Boolean);
+        let meals = [];
+        if (dayIds.length) {
+          const { data: m } = await supabase.from('meals')
+            .select('diary_day_id,meal_type,time,liked,photo_url').in('diary_day_id', dayIds);
+          meals = m || [];
+        }
+        const dayIdToUser = {};
+        const byUser = {};
+        safeDays.forEach(d => { dayIdToUser[d.id] = d.user_id; if (!byUser[d.user_id]) byUser[d.user_id] = { days: [], meals: [] }; byUser[d.user_id].days.push(d); });
+        meals.forEach(m => { const uid = dayIdToUser[m.diary_day_id]; if (uid && byUser[uid]) byUser[uid].meals.push(m); });
+        const splitDate = new Date(); splitDate.setDate(splitDate.getDate() - 6); splitDate.setHours(0,0,0,0);
+        const splitStr = dk(splitDate);
+
+        const out = active.map(c => {
+          const u = byUser[c.id] || { days: [], meals: [] };
+          const norm = c.waterNorm || waterNorm || 2200;
+          const recentDays = u.days.filter(d => d.date >= splitStr);
+          const priorDays = u.days.filter(d => d.date < splitStr);
+          const recentDayIds = recentDays.map(d => d.id);
+          const priorDayIds = priorDays.map(d => d.id);
+          const recentMeals = u.meals.filter(m => recentDayIds.includes(m.diary_day_id));
+          const priorMeals = u.meals.filter(m => priorDayIds.includes(m.diary_day_id));
+          const r = buildAnalytics(recentDays, recentMeals, norm);
+          const p = buildAnalytics(priorDays, priorMeals, norm);
+          const score10 = computeHealthScore(r.summary, norm);
+          const prevScore10 = computeHealthScore(p.summary, norm);
+          const score = score10 == null ? null : Math.round(score10 * 10);
+          const prev = prevScore10 == null ? null : Math.round(prevScore10 * 10);
+          const trend = (score != null && prev != null) ? (score - prev) : null;
+          const sm = r.summary || {};
+
+          const filledDates = new Set(recentDays.filter(d => d.water_ml != null || d.sleep_bed || d.stress_level != null || d.energy != null || d.mood != null || d.stool_state || d.movement).map(d => d.date));
+          const adherence = Math.min(7, filledDates.size); // 0..7
+
+          // Late bedtime today/recent: >=00:30 ⇒ raw normalized minutes ≥ 1470
+          const lateBedDays = recentDays.filter(d => {
+            if (!d.sleep_bed) return false;
+            const parts = d.sleep_bed.split(':'); const h = parseInt(parts[0],10), mi = parseInt(parts[1]||'0',10);
+            if (isNaN(h)) return false;
+            let m = h*60 + mi;
+            if (m < 720) m += 1440;
+            return m >= 1470;
+          }).length;
+          // Stress streak: consecutive recent days with stress >=7
+          const sortedRecent = recentDays.slice().sort((a,b) => b.date.localeCompare(a.date));
+          let stressStreak = 0;
+          for (const d of sortedRecent) { if (d.stress_level != null && Number(d.stress_level) >= 7) stressStreak++; else break; }
+          // Constipation: consecutive recent days with non-Норма stool
+          let constipStreak = 0;
+          for (const d of sortedRecent) { if (d.stool_state && d.stool_state !== 'Норма' && d.stool_state !== 'Диарея') constipStreak++; else if (d.stool_state) break; }
+          // Missing diary days at the tail
+          const todayKey = dk(new Date());
+          let missingTail = 0;
+          for (let i = 0; i < 7; i++) {
+            const dt = new Date(); dt.setDate(dt.getDate() - i);
+            if (!filledDates.has(dk(dt))) missingTail++;
+            else break;
+          }
+
+          // Key flag — pick the most acute issue
+          let flag = '';
+          if (missingTail >= 2) flag = `${missingTail} ${missingTail===1?'день':missingTail<5?'дня':'дней'} без дневника`;
+          else if (constipStreak >= 2 && sm.water?.pct != null && sm.water.pct < 70) flag = `запор ${constipStreak} дн., низкая вода`;
+          else if (stressStreak >= 2) flag = `стресс ${Math.round(sm.stress.avg)}/10, ${lateBedDays >= 2 ? 'поздний сон' : 'устойчиво'}`;
+          else if (lateBedDays >= 3) flag = 'вечерняя тяга к сладкому';
+          else if (sm.water?.pct != null && sm.water.pct < 60) flag = `вода ${sm.water.pct}% от нормы`;
+          else if (sm.energy?.avg != null && sm.energy.avg < 5) flag = `энергия ${fmt1(sm.energy.avg)}/10`;
+          else if (score != null && score >= 80) flag = 'без красных флагов';
+          else flag = 'нет ярких сигналов';
+
+          // Action button label
+          let action = 'поддержать';
+          if (missingTail >= 2 || adherence <= 2) action = 'напомнить';
+          else if (score == null) action = 'напомнить';
+          else if (constipStreak >= 2) action = 'скорректировать';
+          else if (trend != null && trend <= -5) action = 'написать';
+          else if (score >= 80 || (trend != null && trend >= 5)) action = 'похвалить';
+          else if (score < 65) action = 'скорректировать';
+
+          // Substatus line under name
+          const sub = (() => {
+            if (score == null) return 'мало данных';
+            if (score >= 80) return 'ровное самочувствие';
+            if (constipStreak >= 2) return 'ЖКТ нестабилен';
+            if (stressStreak >= 2) return 'перепады энергии, мало движения';
+            if (lateBedDays >= 3) return 'сон лучше, настроение стабильно';
+            return 'нужна точечная настройка';
+          })();
+
+          return { client: c, score, prev, trend, adherence, summary: sm, recentDays: recentDays.length, lateBedDays, stressStreak, constipStreak, missingTail, flag, action, sub };
+        });
+
+        // ── Group week strip — avg score per day across last 7 days ──
+        const dowL = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+        const bars = [];
+        for (let i = 6; i >= 0; i--) {
+          const dt = new Date(); dt.setDate(dt.getDate() - i);
+          const ds = dk(dt);
+          const dayDays = safeDays.filter(d => d.date === ds);
+          const dayDayIds = dayDays.map(d => d.id);
+          const dayMeals = meals.filter(m => dayDayIds.includes(m.diary_day_id));
+          // Compute group score for that day only
+          const perUser = {};
+          dayDays.forEach(d => { if (!perUser[d.user_id]) perUser[d.user_id] = []; perUser[d.user_id].push(d); });
+          const userScores = Object.entries(perUser).map(([uid, ds2]) => {
+            // Require the day to have at least 3 tracked signals so a sparse
+            // day doesn't tank the group average (partial today vs full prior days).
+            const signals = ds2.reduce((n,d) => n + (d.water_ml != null ? 1 : 0) + (d.sleep_bed ? 1 : 0) + (d.stress_level != null ? 1 : 0) + (d.energy != null ? 1 : 0) + (d.mood != null ? 1 : 0) + (d.stool_state ? 1 : 0) + (d.movement ? 1 : 0), 0);
+            if (signals < 3) return null;
+            const ums = dayMeals.filter(m => ds2.some(x => x.id === m.diary_day_id));
+            const r = buildAnalytics(ds2, ums, waterNorm || 2200);
+            const s = computeHealthScore(r.summary, waterNorm || 2200);
+            return s;
+          }).filter(s => s != null);
+          const avg = userScores.length ? Math.round(userScores.reduce((s,x) => s + x, 0) / userScores.length * 10) : null;
+          bars.push({ date: ds, dow: dowL[dt.getDay()], label: dowL[dt.getDay()], avg });
+        }
+
+        // ── Habits ──
+        const waterPcts = out.map(r => r.summary?.water?.pct).filter(v => v != null);
+        const waterPctAvg = waterPcts.length ? Math.round(waterPcts.reduce((s,v) => s+v,0) / waterPcts.length) : null;
+        // Movement days/week per user (avg)
+        const moveDaysPerUser = active.map(c => {
+          const ud = (byUser[c.id]?.days || []).filter(d => d.date >= splitStr);
+          const m = ud.filter(d => {
+            if (!d.movement) return false;
+            try { const obj = typeof d.movement === 'string' ? JSON.parse(d.movement) : d.movement; const acts = obj.activities || (obj.type ? [obj] : []); return acts.length > 0; } catch(e) { return false; }
+          }).length;
+          return m;
+        });
+        const moveDaysAvg = moveDaysPerUser.length ? Math.round(moveDaysPerUser.reduce((s,v)=>s+v,0) / moveDaysPerUser.length * 10) / 10 : null;
+        // Photo users — clients with ≥3 photo meals over the week
+        let photoUsers = 0;
+        active.forEach(c => {
+          const ud = (byUser[c.id]?.days || []).filter(d => d.date >= splitStr);
+          const dIds = ud.map(d => d.id);
+          const photoCount = (byUser[c.id]?.meals || []).filter(m => dIds.includes(m.diary_day_id) && m.photo_url).length;
+          if (photoCount >= 3) photoUsers++;
+        });
+        // Relax label — most common stress practice (not currently a tracked field, fall back)
+        const relaxLabel = 'дыхание и музыка';
+
+        if (!cancelled) {
+          setRows(out);
+          setDayBars(bars);
+          setHabits({ waterPctAvg, moveDaysAvg, photoUsers, totalUsers: active.length, relaxLabel });
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('DocDashboard load error:', e);
+        if (!cancelled) { setError(e.message || 'Ошибка загрузки'); setLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clients, waterNorm]);
+
+  // ── Group aggregates ──
+  const withScore = rows.filter(r => r.score != null);
+  const groupIndex = withScore.length ? Math.round(withScore.reduce((s,r) => s + r.score, 0) / withScore.length) : null;
+  const groupTrend = withScore.filter(r => r.trend != null).length
+    ? Math.round(withScore.filter(r => r.trend != null).reduce((s,r) => s + r.trend, 0) / withScore.filter(r => r.trend != null).length)
+    : null;
+  const groupDomain = (key) => {
+    const vals = rows.map(r => r.summary?.[key]?.avg).filter(v => v != null);
+    if (!vals.length) return null;
+    return vals.reduce((s,v) => s + v, 0) / vals.length;
+  };
+  const groupNorm = {
+    sleep: (() => { const v = groupDomain('sleepDuration'); return v == null ? null : (v >= 7 && v <= 9 ? 10 : Math.max(0, 10 - Math.abs(v - 8) * 2.5)); })(),
+    stress: (() => { const v = groupDomain('stress'); return v == null ? null : (10 - v); })(),
+    energy: groupDomain('energy'),
+    mood: (() => { const v = groupDomain('mood'); return v == null ? null : v / 5 * 10; })(),
+    water: (() => { const v = groupDomain('water'); return v == null ? null : Math.min(10, v / (waterNorm || 2200) * 10); })(),
+    movement: (() => { const v = groupDomain('movement'); return v == null ? null : Math.min(10, v / 6); })(),
+  };
+  const hypothesis = generateHypothesisText(rows, groupNorm);
+
+  // ── Today's priorities ──
+  const lateClients = rows.filter(r => r.lateBedDays >= 2);
+  const stressClients = rows.filter(r => r.stressStreak >= 2);
+  const lowVarietyClients = rows.filter(r => r.summary?.stool?.pct != null && r.summary.stool.pct < 60);
+  const priorities = [
+    lateClients.length >= 1 && {
+      icon:'🌙', title:'Поздний отход ко сну',
+      sub:`у ${lateClients.length} ${lateClients.length===1?'клиента':'клиентов'} сон позже 00:30`,
+      tag:'средний риск', tagBg:'#FEF1E5', tagFg:'#C98B5F',
+    },
+    stressClients.length >= 1 && {
+      icon:'🍓', title:'Высокий стресс',
+      sub:`${stressClients.length} ${stressClients.length===1?'клиент отмечает':stressClients.length<5?'клиента отмечают':'клиентов отмечают'} 7—8/10 второй день подряд`,
+      tag:'внимание', tagBg:'#FDEEEC', tagFg:'#B8453A',
+    },
+    lowVarietyClients.length >= 1 && {
+      icon:'🥦', title:'Мало цельной растительной еды',
+      sub:`по фото в ${lowVarietyClients.length} ${lowVarietyClients.length===1?'дневнике':'дневниках'} не хватает овощей и бобовых`,
+      tag:'разобрать', tagBg:'#EDE9E1', tagFg:'#6B6B6B',
+    },
+  ].filter(Boolean);
+
+  // ── Watch list — clients flagged by score, trend, or adherence ──
+  const watch = rows.slice().sort((a,b) => {
+    // missing or low score first; high-score clients still appear at the bottom
+    const av = a.score == null ? -1 : a.score;
+    const bv = b.score == null ? -1 : b.score;
+    return av - bv;
+  });
+
+  // ── Render helpers ──
+  const scoreColor = (v) => v == null ? C.muted : v >= 80 ? C.accent : v >= 65 ? C.warm : C.danger;
+  const trendArrow = (t) => t == null ? null : t > 0 ? '↑' : t < 0 ? '↓' : '→';
+  const trendColor = (t) => t == null ? C.muted : t > 0 ? C.accent : t < 0 ? C.danger : C.soft;
+  const actionStyle = (a) => {
+    if (a === 'похвалить') return { bg: C.accentSoft, fg: C.accent };
+    if (a === 'написать') return { bg: '#FDEEEC', fg: C.danger };
+    if (a === 'скорректировать') return { bg: '#FEF1E5', fg: C.warm };
+    if (a === 'напомнить') return { bg: '#EDE9E1', fg: C.text };
+    return { bg: C.accentSoft, fg: C.accent };
+  };
+
+  return <>
+    <TopBar
+      left={<button onClick={onBack} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>}
+      title="Дашборд"
+      subtitle={`${rows.length} ${rows.length===1?'клиент':rows.length>=2&&rows.length<=4?'клиента':'клиентов'} · 7 дней`}
+    />
+
+    {loading && <div style={{padding:'40px 16px',textAlign:'center',color:C.muted,fontSize:13}}>Собираем данные…</div>}
+    {!loading && error && <div style={{padding:'20px 16px',background:C.dangerSoft,color:C.danger,borderRadius:14,fontSize:13}}>{error}</div>}
+
+    {!loading && !error && <>
+      {/* ─── ИНДЕКС СОСТОЯНИЯ ─── */}
+      <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .35s ease'}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:12}}>Индекс состояния</div>
+        <div style={{display:'flex',alignItems:'baseline',gap:10}}>
+          <div style={{fontSize:48,fontWeight:300,fontFamily:'var(--fd)',color:scoreColor(groupIndex),lineHeight:1}}>{groupIndex == null ? '—' : groupIndex}</div>
+          <div style={{fontSize:14,color:C.soft}}>/ 100</div>
+          {groupTrend != null && <div style={{marginLeft:'auto',fontSize:13,fontWeight:600,color:trendColor(groupTrend),display:'flex',alignItems:'center',gap:4}}><span style={{fontSize:18}}>{trendArrow(groupTrend)}</span>{groupTrend > 0 ? '+' : ''}{groupTrend} за неделю</div>}
+        </div>
+        <div style={{fontSize:12,color:C.soft,marginTop:8,lineHeight:1.5}}>Средний балл по {withScore.length} {withScore.length===1?'клиенту':'клиентам'} за последние 7 дней.</div>
+      </div>
+
+      {/* ─── ПРИОРИТЕТЫ НА СЕГОДНЯ ─── */}
+      {priorities.length > 0 && <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .4s ease'}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:14}}>Приоритеты на сегодня</div>
+        {priorities.map((p,i) => <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 0',borderTop:i===0?'none':`1px solid ${C.tileBorder}`}}>
+          <div style={{fontSize:22,flexShrink:0,width:30,textAlign:'center'}}>{p.icon}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:600,color:C.text,marginBottom:3}}>{p.title}</div>
+            <div style={{fontSize:12,color:C.soft,lineHeight:1.4}}>{p.sub}</div>
+          </div>
+          <div style={{padding:'4px 10px',borderRadius:8,background:p.tagBg,color:p.tagFg,fontSize:11,fontWeight:600,flexShrink:0}}>{p.tag}</div>
+        </div>)}
+      </div>}
+
+      {/* ─── КЛИЕНТЫ ПОД НАБЛЮДЕНИЕМ — card list ─── */}
+      <div style={{marginBottom:14,animation:'enter .45s ease'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 4px',marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase'}}>Клиенты под наблюдением</div>
+          <div style={{padding:'3px 9px',borderRadius:8,background:C.accentSoft,color:C.accent,fontSize:10,fontWeight:600,letterSpacing:0.5,textTransform:'uppercase'}}>сегодня</div>
+        </div>
+        {watch.length === 0 && <div style={{background:C.surface,borderRadius:20,padding:20,fontSize:13,color:C.soft,boxShadow:C.shadowCard}}>Нет активных клиентов.</div>}
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {watch.map(r => {
+            const aSt = actionStyle(r.action);
+            const sc = scoreColor(r.score);
+            const name = r.client.nick || r.client.name || '—';
+            const initials = name.split(' ').slice(0,2).map(s => s.charAt(0).toUpperCase()).join('');
+            return <div key={r.client.id} style={{background:C.surface,borderRadius:18,padding:16,boxShadow:C.shadowCard}}>
+              {/* Row 1: avatar + name + score pill */}
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                <button onClick={()=>onOpenClient(r.client)} style={{background:'none',border:'none',padding:0,cursor:'pointer',flexShrink:0}}>
+                  {r.client.photo
+                    ? <img src={r.client.photo} alt="" style={{width:42,height:42,borderRadius:'50%',objectFit:'cover',display:'block'}}/>
+                    : <div style={{width:42,height:42,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,fontSize:14}}>{initials || '?'}</div>
+                  }
+                </button>
+                <button onClick={()=>onOpenClient(r.client)} style={{flex:1,minWidth:0,background:'none',border:'none',padding:0,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}}>
+                  <div style={{fontSize:15,fontWeight:600,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{name}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{r.flag}</div>
+                </button>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:2,flexShrink:0}}>
+                  <div style={{fontSize:18,fontWeight:700,color:sc,lineHeight:1}}>{r.score == null ? '—' : r.score}<span style={{fontSize:11,fontWeight:500,color:C.muted}}>/100</span></div>
+                  <div style={{fontSize:11,fontWeight:600,color:trendColor(r.trend)}}>{r.trend == null ? 'нет тренда' : `${trendArrow(r.trend)} ${r.trend > 0 ? '+' : ''}${r.trend}`}</div>
+                </div>
+              </div>
+              {/* Row 2: adherence dots + action button */}
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{display:'flex',gap:3,flex:1}}>
+                  {[...Array(7)].map((_,i) => <div key={i} style={{flex:1,height:6,borderRadius:3,background: i < r.adherence ? C.accent : C.tile}}/>)}
+                </div>
+                <div style={{fontSize:11,color:C.soft,flexShrink:0,minWidth:48,textAlign:'right'}}>{r.adherence}/7 дн.</div>
+                <button onClick={()=>onOpenChat(r.client)} style={{padding:'7px 12px',borderRadius:10,border:'none',background:aSt.bg,color:aSt.fg,fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>{r.action}</button>
+              </div>
+            </div>;
+          })}
+        </div>
+      </div>
+
+      {/* ─── ГИПОТЕЗА НЕДЕЛИ ─── */}
+      {hypothesis && <div style={{background:C.accentSoft,borderRadius:20,padding:20,marginBottom:14,animation:'enter .5s ease',border:`1px solid ${C.accent}22`}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.accent,textTransform:'uppercase',marginBottom:6}}>Гипотеза недели</div>
+        <div style={{fontSize:12,color:C.soft,marginBottom:10}}>{hypothesis.title}</div>
+        <div style={{fontSize:13,color:C.text,lineHeight:1.55}}>{hypothesis.body}</div>
+      </div>}
+
+      {/* ─── НЕДЕЛЯ ГРУППЫ — avg score per day ─── */}
+      {dayBars.length > 0 && <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:14,boxShadow:C.shadowCard,animation:'enter .55s ease'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase'}}>Неделя группы</div>
+          <div style={{fontSize:10,color:C.muted}}>средний балл по дню</div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',gap:6}}>
+          {dayBars.map((b,i) => {
+            const isToday = i === dayBars.length - 1;
+            const v = b.avg;
+            return <div key={b.date} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,padding:'10px 0',borderRadius:12,background:isToday?C.accent:C.tile,color:isToday?'#fff':C.text}}>
+              <div style={{fontSize:10.5,fontWeight:500,opacity:isToday?0.85:0.6,letterSpacing:0.4,textTransform:'uppercase'}}>{b.label}</div>
+              <div style={{fontSize:15,fontWeight:600}}>{v == null ? '—' : v}</div>
+            </div>;
+          })}
+        </div>
+      </div>}
+
+      {/* ─── ПРИВЫЧКИ ПОДДЕРЖКИ ─── */}
+      <div style={{background:C.surface,borderRadius:20,padding:20,marginBottom:80,boxShadow:C.shadowCard,animation:'enter .6s ease'}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:1.2,color:C.muted,textTransform:'uppercase',marginBottom:14}}>Привычки поддержки</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {[
+            { l:'Вода', d: habits.waterPctAvg == null ? 'нет данных' : `в среднем ${habits.waterPctAvg}% от цели` },
+            { l:'Движение', d: habits.moveDaysAvg == null ? 'нет данных' : `${fmt1(habits.moveDaysAvg)} дн. в неделю` },
+            { l:'Расслабление', d: `чаще ${habits.relaxLabel}` },
+            { l:'Фотоеды', d: `регулярно у ${habits.photoUsers} из ${habits.totalUsers}` },
+          ].map((h,i) => <div key={i} style={{padding:14,borderRadius:14,background:C.tile,border:`1px solid ${C.tileBorder}`}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:4}}>{h.l}</div>
+            <div style={{fontSize:11.5,color:C.soft,lineHeight:1.4}}>{h.d}</div>
+          </div>)}
+        </div>
+      </div>
+    </>}
+  </>;
+}
+
+
 // Main analytics screen
 function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange, pdfUserId }) {
   const [renderError, setRenderError] = useState(null);
@@ -4721,15 +5128,27 @@ export default function App(){
   // Active tab for bottom bar
   const activeTab = (() => {
     if (chatModal || showChatList) return 'chat';
-    if (screen === 'analytics' || screen === 'clientAnalytics') return 'analytics';
     if (screen === 'profile') return 'profile';
+    if (isDoc) {
+      // Doc tabs: diary (myDiary) / clients (home) / chat / profile
+      if (screen === 'myDiary' || screen === 'myMealDetail') return 'diary';
+      if (screen === 'analytics') return 'diary'; // own analytics opens from myDiary
+      if (screen === 'docDashboard') return 'clients';
+      return 'clients';
+    }
+    // Client tabs: diary / analytics / chat / profile
+    if (screen === 'analytics' || screen === 'clientAnalytics') return 'analytics';
     return 'diary';
   })();
 
   const handleTabPress = (tab) => {
     // Always close chat modals when switching tabs
     if (tab !== 'chat') { setChatModal(null); setShowChatList(false); }
-    if (tab === 'diary') { goHome(); }
+    if (tab === 'diary') {
+      if (isDoc) { setScreen('myDiary'); setDate(new Date()); }
+      else { goHome(); }
+    }
+    if (tab === 'clients') { goHome(); }
     if (tab === 'analytics') {
       setAnalytics(null);
       setAnalyticsRange('7d');
@@ -4873,19 +5292,27 @@ export default function App(){
     {/* Bottom tab bar */}
     <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
       <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 8px'}}>
-        {[
-          { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
-          { id:'analytics', label:'Аналитика',  icon:I.chart, badge:0 },
-          { id:'chat',      label:'Чат',        icon:I.chat,  badge:chatBadge },
-          { id:'profile',   label:'Профиль',    icon:I.user,  badge:0 },
-        ].map(tab => {
+        {(isDoc
+          ? [
+              { id:'diary',   label:'Дневник',  icon:I.book,   badge:0 },
+              { id:'clients', label:'Клиенты',  icon:I.users,  badge:0 },
+              { id:'chat',    label:'Чат',      icon:I.chat,   badge:chatBadge },
+              { id:'profile', label:'Профиль',  icon:I.user,   badge:0 },
+            ]
+          : [
+              { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
+              { id:'analytics', label:'Аналитика',  icon:I.chart, badge:0 },
+              { id:'chat',      label:'Чат',        icon:I.chat,  badge:chatBadge },
+              { id:'profile',   label:'Профиль',    icon:I.user,  badge:0 },
+            ]
+        ).map(tab => {
           const active = activeTab === tab.id;
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
             flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
             border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
-            background:active?'#F0F0F0':'transparent',
+            background:active?C.accentSoft:'transparent',
             borderRadius:14,margin:'4px 3px',
-            color:active?'#333333':'#99A2AD',
+            color:active?C.accent:'#99A2AD',
             transition:'all .15s',WebkitTapHighlightColor:'transparent',
             padding:'6px 0',
           }}>
@@ -4902,6 +5329,15 @@ export default function App(){
 
   // ═══ PROFILE ═══
   if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb} onOpenAnalytics={()=>setScreen('analytics')}/>);
+
+  // Nutritionist aggregated dashboard
+  if(isDoc && screen==='docDashboard') return shell(<DocDashboard
+    clients={clients}
+    waterNorm={waterNorm}
+    onBack={()=>setScreen('home')}
+    onOpenClient={(c)=>{setSelClient(c);setScreen('clientView');}}
+    onOpenChat={(c)=>openChat(c.id, c.nick||c.name, user.id, null)}
+  />);
 
   // Client analytics viewed by the nutritionist
   if(screen==='clientAnalytics'&&selClient) return shell(<AnalyticsScreen
@@ -4923,7 +5359,7 @@ export default function App(){
     onRangeChange={setAnalyticsRange}
     customDateRange={customDateRange}
     onCustomDateRange={setCustomDateRange}
-    onBack={null}
+    onBack={isDoc?()=>setScreen('myDiary'):null}
     waterNorm={waterNorm}
     pdfUserId={user?.id}
   />);
@@ -5056,7 +5492,7 @@ export default function App(){
   if(isDoc&&screen==='myDiary'){
     const md=getDay(user.id),mm=md.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={null}/>
+      <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={<IcoBtn icon={I.chart} onClick={()=>{setAnalytics(null);setAnalyticsRange('7d');setScreen('analytics')}} style={{color:C.accent}}/>}/>
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
@@ -5076,22 +5512,25 @@ export default function App(){
     return shell(<>
       <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/>}/>
 
+      {/* Nutritionist dashboard banner — opens aggregated analytics */}
+      <button onClick={()=>setScreen('docDashboard')} style={{width:'100%',padding:'20px 22px',borderRadius:20,border:'none',background:C.accent,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:16,marginBottom:14,boxShadow:'0 6px 20px rgba(45,95,63,.22)',transition:'all .25s',transform:'perspective(400px) rotateX(0)',textAlign:'left'}}
+        onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-3px)';e.currentTarget.style.boxShadow='0 10px 28px rgba(45,95,63,.28)'}}
+        onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow='0 6px 20px rgba(45,95,63,.22)'}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:6}}>Дашборд нутрициолога</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,.82)',lineHeight:1.4}}>Аналитика и инсайты по всем вашим клиентам в одном месте</div>
+        </div>
+        <div style={{width:56,height:56,borderRadius:14,background:'rgba(255,255,255,.14)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexShrink:0}}>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+        </div>
+      </button>
+
+      {/* Active / Archive tabs — sit directly above the client list */}
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
           <button key={t.id} onClick={()=>setDocTab(t.id)} style={{flex:1,padding:'11px',border:'none',fontSize:13,fontWeight:docTab===t.id?600:400,fontFamily:'inherit',cursor:'pointer',background:docTab===t.id?C.surface:C.surfaceAlt,color:docTab===t.id?C.text:C.muted,transition:'all .15s'}}>{t.l}</button>
         )}
       </div>
-
-      {/* My diary */}
-      <button onClick={()=>{setScreen('myDiary');setDate(new Date())}} style={{width:'100%',padding:'18px',borderRadius:20,border:`2px solid ${C.accent}`,background:C.accentSoft,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:14,marginBottom:14,boxShadow:'0 4px 16px rgba(45,95,63,.12)',transition:'all .25s',transform:'perspective(400px) rotateX(0)'}}
-        onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-3px)';e.currentTarget.style.boxShadow='0 8px 24px rgba(45,95,63,.18)'}}
-        onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow='0 4px 16px rgba(45,95,63,.12)'}}>
-        <div style={{width:44,height:44,borderRadius:14,background:C.accent,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}}>{I.fork}</div>
-        <div style={{textAlign:'left'}}>
-          <div style={{fontSize:16,fontWeight:600,color:C.accent}}>Мой дневник</div>
-          <div style={{fontSize:12,color:C.soft}}>Личный дневник здоровья</div>
-        </div>
-      </button>
 
       {list.map((c,i)=><div key={c.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,position:'relative',animation:`enter .35s ease ${i*0.04}s both`,zIndex:clientMenu===c.id?10000:1}}>
         <button onClick={()=>{setSelClient(c);setScreen('clientView');setDate(new Date())}} className="card-hover" style={{flex:1,display:'flex',alignItems:'center',gap:12,padding:'16px',borderRadius:18,border:'none',background:C.surface,cursor:'pointer',textAlign:'left',fontFamily:'inherit',boxShadow:C.shadowCard,transition:'all .2s',transform:'perspective(400px) rotateX(0)'}}
