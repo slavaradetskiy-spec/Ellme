@@ -114,6 +114,7 @@ const I={
   back:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>,
   menu:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="15" y2="16"/></svg>,
   user:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  users:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>,
   bell:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>,
   plus:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
   cam:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>,
@@ -4721,15 +4722,26 @@ export default function App(){
   // Active tab for bottom bar
   const activeTab = (() => {
     if (chatModal || showChatList) return 'chat';
-    if (screen === 'analytics' || screen === 'clientAnalytics') return 'analytics';
     if (screen === 'profile') return 'profile';
+    if (isDoc) {
+      // Doc tabs: diary (myDiary) / clients (home) / chat / profile
+      if (screen === 'myDiary' || screen === 'myMealDetail') return 'diary';
+      if (screen === 'analytics') return 'diary'; // own analytics opens from myDiary
+      return 'clients';
+    }
+    // Client tabs: diary / analytics / chat / profile
+    if (screen === 'analytics' || screen === 'clientAnalytics') return 'analytics';
     return 'diary';
   })();
 
   const handleTabPress = (tab) => {
     // Always close chat modals when switching tabs
     if (tab !== 'chat') { setChatModal(null); setShowChatList(false); }
-    if (tab === 'diary') { goHome(); }
+    if (tab === 'diary') {
+      if (isDoc) { setScreen('myDiary'); setDate(new Date()); }
+      else { goHome(); }
+    }
+    if (tab === 'clients') { goHome(); }
     if (tab === 'analytics') {
       setAnalytics(null);
       setAnalyticsRange('7d');
@@ -4873,12 +4885,20 @@ export default function App(){
     {/* Bottom tab bar */}
     <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
       <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 8px'}}>
-        {[
-          { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
-          { id:'analytics', label:'Аналитика',  icon:I.chart, badge:0 },
-          { id:'chat',      label:'Чат',        icon:I.chat,  badge:chatBadge },
-          { id:'profile',   label:'Профиль',    icon:I.user,  badge:0 },
-        ].map(tab => {
+        {(isDoc
+          ? [
+              { id:'diary',   label:'Дневник',  icon:I.book,   badge:0 },
+              { id:'clients', label:'Клиенты',  icon:I.users,  badge:0 },
+              { id:'chat',    label:'Чат',      icon:I.chat,   badge:chatBadge },
+              { id:'profile', label:'Профиль',  icon:I.user,   badge:0 },
+            ]
+          : [
+              { id:'diary',     label:'Дневник',    icon:I.book,  badge:0 },
+              { id:'analytics', label:'Аналитика',  icon:I.chart, badge:0 },
+              { id:'chat',      label:'Чат',        icon:I.chat,  badge:chatBadge },
+              { id:'profile',   label:'Профиль',    icon:I.user,  badge:0 },
+            ]
+        ).map(tab => {
           const active = activeTab === tab.id;
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
             flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
@@ -4923,7 +4943,7 @@ export default function App(){
     onRangeChange={setAnalyticsRange}
     customDateRange={customDateRange}
     onCustomDateRange={setCustomDateRange}
-    onBack={null}
+    onBack={isDoc?()=>setScreen('myDiary'):null}
     waterNorm={waterNorm}
     pdfUserId={user?.id}
   />);
@@ -5056,7 +5076,7 @@ export default function App(){
   if(isDoc&&screen==='myDiary'){
     const md=getDay(user.id),mm=md.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={null}/>
+      <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={<IcoBtn icon={I.chart} onClick={()=>{setAnalytics(null);setAnalyticsRange('7d');setScreen('analytics')}} style={{color:C.accent}}/>}/>
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
@@ -5076,22 +5096,25 @@ export default function App(){
     return shell(<>
       <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/>}/>
 
+      {/* Nutritionist dashboard banner — opens aggregated analytics */}
+      <button onClick={()=>{setAnalytics(null);setAnalyticsRange('7d');setScreen('analytics')}} style={{width:'100%',padding:'20px 22px',borderRadius:20,border:'none',background:C.accent,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:16,marginBottom:14,boxShadow:'0 6px 20px rgba(45,95,63,.22)',transition:'all .25s',transform:'perspective(400px) rotateX(0)',textAlign:'left'}}
+        onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-3px)';e.currentTarget.style.boxShadow='0 10px 28px rgba(45,95,63,.28)'}}
+        onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow='0 6px 20px rgba(45,95,63,.22)'}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:17,fontWeight:700,color:'#fff',marginBottom:6}}>Дашборд нутрициолога</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,.82)',lineHeight:1.4}}>Аналитика и инсайты по всем вашим клиентам в одном месте</div>
+        </div>
+        <div style={{width:56,height:56,borderRadius:14,background:'rgba(255,255,255,.14)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexShrink:0}}>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+        </div>
+      </button>
+
+      {/* Active / Archive tabs — sit directly above the client list */}
       <div style={{display:'flex',borderRadius:14,overflow:'hidden',border:`1px solid ${C.tileBorder}`,marginBottom:14}}>
         {[{id:'active',l:`Активные · ${active.length}`},{id:'archive',l:`Архив · ${archive.length}`}].map(t=>
           <button key={t.id} onClick={()=>setDocTab(t.id)} style={{flex:1,padding:'11px',border:'none',fontSize:13,fontWeight:docTab===t.id?600:400,fontFamily:'inherit',cursor:'pointer',background:docTab===t.id?C.surface:C.surfaceAlt,color:docTab===t.id?C.text:C.muted,transition:'all .15s'}}>{t.l}</button>
         )}
       </div>
-
-      {/* My diary */}
-      <button onClick={()=>{setScreen('myDiary');setDate(new Date())}} style={{width:'100%',padding:'18px',borderRadius:20,border:`2px solid ${C.accent}`,background:C.accentSoft,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:14,marginBottom:14,boxShadow:'0 4px 16px rgba(45,95,63,.12)',transition:'all .25s',transform:'perspective(400px) rotateX(0)'}}
-        onMouseOver={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(-2deg) translateY(-3px)';e.currentTarget.style.boxShadow='0 8px 24px rgba(45,95,63,.18)'}}
-        onMouseOut={e=>{e.currentTarget.style.transform='perspective(400px) rotateX(0)';e.currentTarget.style.boxShadow='0 4px 16px rgba(45,95,63,.12)'}}>
-        <div style={{width:44,height:44,borderRadius:14,background:C.accent,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff'}}>{I.fork}</div>
-        <div style={{textAlign:'left'}}>
-          <div style={{fontSize:16,fontWeight:600,color:C.accent}}>Мой дневник</div>
-          <div style={{fontSize:12,color:C.soft}}>Личный дневник здоровья</div>
-        </div>
-      </button>
 
       {list.map((c,i)=><div key={c.id} style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,position:'relative',animation:`enter .35s ease ${i*0.04}s both`,zIndex:clientMenu===c.id?10000:1}}>
         <button onClick={()=>{setSelClient(c);setScreen('clientView');setDate(new Date())}} className="card-hover" style={{flex:1,display:'flex',alignItems:'center',gap:12,padding:'16px',borderRadius:18,border:'none',background:C.surface,cursor:'pointer',textAlign:'left',fontFamily:'inherit',boxShadow:C.shadowCard,transition:'all .2s',transform:'perspective(400px) rotateX(0)'}}
