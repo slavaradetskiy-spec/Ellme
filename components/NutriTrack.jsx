@@ -2412,7 +2412,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     if (!file || !uploadAttachment) return;
     try {
       const url = await uploadAttachment(file);
-      if (url) await send({ text: '', attachments: [{ type: file.type.startsWith('image/') ? 'image' : 'file', url, name: file.name }] });
+      const t = file.type || '';
+      const pickedType = t.startsWith('image/') ? 'image' : t.startsWith('audio/') ? 'audio' : 'file';
+      if (url) await send({ text: '', attachments: [{ type: pickedType, url, name: file.name, mime: t }] });
     } catch (err) { console.error('upload att:', err); }
   };
 
@@ -2672,7 +2674,14 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none'}}>
             {atts.map((a, i) => {
               if (a.type === 'image') return <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>;
-              if (a.type === 'audio') return <VoicePlayer key={i} url={a.url} duration={a.duration} isMine={isMine}/>;
+              // Voice fallback: also catch legacy messages sent before the
+              // 'audio' attachment type existed — detect by mime or file
+              // extension so they still render inline instead of opening
+              // in the system audio player.
+              const isAudio = a.type === 'audio'
+                || (typeof a.mime === 'string' && a.mime.toLowerCase().startsWith('audio/'))
+                || (typeof a.url === 'string' && /\.(webm|ogg|mp3|m4a|mp4|wav|oga)(?:\?|$)/i.test(a.url));
+              if (isAudio) return <VoicePlayer key={i} url={a.url} duration={a.duration} isMine={isMine}/>;
               return <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                 <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
