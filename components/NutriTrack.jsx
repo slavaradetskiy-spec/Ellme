@@ -2271,10 +2271,15 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </button>
       {otherParty.photo && !photoBroken
         ? <img src={otherParty.photo} alt="" onError={() => setPhotoBroken(true)} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
-        : <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
+        : displayName
+          ? <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
+          : <div style={{width:40,height:40,borderRadius:'50%',background:C.surfaceAlt,flexShrink:0}}/>
       }
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minHeight:20}}>{displayName}</div>
+        {displayName
+          ? <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minHeight:20}}>{displayName}</div>
+          : <div style={{width:120,height:14,borderRadius:7,background:C.surfaceAlt,marginTop:3}}/>
+        }
         {statusLine && <div style={{fontSize:11,color:statusColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:statusColor==='#34C759'?500:400}}>{statusLine}</div>}
       </div>
     </div>
@@ -2290,6 +2295,12 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     </div>}
     {/* Messages */}
     <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0,overscrollBehavior:'contain'}}>
+      {messagesLoading && <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 0'}}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:'spin 1s linear infinite'}}>
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+        </svg>
+      </div>}
       {!messagesLoading && messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
         if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
@@ -4263,12 +4274,17 @@ function Login({onLogin}){
   </div>;
 
   // ── Logo ──
-  const Logo = () => <div style={{textAlign:'center',marginBottom:36}}>
-    <div style={{fontSize:40,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'.08em',color:C.text}}>ELLME</div>
-    <div style={{fontSize:10,color:C.muted,letterSpacing:'.18em',textTransform:'uppercase',marginTop:6}}>Eat Live Love ME</div>
+  const LOGO_LINES = ['Eat healthier', 'Listen to your body', 'Live longer'];
+  const Logo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:18,marginBottom:48}}>
+    <img src="/logo-source.png" alt="ELLME" width={80} height={80} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
+    <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
+      {LOGO_LINES.map((line,i)=><div key={i} style={{fontSize:14,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.35}}>
+        <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
+      </div>)}
+    </div>
   </div>;
 
-  return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'40px 24px'}}>
+  return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',background:C.bg,padding:'10vh 24px 40px'}}>
     {/* OAuth loading overlay */}
     {oauthLoading&&<div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:C.bg,animation:'fadeIn .2s'}}>
       <ProgressBar duration={4} label="Идёт загрузка, это может занять несколько секунд..."/>
@@ -4305,8 +4321,8 @@ function Login({onLogin}){
 
       {mode==='register'&&<div style={{animation:'enter .3s'}}>
         <Logo/>
-        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:6,marginTop:-16}}>Создайте аккаунт</h2>
-        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Введите данные для регистрации</p>
+        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:8}}>Создайте аккаунт</h2>
+        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Введите данные для регистрации</p>
         {errBox}{sucBox}
         {!success&&<>
           <input value={regName} onChange={e=>setRegName(e.target.value)} placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
@@ -4345,8 +4361,8 @@ function Login({onLogin}){
 
       {mode==='doc'&&<div style={{animation:'enter .3s'}}>
         <Logo/>
-        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:4,marginTop:-16}}>Кабинет специалиста</h2>
-        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Вход для нутрициолога</p>
+        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:6}}>Кабинет специалиста</h2>
+        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Вход для нутрициолога</p>
         {errBox}{sucBox}
         <input placeholder="Email" type="email" style={inputStyle} value={email} onChange={e=>setEmail(e.target.value)} onFocus={onFB} onBlur={offFB}/>
         {passInput(pass,setPass,'Пароль',showP1,setShowP1,{onKeyDown:e=>{if(e.key==='Enter')handleDocSignIn()}})}
