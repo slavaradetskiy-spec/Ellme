@@ -4411,21 +4411,10 @@ function IntroSplash(){
     return()=>timers.forEach(clearTimeout);
   },[]);
 
-  // Logo: solid green circle with "ELL🌿ME" (white text + narrow leaf between L and M, matching the real icon)
-  const Leaf=({size=14})=><svg width={size} height={size*1.4} viewBox="0 0 14 20" style={{display:'block'}}>
-    <path d="M7 1 C 2 6, 2 14, 7 19 C 12 14, 12 6, 7 1 Z" fill="#fff"/>
-  </svg>;
-
   return <div style={{position:'fixed',inset:0,background:'#FFFFFF',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:40,zIndex:100000,padding:'0 24px'}}>
-    {/* Logo + English caption next to it — both instant */}
-    <div style={{display:'flex',alignItems:'center',gap:18,flexWrap:'nowrap'}}>
-      <div style={{width:128,height:128,borderRadius:'50%',background:'#3DA155',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 10px 30px rgba(61,161,85,.28)',flexShrink:0}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,fontWeight:800,color:'#fff',letterSpacing:'.5px',fontFamily:'var(--fb)'}}>
-          <span>ELL</span>
-          <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',margin:'0 2px',transform:'rotate(12deg)'}}><Leaf size={12}/></span>
-          <span>ME</span>
-        </div>
-      </div>
+    {/* Logo plate — contains real ELLME icon + English caption */}
+    <div style={{display:'flex',alignItems:'center',gap:20,flexWrap:'nowrap',background:'#F7F9F5',borderRadius:24,padding:'20px 26px',boxShadow:'0 8px 28px rgba(61,161,85,.12), 0 0 0 1px rgba(61,161,85,.08)'}}>
+      <img src="/logo-source.png" alt="ELLME" width={112} height={112} style={{display:'block',flexShrink:0,borderRadius:22}}/>
       <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start'}}>
         {EN_LINES.map((line,i)=><div key={i} style={{fontSize:18,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.3}}>
           <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
