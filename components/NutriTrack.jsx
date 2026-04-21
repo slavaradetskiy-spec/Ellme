@@ -4284,7 +4284,7 @@ function Login({onLogin}){
     </div>
   </div>;
 
-  return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'40px 24px'}}>
+  return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',background:C.bg,padding:'10vh 24px 40px'}}>
     {/* OAuth loading overlay */}
     {oauthLoading&&<div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:C.bg,animation:'fadeIn .2s'}}>
       <ProgressBar duration={4} label="Идёт загрузка, это может занять несколько секунд..."/>
