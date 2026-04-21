@@ -2427,7 +2427,14 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     });
   };
   const clearSelection = () => setSelectedIds(new Set());
-  const enterSelection = (msg) => { setSelectedIds(new Set([msg.id])); };
+  const enterSelection = (msg) => {
+    setSelectedIds(new Set([msg.id]));
+    // After the layout re-renders with the selection bar, make sure the
+    // just-selected message is visible — otherwise the bulk-action bar
+    // + the removed composer can push the chosen row off-screen and
+    // leave the user not knowing what's checked.
+    setTimeout(() => scrollToMessage(msg.id), 60);
+  };
   const [bulkForwarding, setBulkForwarding] = useState(false);
   const bulkForward = async (target) => {
     if (!target || !supabase || !currentUserId || selectedIds.size === 0) return;
@@ -2756,7 +2763,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         const reactionEntries = Object.entries(reactions).filter(([,users]) => Array.isArray(users) && users.length > 0);
         const atts = Array.isArray(m.attachments) ? m.attachments : [];
         const checked = selectedIds.has(m.id);
-        return <div key={g.key} id={'chat-msg-' + m.id} onClick={selectionMode ? () => toggleSelected(m.id) : undefined} style={{display:'flex',flexDirection:'row',alignItems:'center',gap:selectionMode?10:0,marginBottom:8,scrollMarginTop:80,cursor:selectionMode?'pointer':'default',transition:'gap .15s'}}>
+        return <div key={g.key} id={'chat-msg-' + m.id} onClick={selectionMode ? () => toggleSelected(m.id) : undefined} style={{display:'flex',flexDirection:'row',alignItems:'center',gap:selectionMode?10:0,marginBottom:8,scrollMarginTop:80,cursor:selectionMode?'pointer':'default',transition:'gap .15s, background .15s',background:checked?'rgba(61,161,85,.14)':'transparent',marginLeft:selectionMode?-18:0,marginRight:selectionMode?-18:0,padding:selectionMode?'4px 18px':0}}>
           {selectionMode && <div style={{width:24,height:24,borderRadius:'50%',border:`2px solid ${checked?C.accent:C.tileBorder}`,background:checked?C.accent:'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexShrink:0}}>
             {checked && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
           </div>}
