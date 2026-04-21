@@ -2046,7 +2046,7 @@ function ChatListModal({ docId, clients, unreadByClient, onOpenChat, onClose }) 
 // Full-screen chat modal. Single thread per (doc, client) pair.
 // Props: clientId, docId (nullable — resolved on demand), currentUserId, currentUserName,
 //        clientName, initialTagDate, onClose, uploadAttachment(file)
-function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName, initialTagDate, onClose, uploadAttachment, onTagClick }) {
+function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName, initialTagDate, onClose, uploadAttachment, onTagClick, forwardTargets }) {
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [text, setText] = useState('');
@@ -2413,6 +2413,24 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const startReply = (msg) => { if (!msg) return; setEditingMsg(null); setReplyToMsg(msg); setTimeout(() => { try { textareaRef.current?.focus(); } catch (e) {} }, 20); };
   const cancelReply = () => setReplyToMsg(null);
 
+  // ── Forward ──
+  const [forwardingMsg, setForwardingMsg] = useState(null); // source msg when picking destination
+  const forwardMessage = async (target) => {
+    const src = forwardingMsg;
+    if (!src || !target || !supabase || !currentUserId) return;
+    const fromName = src.sender_id === currentUserId ? (currentUserName || 'Вы') : (src.sender_name || otherParty.name || '');
+    setForwardingMsg(null);
+    try {
+      await supabase.from('doc_comments').insert({
+        doc_id: target.docId, client_id: target.clientId,
+        sender_id: currentUserId, sender_name: currentUserName || '',
+        text: src.text || '', kind: 'comment', read: false,
+        attachments: Array.isArray(src.attachments) ? src.attachments : [],
+        forwarded_from_name: fromName,
+      });
+    } catch (e) { console.error('forward:', e); }
+  };
+
   const toggleReaction = async (msg, emoji) => {
     if (!supabase || !currentUserId) return;
     const reactions = Object.assign({}, msg.reactions || {});
@@ -2695,6 +2713,10 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             onTouchCancel={cancelLongPress}
             onContextMenu={(e) => { e.preventDefault(); setMsgMenu({ msg: m, isMine }); }}
             style={{maxWidth:'82%',padding:m.text||m.reply_to_id?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none'}}>
+            {m.forwarded_from_name && <div style={{fontSize:11,fontWeight:700,color:isMine?'rgba(255,255,255,.85)':C.accent,marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 014-4h12"/></svg>
+              Переслано от {m.forwarded_from_name}
+            </div>}
             {m.reply_to_id && (() => {
               const target = messages.find(x => x.id === m.reply_to_id);
               const tName = target ? (target.sender_id === currentUserId ? 'Вы' : (target.sender_name || otherParty.name || '')) : '';
@@ -2819,6 +2841,32 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>
     </div>
 
+    {/* Forward target picker — opened from the action menu. Shows the
+        doctor's other clients; tap a row to send a copy of the source
+        message into that thread (attribution kept in forwarded_from_name). */}
+    {forwardingMsg && <div onClick={() => setForwardingMsg(null)} style={{position:'fixed',inset:0,zIndex:10002,background:'rgba(0,0,0,.45)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',animation:'fadeIn .15s'}}>
+      <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:360,maxHeight:'70vh',background:C.surface,borderRadius:18,boxShadow:'0 12px 40px rgba(0,0,0,.25)',overflow:'hidden',display:'flex',flexDirection:'column',animation:'slideUp .18s ease'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 18px',borderBottom:`1px solid ${C.surfaceAlt}`}}>
+          <div style={{fontSize:15,fontWeight:700,color:C.text}}>Переслать</div>
+          <button type="button" onClick={() => setForwardingMsg(null)} aria-label="Отмена" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div style={{overflowY:'auto',flex:1}}>
+          {(!forwardTargets || forwardTargets.length === 0)
+            ? <div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:13}}>Нет доступных чатов</div>
+            : forwardTargets.map(t => <button key={t.clientId} type="button" onClick={() => forwardMessage(t)} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'12px 18px',background:'none',border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+              {t.photo
+                ? <img src={t.photo} alt="" style={{width:36,height:36,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
+                : <div style={{width:36,height:36,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{(t.name||'—').trim().slice(0,2).toUpperCase()}</div>
+              }
+              <span style={{flex:1,fontSize:15,color:C.text,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{t.name || 'Клиент'}</span>
+            </button>)
+          }
+        </div>
+      </div>
+    </div>}
+
     {/* Message action menu — Telegram-style floating card. Opens on
         long-press (mobile) or right-click (desktop). zIndex 10002 to
         beat the app's tab bar (10001). */}
@@ -2855,6 +2903,12 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             <button key="copy" style={rowStyle(false)} onClick={() => { copyMessage(m); setMsgMenu(null); }}>
               <span>Копировать</span>
               <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span>
+            </button>
+          );
+          if (Array.isArray(forwardTargets) && forwardTargets.length > 0) rows.push(
+            <button key="forward" style={rowStyle(false)} onClick={() => { setForwardingMsg(m); setMsgMenu(null); }}>
+              <span>Переслать</span>
+              <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 014-4h12"/></svg></span>
             </button>
           );
           rows.push(
@@ -5910,6 +5964,7 @@ export default function App(){
       currentUserName={user?.name||''}
       clientName={chatModal.clientName}
       initialTagDate={chatModal.tagDate}
+      forwardTargets={isDoc && user?.id ? clients.filter(c => c.id !== chatModal.clientId && c.status === 'active').map(c => ({ clientId: c.id, docId: user.id, name: c.nick || c.name, photo: c.photo })) : []}
       onClose={()=>setChatModal(null)}
       uploadAttachment={uploadChatAttachment}
       onTagClick={(tagDate)=>{
