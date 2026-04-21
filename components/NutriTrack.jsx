@@ -4411,9 +4411,9 @@ function IntroSplash(){
     return()=>timers.forEach(clearTimeout);
   },[]);
 
-  // Logo: solid green circle with "ELL🌿ME" (white text + leaf between L and M)
-  const Leaf=({size=18})=><svg width={size} height={size} viewBox="0 0 24 24" style={{display:'block'}}>
-    <path d="M20 3c-8 0-14 4-14 11 0 2.5 1 5 3 6.5C10 16 14 12 19 10c-4 3-7 6-9 12 5 0 12-3 12-11 0-3-1-5-2-8Z" fill="#fff"/>
+  // Logo: solid green circle with "ELL🌿ME" (white text + narrow leaf between L and M, matching the real icon)
+  const Leaf=({size=14})=><svg width={size} height={size*1.4} viewBox="0 0 14 20" style={{display:'block'}}>
+    <path d="M7 1 C 2 6, 2 14, 7 19 C 12 14, 12 6, 7 1 Z" fill="#fff"/>
   </svg>;
 
   return <div style={{position:'fixed',inset:0,background:'#FFFFFF',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:40,zIndex:100000,padding:'0 24px'}}>
@@ -4422,7 +4422,7 @@ function IntroSplash(){
       <div style={{width:128,height:128,borderRadius:'50%',background:'#3DA155',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 10px 30px rgba(61,161,85,.28)',flexShrink:0}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,fontWeight:800,color:'#fff',letterSpacing:'.5px',fontFamily:'var(--fb)'}}>
           <span>ELL</span>
-          <span style={{width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',margin:'0 1px',transform:'rotate(-25deg)'}}><Leaf size={20}/></span>
+          <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',margin:'0 2px',transform:'rotate(12deg)'}}><Leaf size={12}/></span>
           <span>ME</span>
         </div>
       </div>
