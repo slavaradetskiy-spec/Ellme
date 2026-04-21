@@ -2413,6 +2413,56 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const startReply = (msg) => { if (!msg) return; setEditingMsg(null); setReplyToMsg(msg); setTimeout(() => { try { textareaRef.current?.focus(); } catch (e) {} }, 20); };
   const cancelReply = () => setReplyToMsg(null);
 
+  // ── Multi-select mode ──
+  // When active: tapping a bubble toggles its selection, long-press is
+  // disabled, header swaps to "Выбрано: N" + ×, bottom bar offers bulk
+  // Переслать / Удалить.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const selectionMode = selectedIds.size > 0;
+  const toggleSelected = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const enterSelection = (msg) => {
+    setSelectedIds(new Set([msg.id]));
+    // After the layout re-renders with the selection bar, make sure the
+    // just-selected message is visible — otherwise the bulk-action bar
+    // + the removed composer can push the chosen row off-screen and
+    // leave the user not knowing what's checked.
+    setTimeout(() => scrollToMessage(msg.id), 60);
+  };
+  const [bulkForwarding, setBulkForwarding] = useState(false);
+  const bulkForward = async (target) => {
+    if (!target || !supabase || !currentUserId || selectedIds.size === 0) return;
+    const ordered = messages.filter(m => selectedIds.has(m.id));
+    setBulkForwarding(false);
+    try {
+      const rows = ordered.map(src => ({
+        doc_id: target.docId, client_id: target.clientId,
+        sender_id: currentUserId, sender_name: currentUserName || '',
+        text: src.text || '', kind: 'comment', read: false,
+        attachments: Array.isArray(src.attachments) ? src.attachments : [],
+        forwarded_from_name: src.sender_id === currentUserId ? (currentUserName || 'Вы') : (src.sender_name || otherParty.name || ''),
+      }));
+      if (rows.length > 0) await supabase.from('doc_comments').insert(rows);
+    } catch (e) { console.error('bulk forward:', e); }
+    clearSelection();
+  };
+  const bulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Удалить ${selectedIds.size} сообщ.? Это действие нельзя отменить.`)) return;
+    const ids = Array.from(selectedIds);
+    setMessages(prev => prev.filter(m => !selectedIds.has(m.id)));
+    clearSelection();
+    try {
+      if (supabase) await supabase.from('doc_comments').delete().in('id', ids);
+    } catch (e) { console.error('bulk delete:', e); }
+  };
+
   // ── Forward ──
   const [forwardingMsg, setForwardingMsg] = useState(null); // source msg when picking destination
   const forwardMessage = async (target) => {
@@ -2637,22 +2687,29 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:kbHeight>0?kbHeight+'px':'76px',overflow:'hidden',overscrollBehavior:'none',touchAction:'pan-y'}}>
     {/* Header */}
     <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:C.surface,boxShadow:'0 1px 0 rgba(0,0,0,.04)',flexShrink:0}}>
-      <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      {otherParty.photo && !photoBroken
-        ? <img src={otherParty.photo} alt="" onError={() => setPhotoBroken(true)} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
-        : displayName
-          ? <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
-          : <div style={{width:40,height:40,borderRadius:'50%',background:C.surfaceAlt,flexShrink:0}}/>
-      }
-      <div style={{flex:1,minWidth:0}}>
-        {displayName
-          ? <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minHeight:20}}>{displayName}</div>
-          : <div style={{width:120,height:14,borderRadius:7,background:C.surfaceAlt,marginTop:3}}/>
+      {selectionMode ? <>
+        <button onClick={clearSelection} aria-label="Выйти из режима выбора" style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div style={{flex:1,minWidth:0,fontSize:16,fontWeight:600,color:C.text}}>Выбрано: {selectedIds.size}</div>
+      </> : <>
+        <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',padding:6,color:C.text,display:'flex',flexShrink:0}}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        {otherParty.photo && !photoBroken
+          ? <img src={otherParty.photo} alt="" onError={() => setPhotoBroken(true)} style={{width:40,height:40,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
+          : displayName
+            ? <div style={{width:40,height:40,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{avatarInitial}</div>
+            : <div style={{width:40,height:40,borderRadius:'50%',background:C.surfaceAlt,flexShrink:0}}/>
         }
-        {statusLine && <div style={{fontSize:11,color:statusColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:statusColor==='#34C759'?500:400}}>{statusLine}</div>}
-      </div>
+        <div style={{flex:1,minWidth:0}}>
+          {displayName
+            ? <div style={{fontSize:16,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minHeight:20}}>{displayName}</div>
+            : <div style={{width:120,height:14,borderRadius:7,background:C.surfaceAlt,marginTop:3}}/>
+          }
+          {statusLine && <div style={{fontSize:11,color:statusColor,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:statusColor==='#34C759'?500:400}}>{statusLine}</div>}
+        </div>
+      </>}
     </div>
 
     {/* Pinned message banner — tap to scroll to the original */}
@@ -2705,13 +2762,18 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         const reactions = m.reactions || {};
         const reactionEntries = Object.entries(reactions).filter(([,users]) => Array.isArray(users) && users.length > 0);
         const atts = Array.isArray(m.attachments) ? m.attachments : [];
-        return <div key={g.key} id={'chat-msg-' + m.id} style={{display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',marginBottom:8,scrollMarginTop:80}}>
+        const checked = selectedIds.has(m.id);
+        return <div key={g.key} id={'chat-msg-' + m.id} onClick={selectionMode ? () => toggleSelected(m.id) : undefined} style={{display:'flex',flexDirection:'row',alignItems:'center',gap:selectionMode?10:0,marginBottom:8,scrollMarginTop:80,cursor:selectionMode?'pointer':'default',transition:'gap .15s, background .15s',background:checked?'rgba(61,161,85,.14)':'transparent',marginLeft:selectionMode?-18:0,marginRight:selectionMode?-18:0,padding:selectionMode?'4px 18px':0}}>
+          {selectionMode && <div style={{width:24,height:24,borderRadius:'50%',border:`2px solid ${checked?C.accent:C.tileBorder}`,background:checked?C.accent:'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexShrink:0}}>
+            {checked && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+          </div>}
+          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',minWidth:0}}>
           <div
-            onTouchStart={() => beginLongPress(m, isMine)}
-            onTouchEnd={cancelLongPress}
-            onTouchMove={cancelLongPress}
-            onTouchCancel={cancelLongPress}
-            onContextMenu={(e) => { e.preventDefault(); setMsgMenu({ msg: m, isMine }); }}
+            onTouchStart={selectionMode ? undefined : () => beginLongPress(m, isMine)}
+            onTouchEnd={selectionMode ? undefined : cancelLongPress}
+            onTouchMove={selectionMode ? undefined : cancelLongPress}
+            onTouchCancel={selectionMode ? undefined : cancelLongPress}
+            onContextMenu={selectionMode ? undefined : (e) => { e.preventDefault(); setMsgMenu({ msg: m, isMine }); }}
             style={{maxWidth:'82%',padding:m.text||m.reply_to_id?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none'}}>
             {m.forwarded_from_name && <div style={{fontSize:11,fontWeight:700,color:isMine?'rgba(255,255,255,.85)':C.accent,marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 014-4h12"/></svg>
@@ -2759,6 +2821,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             })}
             {!isMine && <ReactionPicker onPick={(e) => toggleReaction(m, e)} active={reactionEntries.map(([e])=>e)}/>}
           </div>}
+          </div>
         </div>;
       })}
     </div>
@@ -2797,9 +2860,25 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8}}>{e}</button>)}
     </div>}
 
+    {/* Selection mode bottom bar — bulk forward + delete */}
+    {selectionMode && <div style={{background:C.surface,padding:'12px 18px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)',display:'flex',gap:10,alignItems:'center'}}>
+      {Array.isArray(forwardTargets) && forwardTargets.length > 0 && <button onClick={() => setBulkForwarding(true)} disabled={selectedIds.size === 0} style={{flex:1,padding:'12px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,opacity:selectedIds.size===0?.5:1}}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 014-4h12"/></svg>
+        Переслать ({selectedIds.size})
+      </button>}
+      {(() => {
+        // Bulk delete only if all selected are own messages
+        const allOwn = Array.from(selectedIds).every(id => { const mm = messages.find(x => x.id === id); return mm && mm.sender_id === currentUserId; });
+        return allOwn && selectedIds.size > 0 && <button onClick={bulkDelete} style={{flex:1,padding:'12px',borderRadius:14,border:`1.5px solid #D85A30`,background:'transparent',color:'#D85A30',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          Удалить ({selectedIds.size})
+        </button>;
+      })()}
+    </div>}
+
     {/* Input toolbar — extends all the way to the bottom edge so no
         background-color strip shows under it on iOS */}
-    <div style={{background:C.surface,padding:'14px 18px 14px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
+    {!selectionMode && <div style={{background:C.surface,padding:'14px 18px 14px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
       <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
         <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
         {recording ? <>
@@ -2839,23 +2918,23 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             </button>}
         </>}
       </div>
-    </div>
+    </div>}
 
     {/* Forward target picker — opened from the action menu. Shows the
         doctor's other clients; tap a row to send a copy of the source
         message into that thread (attribution kept in forwarded_from_name). */}
-    {forwardingMsg && <div onClick={() => setForwardingMsg(null)} style={{position:'fixed',inset:0,zIndex:10002,background:'rgba(0,0,0,.45)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',animation:'fadeIn .15s'}}>
+    {(forwardingMsg || bulkForwarding) && <div onClick={() => { setForwardingMsg(null); setBulkForwarding(false); }} style={{position:'fixed',inset:0,zIndex:10002,background:'rgba(0,0,0,.45)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',animation:'fadeIn .15s'}}>
       <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:360,maxHeight:'70vh',background:C.surface,borderRadius:18,boxShadow:'0 12px 40px rgba(0,0,0,.25)',overflow:'hidden',display:'flex',flexDirection:'column',animation:'slideUp .18s ease'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 18px',borderBottom:`1px solid ${C.surfaceAlt}`}}>
-          <div style={{fontSize:15,fontWeight:700,color:C.text}}>Переслать</div>
-          <button type="button" onClick={() => setForwardingMsg(null)} aria-label="Отмена" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{fontSize:15,fontWeight:700,color:C.text}}>Переслать{bulkForwarding && selectedIds.size > 1 ? ` (${selectedIds.size})` : ''}</div>
+          <button type="button" onClick={() => { setForwardingMsg(null); setBulkForwarding(false); }} aria-label="Отмена" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
         <div style={{overflowY:'auto',flex:1}}>
           {(!forwardTargets || forwardTargets.length === 0)
             ? <div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:13}}>Нет доступных чатов</div>
-            : forwardTargets.map(t => <button key={t.clientId} type="button" onClick={() => forwardMessage(t)} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'12px 18px',background:'none',border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+            : forwardTargets.map(t => <button key={t.clientId} type="button" onClick={() => { if (bulkForwarding) bulkForward(t); else forwardMessage(t); }} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'12px 18px',background:'none',border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
               {t.photo
                 ? <img src={t.photo} alt="" style={{width:36,height:36,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
                 : <div style={{width:36,height:36,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{(t.name||'—').trim().slice(0,2).toUpperCase()}</div>
@@ -2926,6 +3005,12 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             <button key="delete" style={rowStyle(true)} onClick={() => { deleteMessage(m); setMsgMenu(null); }}>
               <span>Удалить у всех</span>
               <span style={iconWrap(true)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span>
+            </button>
+          );
+          rows.push(
+            <button key="select" style={rowStyle(false)} onClick={() => { enterSelection(m); setMsgMenu(null); }}>
+              <span>Выбрать</span>
+              <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg></span>
             </button>
           );
           return rows.reduce((acc, row, i) => {
