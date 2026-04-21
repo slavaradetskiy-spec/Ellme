@@ -5164,10 +5164,16 @@ export default function App(){
     return uploadMealPhoto(activePid, key, selMeal, file);
   };
 
-  const doRename = () => {
+  const doRename = async () => {
     if (!renaming) return;
-    setClients(p => p.map(x => x.id === renaming.id ? Object.assign({}, x, {nick: renameVal}) : x));
+    const id = renaming.id;
+    const newNick = renameVal;
+    setClients(p => p.map(x => x.id === id ? Object.assign({}, x, {nick: newNick}) : x));
     setRenaming(null);
+    if (supabase && user?.id) {
+      try { await supabase.from('doc_clients').update({ nick: newNick }).eq('doc_id', user.id).eq('client_id', id); }
+      catch (e) { console.error('doRename:', e); }
+    }
   };
 
   const updateMeal = (pid, mealId, val) => {
@@ -5251,13 +5257,35 @@ export default function App(){
     });
   };
 
-  const toggleArchive = (clientId) => {
-    setClients(p => p.map(x => x.id === clientId ? Object.assign({}, x, {status: x.status === 'active' ? 'archive' : 'active'}) : x));
+  const toggleArchive = async (clientId) => {
+    const current = clients.find(c => c.id === clientId);
+    if (!current) return;
+    const newStatus = current.status === 'active' ? 'archive' : 'active';
+    setClients(p => p.map(x => x.id === clientId ? Object.assign({}, x, {status: newStatus}) : x));
+    if (supabase && user?.id) {
+      try {
+        const { error } = await supabase.from('doc_clients').update({ status: newStatus }).eq('doc_id', user.id).eq('client_id', clientId);
+        if (error) throw error;
+      } catch (e) {
+        console.error('toggleArchive:', e);
+        // Revert optimistic update on failure
+        setClients(p => p.map(x => x.id === clientId ? Object.assign({}, x, {status: current.status}) : x));
+      }
+    }
   };
 
-  const deleteClient = (clientId) => {
-    if (confirm('Удалить клиента? Это действие нельзя отменить.')) {
-      setClients(p => p.filter(x => x.id !== clientId));
+  const deleteClient = async (clientId) => {
+    if (!confirm('Удалить клиента? Это действие нельзя отменить.')) { setClientMenu(null); return; }
+    const prev = clients;
+    setClients(p => p.filter(x => x.id !== clientId));
+    if (supabase && user?.id) {
+      try {
+        const { error } = await supabase.from('doc_clients').delete().eq('doc_id', user.id).eq('client_id', clientId);
+        if (error) throw error;
+      } catch (e) {
+        console.error('deleteClient:', e);
+        setClients(prev);
+      }
     }
     setClientMenu(null);
   };
