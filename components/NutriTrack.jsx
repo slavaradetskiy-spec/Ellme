@@ -719,8 +719,38 @@ function ScaleHelpButton(){
   </div>;
 }
 
-function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
+function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
   const d=data||{},upd=(k,v)=>setData({...d,[k]:v});
+  // Supplements history: collect items from the last 30 days so we can
+  // offer one-tap "repeat yesterday" + a chip row of every supplement
+  // the user has taken before. Parsed per entry (commas/semicolons/newlines),
+  // case-insensitively unique, preserving the first seen casing.
+  const parseSupps = (s) => String(s || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
+  const uniqCI = (arr) => { const seen = new Set(); const out = []; for (const x of arr) { const k = x.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(x); } } return out; };
+  const [suppHistory, setSuppHistory] = useState({ chips: [], yesterday: '' });
+  useEffect(() => {
+    if (!supabase || !pid || !dateKey) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const today = new Date(dateKey);
+        const start = new Date(today); start.setDate(start.getDate() - 30);
+        const y = new Date(today); y.setDate(y.getDate() - 1);
+        const startStr = dk(start), yStr = dk(y);
+        const { data: rows } = await supabase.from('diary_days')
+          .select('date,supplements')
+          .eq('user_id', pid)
+          .gte('date', startStr)
+          .lt('date', dateKey)
+          .order('date', { ascending: false });
+        if (!mounted) return;
+        const chips = uniqCI((rows || []).flatMap(r => parseSupps(r.supplements || '')));
+        const yRow = (rows || []).find(r => r.date === yStr);
+        setSuppHistory({ chips, yesterday: (yRow?.supplements || '').trim() });
+      } catch(e) { /* ignore */ }
+    })();
+    return () => { mounted = false; };
+  }, [pid, dateKey]);
   // Water log: primary source is d.water_log (Supabase JSONB). localStorage
   // survives as a same-device cache AND a fallback for rows that existed
   // before migration 008 (water_log default is [] — can't tell from []
@@ -873,6 +903,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           return null;
         })()}
         <div><Lbl>Качество сна</Lbl><Scale max={10} value={d.sleep?.quality} onChange={v=>upd('sleep',{...(d.sleep||{}),quality:v})} dis={dis} lowLabel="Плохой сон" highLabel="Отличный сон"/></div>
+        <div><Lbl>Заметка о сне</Lbl><Area value={d.sleep?.note} onChange={v=>upd('sleep',{...(d.sleep||{}),note:v})} placeholder="Что запомнилось, сны, пробуждения..." dis={dis} rows={2} showMic={!dis}/></div>
       </div>
     </SecCard>
 
@@ -985,7 +1016,36 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     </SecCard>
 
     <SecCard icon={I.pill} title="Препараты / БАДы">
-      <div style={{padding:'12px 0'}}><Area value={d.supplements} onChange={v=>upd('supplements',v)} placeholder="Что принимали..." dis={dis} rows={2} showMic={!dis}/></div>
+      <div style={{padding:'12px 0',display:'flex',flexDirection:'column',gap:10}}>
+        {(() => {
+          const current = parseSupps(d.supplements || '');
+          const currentLc = new Set(current.map(x => x.toLowerCase()));
+          const toggleChip = (chip) => {
+            if (dis) return;
+            const lc = chip.toLowerCase();
+            const idx = current.findIndex(x => x.toLowerCase() === lc);
+            const next = idx >= 0 ? current.filter((_, i) => i !== idx) : [...current, chip];
+            upd('supplements', next.join(', '));
+          };
+          const todayEmpty = !(d.supplements || '').trim();
+          return <>
+            <Area value={d.supplements} onChange={v=>upd('supplements',v)} placeholder="Что принимали..." dis={dis} rows={2} showMic={!dis}/>
+            {!dis && todayEmpty && suppHistory.yesterday && <button type="button" onClick={() => upd('supplements', suppHistory.yesterday)} style={{alignSelf:'flex-start',display:'inline-flex',alignItems:'center',gap:8,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${C.accent}`,background:C.accentSoft,color:C.accent,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              Повторить вчерашнее
+            </button>}
+            {!dis && suppHistory.chips.length > 0 && <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {suppHistory.chips.map(chip => {
+                const active = currentLc.has(chip.toLowerCase());
+                return <button key={chip} type="button" onClick={() => toggleChip(chip)} style={{padding:'6px 11px',borderRadius:14,border:`1px solid ${active?C.accent:C.tileBorder}`,background:active?C.accentSoft:C.surface,color:active?C.accent:C.soft,fontSize:12,fontWeight:active?600:500,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',display:'inline-flex',alignItems:'center',gap:4}}>
+                  {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                  {chip}
+                </button>;
+              })}
+            </div>}
+          </>;
+        })()}
+      </div>
     </SecCard>
 
     <SecCard icon={I.stool} title="Стул">
@@ -4965,7 +5025,7 @@ export default function App(){
       return {
         meals, water: day.water_ml || 0, water_log: Array.isArray(day.water_log) ? day.water_log : [],
         supplements: day.supplements || '',
-        sleep: { wake: day.sleep_wake, bed: day.sleep_bed, quality: day.sleep_quality },
+        sleep: { wake: day.sleep_wake, bed: day.sleep_bed, quality: day.sleep_quality, note: day.sleep_note || '' },
         movement: day.movement || '',
         stress: (()=>{
           const raw = day.stress_practices || '';
@@ -4990,6 +5050,7 @@ export default function App(){
         water_ml: dayData.water || 0, water_log: Array.isArray(dayData.water_log) ? dayData.water_log : [],
         supplements: dayData.supplements || '',
         sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
+        sleep_note: dayData.sleep?.note || '',
         movement: dayData.movement || '',
         stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
         stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
@@ -5079,7 +5140,7 @@ export default function App(){
           user_id: pid, date: dateStr,
           water_ml: dayData.water || 0, water_log: Array.isArray(dayData.water_log) ? dayData.water_log : [],
           supplements: dayData.supplements || '',
-          sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
+          sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null, sleep_note: dayData.sleep?.note || '',
           movement: dayData.movement || '',
           stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
           stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
@@ -5611,7 +5672,7 @@ export default function App(){
       </div>
     </SecCard>
 
-    <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration} dateKey={key}/>
+    <DayExtras data={dayData} setData={v=>setDay(activePid,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration} dateKey={key} pid={activePid}/>
     {!isDoc&&<DayChatPreview
       clientId={user.id}
       currentUserId={user.id}
@@ -5703,7 +5764,7 @@ export default function App(){
           {getVisibleMeals(cm).map((m,i) => <MealTile key={m.id} meal={m} data={cm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('clientMealDetail')}} delay={i*0.05} canLike={true} onToggleLike={()=>toggleMealLike(selClient.id,m.id)}/>)}
         </div>
       </SecCard>
-      <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm} dateKey={key}/>
+      <DayExtras data={cd} setData={()=>{}} dis={true} waterNorm={waterNorm} dateKey={key} pid={selClient.id}/>
 
       <DayChatPreview
         clientId={selClient.id}
@@ -5728,7 +5789,7 @@ export default function App(){
           {getVisibleMeals(mm).map((m,i) => <MealTile key={m.id} meal={m} data={mm[m.id]} onClick={()=>{setSelMeal(m.id);setScreen('myMealDetail')}} delay={i*0.05}/>)}
         </div>
       </SecCard>
-      <DayExtras data={md} setData={v=>setDay(user.id,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration} dateKey={key}/>
+      <DayExtras data={md} setData={v=>setDay(user.id,v)} dis={false} waterNorm={waterNorm} onCelebrate={setCelebration} dateKey={key} pid={user.id}/>
     </>);
   }
 
