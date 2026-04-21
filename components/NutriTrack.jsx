@@ -3753,7 +3753,7 @@ function DocDashboard({ clients, waterNorm, onBack, onOpenClient, onOpenChat }) 
 
 
 // Main analytics screen
-function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange, pdfUserId }) {
+function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, title, customDateRange, onCustomDateRange, pdfUserId, ownReport }) {
   const [renderError, setRenderError] = useState(null);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customStart, setCustomStart] = useState('');
@@ -3938,7 +3938,7 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
       {/* Left: copy + pill CTA */}
       <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative',gap:4}}>
         <div style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:400,lineHeight:1.15,color:'#fff',letterSpacing:'.01em'}}>
-          Выгрузить информацию
+          {ownReport ? 'Ваш дневник и аналитика' : 'Отчёт по клиенту'}
         </div>
         <div style={{fontSize:12,color:'rgba(255,255,255,.78)',lineHeight:1.4}}>
           за выбранный период в формате PDF файла
@@ -5496,9 +5496,13 @@ export default function App(){
     waterNorm={selClient.waterNorm||waterNorm}
     title={(selClient.nick||selClient.name) + ' — аналитика'}
     pdfUserId={selClient.id}
+    ownReport={false}
   />);
 
-  // Own analytics (from profile)
+  // Own analytics (from profile) — works for both roles:
+  //   - Client on the 'Аналитика' tab downloads their own report.
+  //   - Nutritionist on their own myDiary → Аналитика also gets
+  //     their own (usually empty) report. Same code path.
   if(screen==='analytics') return shell(<AnalyticsScreen
     analytics={analytics}
     range={analyticsRange}
@@ -5508,6 +5512,7 @@ export default function App(){
     onBack={isDoc?()=>setScreen('myDiary'):null}
     waterNorm={waterNorm}
     pdfUserId={user?.id}
+    ownReport={true}
   />);
 
   // ═══ CLIENT — MEAL DETAIL ═══
