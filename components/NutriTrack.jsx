@@ -409,19 +409,40 @@ function Mood({value:v,onChange,dis}){
 }
 
 // Microphone button — speech-to-text via Web Speech API
+// Collapse immediately-repeated 1–3-gram sequences. Android Chrome's
+// SpeechRecognition sometimes re-emits the same finalized phrase twice
+// or three times in a row ("привет привет привет всем всем всем"); we
+// strip consecutive duplicate words, pairs, and triples to restore the
+// user's intent. Punctuation/case are ignored for the comparison.
+const collapseRepeats = (s) => {
+  if (!s) return s;
+  const norm = (w) => w.toLowerCase().replace(/[.,!?;:—–…]/g, '');
+  const words = String(s).split(/\s+/).filter(Boolean);
+  const out = [];
+  let i = 0;
+  while (i < words.length) {
+    let dropped = false;
+    for (const n of [3, 2, 1]) {
+      if (out.length >= n && i + n <= words.length) {
+        const tail = out.slice(-n).map(norm);
+        const next = words.slice(i, i + n).map(norm);
+        if (tail.every((t, j) => t && t === next[j])) { i += n; dropped = true; break; }
+      }
+    }
+    if (!dropped) { out.push(words[i]); i++; }
+  }
+  return out.join(' ');
+};
+
 function MicButton({onResult,onStart,style:st}){
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
-  const finalBufferRef=useRef('');
-  const seenFinalsRef=useRef(null);
   const stopRec=()=>{
     const r=recRef.current;
     if(!r)return;
     recRef.current=null;
     try{r.onresult=null;r.onend=null;r.onerror=null}catch(e){}
     try{r.stop()}catch(e){try{r.abort()}catch(e2){}}
-    finalBufferRef.current='';
-    seenFinalsRef.current=null;
     setListening(false);
   };
   useEffect(()=>()=>{stopRec()},[]);
@@ -433,29 +454,26 @@ function MicButton({onResult,onStart,style:st}){
     rec.lang='ru-RU';
     rec.continuous=true;
     rec.interimResults=true;
-    finalBufferRef.current='';
-    seenFinalsRef.current=new Set();
     onStart&&onStart();
     rec.onresult=(e)=>{
       if(recRef.current!==rec)return;
+      // Rebuild final + interim from scratch on every event — e.results
+      // is the engine's authoritative snapshot, so appending (the old
+      // approach) could double-count when Android re-emits a segment.
+      let final='';
       let interim='';
       for(let i=0;i<e.results.length;i++){
         const result=e.results[i];
         const transcript=result[0].transcript;
-        if(result.isFinal){
-          const key=i+'::'+transcript.trim();
-          if(!seenFinalsRef.current?.has(key)){
-            finalBufferRef.current+=transcript+' ';
-            seenFinalsRef.current?.add(key);
-          }
-        }else{
-          interim+=transcript+' ';
-        }
+        if(result.isFinal) final+=transcript+' ';
+        else interim+=transcript+' ';
       }
-      onResult&&onResult((finalBufferRef.current+interim).trim());
+      const cleanedFinal=collapseRepeats(final);
+      const combined=(cleanedFinal+(interim?' '+interim.trim():'')).trim();
+      onResult&&onResult(combined);
     };
-    rec.onend=()=>{if(recRef.current===rec){recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;setListening(false);}};
-    rec.onerror=()=>{if(recRef.current===rec){recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;setListening(false);}};
+    rec.onend=()=>{if(recRef.current===rec){recRef.current=null;setListening(false);}};
+    rec.onerror=()=>{if(recRef.current===rec){recRef.current=null;setListening(false);}};
     recRef.current=rec;
     try{rec.start();setListening(true);}catch(e){recRef.current=null;setListening(false);}
   };
