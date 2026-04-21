@@ -415,8 +415,19 @@ function MicButton({onResult,onStart,style:st}){
   const recRef=useRef(null);
   const finalBufferRef=useRef('');
   const seenFinalsRef=useRef(null);
+  const stopRec=()=>{
+    const r=recRef.current;
+    if(!r)return;
+    recRef.current=null;
+    try{r.onresult=null;r.onend=null;r.onerror=null}catch(e){}
+    try{r.stop()}catch(e){try{r.abort()}catch(e2){}}
+    finalBufferRef.current='';
+    seenFinalsRef.current=null;
+    setListening(false);
+  };
+  useEffect(()=>()=>{stopRec()},[]);
   const toggle=()=>{
-    if(listening&&recRef.current){recRef.current.stop();return;}
+    if(listening||recRef.current){stopRec();return;}
     const SR=typeof window!=='undefined'&&(window.SpeechRecognition||window.webkitSpeechRecognition);
     if(!SR){alert('Голосовой ввод не поддерживается в этом браузере');return;}
     const rec=new SR();
@@ -427,17 +438,16 @@ function MicButton({onResult,onStart,style:st}){
     seenFinalsRef.current=new Set();
     onStart&&onStart();
     rec.onresult=(e)=>{
+      if(recRef.current!==rec)return;
       let interim='';
-      // Iterate ALL results — Android often re-fires events with old indices
-      // Dedupe finals by (index + text) key to prevent duplication
       for(let i=0;i<e.results.length;i++){
         const result=e.results[i];
         const transcript=result[0].transcript;
         if(result.isFinal){
           const key=i+'::'+transcript.trim();
-          if(!seenFinalsRef.current.has(key)){
+          if(!seenFinalsRef.current?.has(key)){
             finalBufferRef.current+=transcript+' ';
-            seenFinalsRef.current.add(key);
+            seenFinalsRef.current?.add(key);
           }
         }else{
           interim+=transcript+' ';
@@ -445,19 +455,21 @@ function MicButton({onResult,onStart,style:st}){
       }
       onResult&&onResult((finalBufferRef.current+interim).trim());
     };
-    rec.onend=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;};
-    rec.onerror=()=>{setListening(false);recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;};
+    rec.onend=()=>{if(recRef.current===rec){recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;setListening(false);}};
+    rec.onerror=()=>{if(recRef.current===rec){recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;setListening(false);}};
     recRef.current=rec;
-    rec.start();
-    setListening(true);
+    try{rec.start();setListening(true);}catch(e){recRef.current=null;setListening(false);}
   };
-  return <button type="button" onClick={toggle} style={{background:listening?'#E74C3C':C.surfaceAlt,border:'none',borderRadius:12,cursor:'pointer',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'center',color:listening?'#fff':C.muted,transition:'all .2s',animation:listening?'pulse 1.5s infinite':'none',...(st||{})}}>
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
-      <path d="M19 10v2a7 7 0 01-14 0v-2"/>
-      <line x1="12" y1="19" x2="12" y2="23"/>
-      <line x1="8" y1="23" x2="16" y2="23"/>
-    </svg>
+  return <button type="button" onClick={toggle} aria-label={listening?'Остановить запись':'Голосовой ввод'} style={{background:listening?'#E74C3C':C.surfaceAlt,border:'none',borderRadius:12,cursor:'pointer',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'center',color:listening?'#fff':C.muted,transition:'all .2s',animation:listening?'pulse 1.5s infinite':'none',...(st||{})}}>
+    {listening
+      ? <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+    }
   </button>;
 }
 
@@ -721,7 +733,8 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     } catch(e) { setWaterLog([]); }
   }, [lsKey]);
   const saveWaterLog = (log) => { setWaterLog(log); try { localStorage.setItem(lsKey, JSON.stringify(log)); } catch(e) {} };
-  const waterMl = waterLog.length > 0 ? waterLog.reduce((s, e) => s + (e.ml || 0), 0) : (d.water || 0);
+  // d.water is the source of truth. Log is a local UX aid for showing recent additions.
+  const waterMl = d.water || 0;
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
   const waterPct=Math.min(100,waterPctRaw);
   const [showWaterLog, setShowWaterLog] = useState(false);
@@ -730,16 +743,16 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     const now = new Date();
     const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
     const newLog = [...waterLog, { ml, time }];
-    const total = newLog.reduce((s, e) => s + (e.ml || 0), 0);
+    const total = (d.water || 0) + ml;
     saveWaterLog(newLog);
     upd('water', total);
     if(waterMl<waterNorm&&total>=waterNorm&&onCelebrate)onCelebrate('water');
   };
   const removeWaterEntry = (idx) => {
+    const entry = waterLog[idx];
     const newLog = waterLog.filter((_, i) => i !== idx);
-    const total = newLog.reduce((s, e) => s + (e.ml || 0), 0);
     saveWaterLog(newLog);
-    upd('water', total);
+    upd('water', Math.max(0, (d.water || 0) - (entry?.ml || 0)));
   };
   // Debounced sleep celebration — waits 2s after the last change so the
   // user has time to set BOTH hours AND minutes before the confetti
@@ -909,16 +922,42 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           <Lbl>Практики расслабления</Lbl>
           {(()=>{
             const PRACTICES=['Дыхание','Медитация','Йога','Массаж','Ванна','Музыка','Другое'];
-            const selected=Array.isArray(d.stress?.practicesList)?d.stress.practicesList:[];
-            const toggleP=(p)=>{if(dis)return;const next=selected.includes(p)?selected.filter(x=>x!==p):[...selected,p];upd('stress',{...(d.stress||{}),practicesList:next})};
-            return <>
+            const rawList=Array.isArray(d.stress?.practicesList)?d.stress.practicesList:[];
+            const selected=rawList.map(p=>typeof p==='string'?{type:p,duration:null}:p);
+            const hasType=(t)=>selected.some(x=>x.type===t);
+            const toggleP=(p)=>{
+              if(dis)return;
+              const next=hasType(p)?selected.filter(x=>x.type!==p):[...selected,{type:p,duration:10}];
+              upd('stress',{...(d.stress||{}),practicesList:next});
+            };
+            const setPDur=(p,dur)=>{
+              if(dis)return;
+              const next=selected.map(x=>x.type===p?{...x,duration:dur}:x);
+              upd('stress',{...(d.stress||{}),practicesList:next});
+            };
+            return <div style={{display:'flex',flexDirection:'column',gap:10}}>
               <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                 {dis
-                  ? selected.length>0?selected.map(p=><Chip key={p} sel dis>{p}</Chip>):<span style={{fontSize:13,color:C.muted}}>—</span>
-                  : PRACTICES.map(p=><Chip key={p} sel={selected.includes(p)} onClick={()=>toggleP(p)}>{p}</Chip>)
+                  ? selected.length>0?selected.map(p=><Chip key={p.type} sel dis>{p.type}{p.duration?' · '+p.duration+' мин':''}</Chip>):<span style={{fontSize:13,color:C.muted}}>—</span>
+                  : PRACTICES.map(p=><Chip key={p} sel={hasType(p)} onClick={()=>toggleP(p)}>{p}</Chip>)
                 }
               </div>
-            </>;
+              {!dis&&selected.map(p=>(
+                <div key={p.type} style={{background:C.surfaceAlt,borderRadius:14,padding:'10px 14px'}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.accent,marginBottom:6}}>{p.type}</div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:14}}>
+                    <button onClick={()=>setPDur(p.type,Math.max(5,(p.duration||10)-5))}
+                      style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:18,fontWeight:600,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+                    <div style={{minWidth:70,textAlign:'center'}}>
+                      <span style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',color:C.accent}}>{p.duration||10}</span>
+                      <span style={{fontSize:12,color:C.muted,marginLeft:4}}>мин</span>
+                    </div>
+                    <button onClick={()=>setPDur(p.type,(p.duration||10)+5)}
+                      style={{width:34,height:34,borderRadius:'50%',border:`1.5px solid ${C.tileBorder}`,background:C.surface,cursor:'pointer',fontSize:18,fontWeight:600,color:C.accent,fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+                  </div>
+                </div>
+              ))}
+            </div>;
           })()}
         </div>
         <div><Lbl>Детали практики</Lbl><Area value={d.stress?.practices} onChange={v=>upd('stress',{...(d.stress||{}),practices:v})} placeholder="Подробности, длительность..." dis={dis} rows={2} showMic={!dis}/></div>
@@ -2319,12 +2358,10 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
           style={{flex:1,minWidth:0,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:16,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.4,maxHeight:120,minHeight:40,overflowY:'auto'}}
           onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
         {!text.trim() && <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>}
-        {text.trim()
-          ? <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-            </button>
-          : <MicButton onResult={(t) => setText(t)} onStart={() => {}} style={{width:40,height:40,borderRadius:'50%',padding:0,background:C.accent,color:'#fff',flexShrink:0}}/>
-        }
+        <MicButton onResult={(t) => setText(t)} onStart={() => {}} style={{width:40,height:40,borderRadius:'50%',padding:0,flexShrink:0}}/>
+        {text.trim() && <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>}
       </div>
     </div>
   </div>;
@@ -2581,22 +2618,60 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
   if (!hasData) return <div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:13}}>Недостаточно данных</div>;
   const isBedtime = metricKey === 'bedtime';
   const isStool = metricKey === 'stool';
+  const isWater = metricKey === 'water';
+  const OK = '#2D7A4A', WARN = '#D9A23C', BAD = '#C24A3A';
+  // Stool: per-point + per-segment colors
+  const stoolPtColor = v => v === 1 ? OK : v === 0 ? BAD : color;
+  const pointBorderColors = isStool ? nums.map(stoolPtColor) : color;
+  const pointBgColors = isStool ? nums.map(v => v == null ? '#fff' : stoolPtColor(v)) : '#fff';
+  const segmentBorderFn = isStool ? ctx => {
+    const p0 = ctx.p0.parsed.y, p1 = ctx.p1.parsed.y;
+    if (p0 === 1 && p1 === 1) return OK;
+    if (p0 === 0 && p1 === 0) return BAD;
+    return WARN; // mixed segment
+  } : undefined;
   const datasets = [{
     data: nums,
-    backgroundColor: color + '18',
-    borderColor: color,
+    backgroundColor: isStool ? 'transparent' : (color + '18'),
+    borderColor: isStool ? OK : color,
     borderWidth: 2.5,
     pointRadius: 5,
     pointHoverRadius: 7,
-    pointBackgroundColor: '#fff',
-    pointBorderColor: color,
+    pointBackgroundColor: pointBgColors,
+    pointBorderColor: pointBorderColors,
     pointBorderWidth: 2.5,
     tension: 0.35,
-    fill: true,
+    fill: !isStool && !isBedtime,
     spanGaps: true,
     ...(isStool ? { stepped: true, pointRadius: 6 } : {}),
+    ...(segmentBorderFn ? { segment: { borderColor: segmentBorderFn } } : {}),
+    // Water: two-color fill split by norm line
+    ...(isWater && norm > 0 ? {
+      fill: { target: { value: norm }, above: OK + '33', below: BAD + '33' },
+    } : {}),
   }];
   const plugins = [];
+  // Bedtime: colored background zones (before 22:00 green, 22-23 yellow, after 23 red)
+  if (isBedtime) {
+    plugins.push({ id:'bedtimeZones', beforeDatasetsDraw(chart) {
+      const y = chart.scales.y, ctx = chart.ctx, area = chart.chartArea;
+      const zones = [
+        { from: 0,    to: 1320, color: OK  + '1f' },
+        { from: 1320, to: 1380, color: WARN + '26' },
+        { from: 1380, to: 1680, color: BAD  + '1f' },
+      ];
+      ctx.save();
+      zones.forEach(z => {
+        const yTop = Math.max(area.top, y.getPixelForValue(z.to));
+        const yBot = Math.min(area.bottom, y.getPixelForValue(z.from));
+        const top = Math.min(yTop, yBot), bot = Math.max(yTop, yBot);
+        if (bot <= area.top || top >= area.bottom) return;
+        ctx.fillStyle = z.color;
+        ctx.fillRect(area.left, Math.max(area.top, top), area.right - area.left, Math.min(area.bottom, bot) - Math.max(area.top, top));
+      });
+      ctx.restore();
+    }});
+  }
   // Value labels above points
   plugins.push({ id:'valueLabels', afterDatasetsDraw(chart) {
     const ctx = chart.ctx;
@@ -2608,12 +2683,12 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
     meta.data.forEach((pt, i) => {
       const val = dataset.data[i];
       if (val == null) return;
-      let label;
-      if (isStool) label = val === 1 ? 'Норма' : 'Не норма';
+      let label, labelColor = color;
+      if (isStool) { label = val === 1 ? 'Норма' : 'Не норма'; labelColor = stoolPtColor(val); }
       else if (isBedtime) label = fmtTime(val);
       else if (Number.isInteger(val)) label = String(val);
       else label = val.toFixed(1).replace('.', ',');
-      ctx.fillStyle = color;
+      ctx.fillStyle = labelColor;
       ctx.fillText(label, pt.x, pt.y - 10);
     });
     ctx.restore();
@@ -2649,18 +2724,19 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
         y: (() => {
           const isScale10 = metricKey === 'stress' || metricKey === 'energy' || metricKey === 'sleepQuality';
           const isMood = metricKey === 'mood';
+          const tickCb = isBedtime ? (v => fmtTime(v))
+                      : isStool ? (v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '')
+                      : undefined;
+          const baseTicks = { font: { size: 10 }, color: C.muted, maxTicksLimit: 5 };
+          if (tickCb) baseTicks.callback = tickCb;
           const base = {
             beginAtZero: !isBedtime && !isStool,
             grid: { color: C.surfaceAlt, drawBorder: false },
-            ticks: {
-              font: { size: 10 }, color: C.muted, maxTicksLimit: 5,
-              ...(isBedtime ? { callback: v => fmtTime(v) } : {}),
-              ...(isStool ? { callback: v => v === 1 ? 'Норма' : v === 0 ? 'Не норма' : '' } : {}),
-            },
+            ticks: baseTicks,
           };
           if (isStool) return { ...base, min: -0.15, max: 1.15, afterBuildTicks: axis => { axis.ticks = [{value:0},{value:1}]; } };
-          if (isScale10) return { ...base, min: 0, max: 10, ticks: { ...base.ticks, stepSize: 2 } };
-          if (isMood) return { ...base, min: 1, max: 5, ticks: { ...base.ticks, stepSize: 1 } };
+          if (isScale10) return { ...base, min: 0, max: 10, ticks: { ...baseTicks, stepSize: 2 } };
+          if (isMood) return { ...base, min: 1, max: 5, ticks: { ...baseTicks, stepSize: 1 } };
           if (isBedtime) return { ...base, reverse: true, grace: '15%' };
           return { ...base, grace: '15%' };
         })()
@@ -4311,6 +4387,66 @@ function Login({onLogin}){
   </div>;
 }
 
+// ═══ INTRO SPLASH ═══
+function IntroSplash(){
+  // Single page: logo + English caption next to it — both visible instantly.
+  // Russian lines below type out character-by-character (like the old intro animation).
+  const EN_LINES=['Eat healthier','Listen to your body','Live longer'];
+  const RU_LINES=['Больше, чем дневник питания','Пространство заботы о себе'];
+  const [ruText,setRuText]=useState(['','']);
+  const [activeRu,setActiveRu]=useState(-1);
+  useEffect(()=>{
+    const timers=[];
+    const CHAR_MS=70, GAP_MS=280, START_MS=600;
+    let t=START_MS;
+    RU_LINES.forEach((line,li)=>{
+      timers.push(setTimeout(()=>setActiveRu(li),t));
+      for(let i=1;i<=line.length;i++){
+        timers.push(setTimeout(()=>{
+          setRuText(prev=>{const next=[...prev];next[li]=line.slice(0,i);return next});
+        },t+i*CHAR_MS));
+      }
+      t+=line.length*CHAR_MS+GAP_MS;
+    });
+    return()=>timers.forEach(clearTimeout);
+  },[]);
+
+  // Logo: solid green circle with "ELL🌿ME" (white text + leaf between L and M)
+  const Leaf=({size=18})=><svg width={size} height={size} viewBox="0 0 24 24" style={{display:'block'}}>
+    <path d="M20 3c-8 0-14 4-14 11 0 2.5 1 5 3 6.5C10 16 14 12 19 10c-4 3-7 6-9 12 5 0 12-3 12-11 0-3-1-5-2-8Z" fill="#fff"/>
+  </svg>;
+
+  return <div style={{position:'fixed',inset:0,background:'#FFFFFF',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:40,zIndex:100000,padding:'0 24px'}}>
+    {/* Logo + English caption next to it — both instant */}
+    <div style={{display:'flex',alignItems:'center',gap:18,flexWrap:'nowrap'}}>
+      <div style={{width:128,height:128,borderRadius:'50%',background:'#3DA155',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 10px 30px rgba(61,161,85,.28)',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,fontWeight:800,color:'#fff',letterSpacing:'.5px',fontFamily:'var(--fb)'}}>
+          <span>ELL</span>
+          <span style={{width:20,height:20,display:'inline-flex',alignItems:'center',justifyContent:'center',margin:'0 1px',transform:'rotate(-25deg)'}}><Leaf size={20}/></span>
+          <span>ME</span>
+        </div>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start'}}>
+        {EN_LINES.map((line,i)=><div key={i} style={{fontSize:18,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.3}}>
+          <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
+        </div>)}
+      </div>
+    </div>
+    {/* Russian caption — types character by character, both lines in the same serif font */}
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,minHeight:76}}>
+      {RU_LINES.map((line,i)=>{
+        const done=ruText[i].length>=line.length;
+        const typing=i===activeRu&&!done;
+        const isFirst=i===0;
+        return <div key={i} style={{fontSize:isFirst?22:17,fontFamily:'var(--fd)',fontStyle:isFirst?'normal':'italic',fontWeight:isFirst?500:400,color:isFirst?'#2D5F3F':'#7A8A7F',textAlign:'center',letterSpacing:'.3px',minHeight:isFirst?28:22,opacity:i<=activeRu?1:0,transition:'opacity .25s'}}>
+          {ruText[i]}
+          {typing&&<span style={{marginLeft:2,opacity:.6,animation:'blink .9s steps(1) infinite',fontFamily:'var(--fb)'}}>|</span>}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 // ═══ MAIN APP ═══
 export default function App(){
   const[user,setUser]=useState(null);
@@ -4318,6 +4454,18 @@ export default function App(){
   useEffect(()=>{userRef.current=user},[user]);
   const[authLoading,setAuthLoading]=useState(!!supabase);
   const[loadingPhase,setLoadingPhase]=useState('Идёт загрузка, это может занять несколько секунд...');
+  const[showIntro,setShowIntro]=useState(()=>{
+    if(typeof window==='undefined')return false;
+    try{return!sessionStorage.getItem('ellme_intro_seen')}catch(e){return true}
+  });
+  useEffect(()=>{
+    if(!showIntro)return;
+    const t=setTimeout(()=>{
+      try{sessionStorage.setItem('ellme_intro_seen','1')}catch(e){}
+      setShowIntro(false);
+    },5600);
+    return()=>clearTimeout(t);
+  },[showIntro]);
   const[isOffline,setIsOffline]=useState(typeof navigator!=='undefined'&&!navigator.onLine);
   const[showOnlineBanner,setShowOnlineBanner]=useState(false);
   useEffect(()=>{
@@ -4793,7 +4941,13 @@ export default function App(){
         meals, water: day.water_ml || 0, supplements: day.supplements || '',
         sleep: { wake: day.sleep_wake, bed: day.sleep_bed, quality: day.sleep_quality },
         movement: day.movement || '',
-        stress: { level: day.stress_level, practices: day.stress_practices || '' },
+        stress: (()=>{
+          const raw = day.stress_practices || '';
+          if (raw && raw.startsWith('{')) {
+            try { const o = JSON.parse(raw); return { level: day.stress_level, practices: o.text || '', practicesList: Array.isArray(o.list) ? o.list : [] }; } catch(e) {}
+          }
+          return { level: day.stress_level, practices: raw, practicesList: [] };
+        })(),
         stoolState: day.stool_state, stoolNote: day.stool_note || '',
         well: { energy: day.energy, mood: day.mood, comment: day.day_comment || '' },
         _dayId: day.id,
@@ -4810,7 +4964,7 @@ export default function App(){
         water_ml: dayData.water || 0, supplements: dayData.supplements || '',
         sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
         movement: dayData.movement || '',
-        stress_level: dayData.stress?.level || null, stress_practices: dayData.stress?.practices || '',
+        stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
         stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
         energy: dayData.well?.energy || null, mood: dayData.well?.mood != null ? dayData.well.mood : null,
         day_comment: dayData.well?.comment || '',
@@ -4899,7 +5053,7 @@ export default function App(){
           water_ml: dayData.water || 0, supplements: dayData.supplements || '',
           sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
           movement: dayData.movement || '',
-          stress_level: dayData.stress?.level || null, stress_practices: dayData.stress?.practices || '',
+          stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
           stool_state: dayData.stoolState || null, stool_note: dayData.stoolNote || '',
           energy: dayData.well?.energy || null, mood: dayData.well?.mood != null ? dayData.well.mood : null,
           day_comment: dayData.well?.comment || '',
@@ -4927,6 +5081,9 @@ export default function App(){
   };
 
   // ── Loading state ──
+  if (showIntro) {
+    return <><style>{CSS}</style><IntroSplash/></>;
+  }
   if (authLoading) {
     return <><style>{CSS}</style><div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:C.bg}}>
       <ProgressBar duration={4} label={loadingPhase}/>
@@ -5290,8 +5447,8 @@ export default function App(){
       </footer>}
     </div>
     {/* Bottom tab bar */}
-    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'calc(8px + env(safe-area-inset-bottom))'}}>
-      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:60,padding:'0 8px'}}>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'env(safe-area-inset-bottom)'}}>
+      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:56,padding:'0 8px'}}>
         {(isDoc
           ? [
               { id:'diary',   label:'Дневник',  icon:I.book,   badge:0 },
@@ -5308,13 +5465,13 @@ export default function App(){
         ).map(tab => {
           const active = activeTab === tab.id;
           return <button key={tab.id} onClick={()=>handleTabPress(tab.id)} style={{
-            flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,
+            flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,
             border:'none',cursor:'pointer',fontFamily:'inherit',position:'relative',
             background:active?C.accentSoft:'transparent',
-            borderRadius:14,margin:'4px 3px',
+            borderRadius:12,margin:'3px 3px',
             color:active?C.accent:'#99A2AD',
             transition:'all .15s',WebkitTapHighlightColor:'transparent',
-            padding:'6px 0',
+            padding:'4px 0',
           }}>
             <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'center',width:26,height:26,color:'inherit'}}>
               <svg viewBox={tab.icon.props.viewBox} width="26" height="26" fill="none" stroke="currentColor" strokeWidth={tab.icon.props.strokeWidth||'1.5'} strokeLinecap={tab.icon.props.strokeLinecap||undefined} strokeLinejoin={tab.icon.props.strokeLinejoin||undefined}>{tab.icon.props.children}</svg>
