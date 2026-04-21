@@ -1925,26 +1925,37 @@ function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientN
     </div>}
 
     {/* State 2 — exactly one message */}
-    {!loading && count === 1 && <div style={{background:C.accentSoft,borderRadius:14,padding:'12px 14px',marginBottom:14}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5,fontSize:12,fontWeight:600,color:C.text}}>
-        <span style={{width:8,height:8,borderRadius:'50%',background:singleFromOther?dotColor:C.muted,flexShrink:0}}/>
-        <span>{single.sender_name || (singleFromOther ? (role==='client'?'Нутрициолог':'Клиент') : 'Вы')}</span>
-        <span style={{color:C.muted,fontWeight:400,fontSize:11}}>· {fmtChatTime(single.created_at)}</span>
-      </div>
-      {(() => {
-        const t = (single.text || '').trim();
-        if (t) return <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{t}»</div>;
-        const atts = Array.isArray(single.attachments) ? single.attachments : [];
-        if (atts.length === 0) return null;
-        return <div style={{fontSize:14,color:C.soft,lineHeight:1.5,fontStyle:'italic'}}>Вам сообщение</div>;
-      })()}
-    </div>}
+    {!loading && count === 1 && (() => {
+      const name = single.sender_name || (singleFromOther ? (role==='client'?'нутрициолога':'клиента') : 'вас');
+      const headerText = singleFromOther ? `Новое сообщение от ${name}` : `Ваше сообщение · ${name}`;
+      const t = (single.text || '').trim();
+      const atts = Array.isArray(single.attachments) ? single.attachments : [];
+      return <div style={{background:C.accentSoft,borderRadius:14,padding:'12px 14px',marginBottom:14}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:t||atts.length>0?6:0,fontSize:13,fontWeight:600,color:C.text}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:singleFromOther?dotColor:C.muted,flexShrink:0}}/>
+          <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{headerText}</span>
+          <span style={{color:C.muted,fontWeight:400,fontSize:11,flexShrink:0}}>{fmtChatTime(single.created_at)}</span>
+        </div>
+        {t
+          ? <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{t}»</div>
+          : atts.length > 0 && <div style={{fontSize:13,color:C.soft,lineHeight:1.5,fontStyle:'italic'}}>Сообщение с вложением</div>
+        }
+      </div>;
+    })()}
 
     {/* State 3 — 2+ messages */}
-    {!loading && count >= 2 && <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:C.accentSoft,borderRadius:14,marginBottom:14}}>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      <div style={{fontSize:14,color:C.text,fontWeight:500}}>{count} {count%10===1&&count!==11?'сообщение':count%10>=2&&count%10<=4&&(count<10||count>20)?'сообщения':'сообщений'} за этот день</div>
-    </div>}
+    {!loading && count >= 2 && (() => {
+      // All messages from the same "other" sender → surface their name
+      const others = dayMessages.filter(x => x.sender_id !== currentUserId);
+      const uniqNames = Array.from(new Set(others.map(x => x.sender_name).filter(Boolean)));
+      const senderLine = others.length > 0 && uniqNames.length === 1 ? ` от ${uniqNames[0]}` : '';
+      const word = count%10===1&&count!==11?'новое':count%10>=2&&count%10<=4&&(count<10||count>20)?'новых':'новых';
+      const noun = count%10===1&&count!==11?'сообщение':count%10>=2&&count%10<=4&&(count<10||count>20)?'сообщения':'сообщений';
+      return <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:C.accentSoft,borderRadius:14,marginBottom:14}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <div style={{fontSize:14,color:C.text,fontWeight:500}}>{count} {word} {noun}{senderLine}</div>
+      </div>;
+    })()}
 
     <button onClick={onOpenChat} style={{width:'100%',padding:'13px 16px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 2px 8px rgba(45,95,63,.2)',transition:'all .2s'}}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
