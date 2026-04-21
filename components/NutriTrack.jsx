@@ -2542,7 +2542,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>
     </div>}
     {/* Messages */}
-    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0,overscrollBehavior:'contain'}}>
+    <div ref={scrollRef} style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px 18px',display:'flex',flexDirection:'column',gap:4,minHeight:0,overscrollBehavior:'contain',backgroundImage:'url(/chat-bg.png)',backgroundRepeat:'repeat',backgroundSize:'360px auto',backgroundColor:C.bg}}>
       {messagesLoading && <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:'24px 0'}}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:'spin 1s linear infinite'}}>
           <polyline points="23 4 23 10 17 10"/>
