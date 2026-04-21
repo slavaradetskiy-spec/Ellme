@@ -4389,12 +4389,18 @@ function Login({onLogin}){
 
 // ═══ INTRO SPLASH ═══
 function IntroSplash(){
-  const LINES=['Ешь осознанно','Живи в моменте','Люби себя'];
+  // Two phases: 1) white bg with logo + English typing, 2) grey bg with Russian tagline immediately visible.
+  const LINES=['Eat healthier','Listen to your body','Live longer'];
   const [text,setText]=useState(['','','']);
   const [activeLine,setActiveLine]=useState(-1);
+  const [logoStep,setLogoStep]=useState(0); // 0: hidden, 1: circle in, 2: text in, 3: leaf in
+  const [phase,setPhase]=useState(1);
   useEffect(()=>{
     const timers=[];
-    const CHAR_MS=55, GAP_MS=240, START_MS=700;
+    timers.push(setTimeout(()=>setLogoStep(1),80));
+    timers.push(setTimeout(()=>setLogoStep(2),520));
+    timers.push(setTimeout(()=>setLogoStep(3),900));
+    const CHAR_MS=45, GAP_MS=180, START_MS=1200;
     let t=START_MS;
     LINES.forEach((line,li)=>{
       timers.push(setTimeout(()=>setActiveLine(li),t));
@@ -4405,22 +4411,48 @@ function IntroSplash(){
       }
       t+=line.length*CHAR_MS+GAP_MS;
     });
+    // Transition to phase 2 (grey bg + Russian tagline) after English typing finishes
+    timers.push(setTimeout(()=>setPhase(2),t+150));
     return()=>timers.forEach(clearTimeout);
   },[]);
-  return <div style={{position:'fixed',inset:0,background:'#F4F1EB',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:32,zIndex:100000,animation:'fadeIn .3s'}}>
-    <div style={{width:120,height:120,borderRadius:'50%',background:'linear-gradient(135deg,#2D5F3F,#4A8C5C)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 12px 40px rgba(45,95,63,.3)',animation:'scaleIn .7s cubic-bezier(.34,1.56,.64,1)'}}>
-      <span style={{fontSize:30,fontFamily:"'Instrument Serif',Georgia,serif",color:'#fff',letterSpacing:2.5,fontStyle:'italic'}}>ELLME</span>
-    </div>
-    <div style={{display:'flex',flexDirection:'column',gap:8,alignItems:'center',minHeight:108}}>
-      {LINES.map((line,i)=>{
-        const done=text[i].length>=line.length;
-        const typing=i===activeLine&&!done;
-        return <div key={i} style={{fontSize:17,color:'#2D5F3F',fontWeight:500,minHeight:24,letterSpacing:.3,opacity:i<=activeLine?1:0,transition:'opacity .3s'}}>
-          {text[i]}
-          {typing&&<span style={{marginLeft:1,opacity:.7,animation:'blink .9s steps(1) infinite'}}>|</span>}
-        </div>;
-      })}
-    </div>
+
+  const isP1=phase===1;
+  const bg=isP1?'#FFFFFF':'#F4F1EB';
+
+  // Logo: solid green circle with "ELL🌿ME" (white text + leaf between L and M)
+  const Leaf=({size=18})=><svg width={size} height={size} viewBox="0 0 24 24" style={{display:'block'}}>
+    <path d="M20 3c-8 0-14 4-14 11 0 2.5 1 5 3 6.5C10 16 14 12 19 10c-4 3-7 6-9 12 5 0 12-3 12-11 0-3-1-5-2-8Z" fill="#fff"/>
+  </svg>;
+
+  return <div style={{position:'fixed',inset:0,background:bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,zIndex:100000,transition:'background .5s ease',padding:'0 24px'}}>
+    {isP1 ? <>
+      <div style={{display:'flex',alignItems:'center',gap:18,flexWrap:'nowrap'}}>
+        {/* Logo circle */}
+        <div style={{width:128,height:128,borderRadius:'50%',background:'#3DA155',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 10px 30px rgba(61,161,85,.28)',flexShrink:0,transform:logoStep>=1?'scale(1)':'scale(.3)',opacity:logoStep>=1?1:0,transition:'transform .55s cubic-bezier(.34,1.56,.64,1), opacity .3s'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:800,color:'#fff',letterSpacing:'.5px',fontFamily:'var(--fb)'}}>
+            <span style={{opacity:logoStep>=2?1:0,transform:logoStep>=2?'translateX(0)':'translateX(-6px)',transition:'all .35s ease'}}>ELL</span>
+            <span style={{width:18,height:18,display:'inline-flex',alignItems:'center',justifyContent:'center',margin:'0 1px',transform:`rotate(-25deg) scale(${logoStep>=3?1:0})`,opacity:logoStep>=3?1:0,transition:'all .35s cubic-bezier(.34,1.56,.64,1)'}}><Leaf size={18}/></span>
+            <span style={{opacity:logoStep>=2?1:0,transform:logoStep>=2?'translateX(0)':'translateX(6px)',transition:'all .35s ease'}}>ME</span>
+          </div>
+        </div>
+        {/* English tagline */}
+        <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start',minWidth:0}}>
+          {LINES.map((line,i)=>{
+            const done=text[i].length>=line.length;
+            const typing=i===activeLine&&!done;
+            const first=text[i].charAt(0);
+            const rest=text[i].slice(1);
+            return <div key={i} style={{fontSize:17,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',minHeight:22,opacity:i<=activeLine?1:0,transition:'opacity .25s'}}>
+              <span style={{color:'#3DA155',fontWeight:700}}>{first}</span>{rest}
+              {typing&&<span style={{marginLeft:1,opacity:.7,animation:'blink .9s steps(1) infinite'}}>|</span>}
+            </div>;
+          })}
+        </div>
+      </div>
+    </> : <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12,animation:'fadeIn .5s ease'}}>
+      <div style={{fontSize:22,fontWeight:500,fontFamily:'var(--fd)',color:'#2D5F3F',textAlign:'center',letterSpacing:'.3px'}}>Больше, чем дневник питания</div>
+      <div style={{fontSize:18,color:'#5B6B60',textAlign:'center',letterSpacing:'.2px'}}>Пространство заботы о себе</div>
+    </div>}
   </div>;
 }
 
@@ -4440,7 +4472,7 @@ export default function App(){
     const t=setTimeout(()=>{
       try{sessionStorage.setItem('ellme_intro_seen','1')}catch(e){}
       setShowIntro(false);
-    },3600);
+    },5200);
     return()=>clearTimeout(t);
   },[showIntro]);
   const[isOffline,setIsOffline]=useState(typeof navigator!=='undefined'&&!navigator.onLine);
