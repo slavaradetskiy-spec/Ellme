@@ -4274,8 +4274,14 @@ function Login({onLogin}){
   </div>;
 
   // ── Logo ──
-  const Logo = () => <div style={{textAlign:'center',marginBottom:36}}>
-    <img src="/logo-source.png" alt="ELLME" width={96} height={96} style={{display:'inline-block',borderRadius:22,boxShadow:'0 6px 20px rgba(61,161,85,.25)'}}/>
+  const LOGO_LINES = ['Eat healthier', 'Listen to your body', 'Live longer'];
+  const Logo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,marginBottom:36}}>
+    <img src="/logo-source.png" alt="ELLME" width={80} height={80} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
+    <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
+      {LOGO_LINES.map((line,i)=><div key={i} style={{fontSize:14,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.35}}>
+        <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
+      </div>)}
+    </div>
   </div>;
 
   return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'40px 24px'}}>
