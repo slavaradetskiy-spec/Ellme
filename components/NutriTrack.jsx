@@ -1888,7 +1888,13 @@ function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientN
         <span>{single.sender_name || (singleFromOther ? (role==='client'?'Нутрициолог':'Клиент') : 'Вы')}</span>
         <span style={{color:C.muted,fontWeight:400,fontSize:11}}>· {fmtChatTime(single.created_at)}</span>
       </div>
-      <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{single.text}»</div>
+      {(() => {
+        const t = (single.text || '').trim();
+        if (t) return <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{t}»</div>;
+        const atts = Array.isArray(single.attachments) ? single.attachments : [];
+        if (atts.length === 0) return null;
+        return <div style={{fontSize:14,color:C.soft,lineHeight:1.5,fontStyle:'italic'}}>Вам сообщение</div>;
+      })()}
     </div>}
 
     {/* State 3 — 2+ messages */}
@@ -6080,7 +6086,7 @@ export default function App(){
     {/* Floating "back to chat" button shown after navigating from a tag */}
     {returnToChat && !chatModal && <button
       onClick={()=>{setChatModal(returnToChat);setReturnToChat(null);}}
-      style={{position:'fixed',right:16,bottom:'calc(76px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
+      style={{position:'fixed',right:16,bottom:'calc(160px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 14l-4-4 4-4M5 10h11a4 4 0 014 4v0a4 4 0 01-4 4H9"/></svg>
       Вернуться в чат
     </button>}
