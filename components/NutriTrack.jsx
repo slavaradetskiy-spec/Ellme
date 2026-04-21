@@ -819,6 +819,24 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
   const parseSupps = (s) => String(s || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
   const uniqCI = (arr) => { const seen = new Set(); const out = []; for (const x of arr) { const k = x.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(x); } } return out; };
   const [suppHistory, setSuppHistory] = useState({ chips: [], yesterday: '' });
+  // Locally-hidden chips — user can long-press a supplement pill to
+  // banish it from the suggestion row without touching past entries.
+  const suppHideKey = 'supp_hidden_' + (pid || '');
+  const [suppHidden, setSuppHidden] = useState(() => {
+    try { const s = typeof window !== 'undefined' && localStorage.getItem(suppHideKey); const p = s ? JSON.parse(s) : []; return new Set(Array.isArray(p) ? p.map(x => String(x).toLowerCase()) : []); }
+    catch(e) { return new Set(); }
+  });
+  useEffect(() => {
+    try { const s = typeof window !== 'undefined' && localStorage.getItem(suppHideKey); const p = s ? JSON.parse(s) : []; setSuppHidden(new Set(Array.isArray(p) ? p.map(x => String(x).toLowerCase()) : [])); }
+    catch(e) {}
+  }, [suppHideKey]);
+  const hideSuppChip = (chip) => {
+    if (!chip) return;
+    const lc = chip.toLowerCase();
+    const next = new Set(suppHidden); next.add(lc);
+    setSuppHidden(next);
+    try { localStorage.setItem(suppHideKey, JSON.stringify(Array.from(next))); } catch(e) {}
+  };
   useEffect(() => {
     if (!supabase || !pid || !dateKey) return;
     let mounted = true;
@@ -1125,15 +1143,25 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
               Повторить вчерашнее
             </button>}
-            {!dis && suppHistory.chips.length > 0 && <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-              {suppHistory.chips.map(chip => {
-                const active = currentLc.has(chip.toLowerCase());
-                return <button key={chip} type="button" onClick={() => toggleChip(chip)} style={{padding:'6px 11px',borderRadius:14,border:`1px solid ${active?C.accent:C.tileBorder}`,background:active?C.accentSoft:C.surface,color:active?C.accent:C.soft,fontSize:12,fontWeight:active?600:500,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',display:'inline-flex',alignItems:'center',gap:4}}>
-                  {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                  {chip}
-                </button>;
-              })}
-            </div>}
+            {(() => {
+              const visibleChips = suppHistory.chips.filter(c => !suppHidden.has(c.toLowerCase()));
+              if (dis || visibleChips.length === 0) return null;
+              const longPressTimers = { current: null };
+              return <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                {visibleChips.map(chip => {
+                  const active = currentLc.has(chip.toLowerCase());
+                  const begin = () => { if (longPressTimers.current) clearTimeout(longPressTimers.current); longPressTimers.current = setTimeout(() => { if (confirm(`Убрать «${chip}» из подсказок?`)) hideSuppChip(chip); longPressTimers.current = null; }, 500); };
+                  const cancel = () => { if (longPressTimers.current) { clearTimeout(longPressTimers.current); longPressTimers.current = null; } };
+                  return <button key={chip} type="button" onClick={() => toggleChip(chip)}
+                    onTouchStart={begin} onTouchEnd={cancel} onTouchMove={cancel} onTouchCancel={cancel}
+                    onContextMenu={(e) => { e.preventDefault(); if (confirm(`Убрать «${chip}» из подсказок?`)) hideSuppChip(chip); }}
+                    style={{padding:'6px 11px',borderRadius:14,border:`1px solid ${active?C.accent:C.tileBorder}`,background:active?C.accentSoft:C.surface,color:active?C.accent:C.soft,fontSize:12,fontWeight:active?600:500,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',display:'inline-flex',alignItems:'center',gap:4}}>
+                    {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    {chip}
+                  </button>;
+                })}
+              </div>;
+            })()}
           </>;
         })()}
       </div>
@@ -2092,6 +2120,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // Reply-to state: when set, the next sent message references the
   // target via reply_to_id and shows a quoted preview above composer.
   const [replyToMsg, setReplyToMsg] = useState(null);
+  // Which pinned message the banner currently shows (multiple pins
+  // are allowed; tap banner cycles forward).
+  const [pinnedIdx, setPinnedIdx] = useState(0);
   const textareaRef = useRef(null);
 
   // Auto-grow the textarea as the user types — height follows content
@@ -2580,14 +2611,10 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // ── Message actions (pin / unpin / delete) ──
   const pinMessage = async (msg) => {
     if (!supabase || !msg) return;
-    // Optimistic: mark this pinned, clear the rest in the thread
-    setMessages(prev => prev.map(x => Object.assign({}, x, { pinned: x.id === msg.id })));
-    try {
-      let unpinQ = supabase.from('doc_comments').update({ pinned: false }).eq('client_id', clientId).eq('pinned', true).neq('id', msg.id);
-      if (resolvedDocId) unpinQ = unpinQ.eq('doc_id', resolvedDocId);
-      await unpinQ;
-      await supabase.from('doc_comments').update({ pinned: true }).eq('id', msg.id);
-    } catch (e) { console.error('pin:', e); }
+    // Multiple pins allowed — just mark this one pinned, leave others alone.
+    setMessages(prev => prev.map(x => x.id === msg.id ? Object.assign({}, x, { pinned: true }) : x));
+    try { await supabase.from('doc_comments').update({ pinned: true }).eq('id', msg.id); }
+    catch (e) { console.error('pin:', e); }
   };
   const unpinMessage = async (msg) => {
     if (!supabase || !msg) return;
@@ -2718,24 +2745,27 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </>}
     </div>
 
-    {/* Pinned message banner — tap to scroll to the original */}
+    {/* Pinned message banner — supports multiple pins. Tap cycles to
+        the next one (scrolling to it); × unpins just the current. */}
     {(() => {
-      const pinned = messages.find(m => m.pinned);
-      if (!pinned) return null;
-      const preview = pinned.text
-        ? pinned.text
-        : (Array.isArray(pinned.attachments) && pinned.attachments[0]?.type === 'audio'
-            ? '🎙 Голосовое сообщение'
-            : (Array.isArray(pinned.attachments) && pinned.attachments[0]?.type === 'image'
-                ? '🖼 Фото'
-                : '📎 Вложение'));
-      return <button type="button" onClick={() => scrollToMessage(pinned.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',background:C.surface,border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',width:'100%',textAlign:'left',fontFamily:'inherit',flexShrink:0}}>
-        <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
+      const pinnedList = messages.filter(m => m.pinned);
+      if (pinnedList.length === 0) return null;
+      const idx = pinnedIdx % pinnedList.length;
+      const current = pinnedList[idx];
+      const preview = (current.text || '').trim()
+        || (Array.isArray(current.attachments) && current.attachments.length > 0 ? 'Вложение' : '');
+      return <button type="button" onClick={() => { scrollToMessage(current.id); if (pinnedList.length > 1) setPinnedIdx((idx + 1) % pinnedList.length); }} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',background:C.surface,border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',width:'100%',textAlign:'left',fontFamily:'inherit',flexShrink:0}}>
+        {pinnedList.length > 1
+          ? <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
+              {pinnedList.map((_, i) => <div key={i} style={{width:3,height:14,borderRadius:2,background:i===idx?C.accent:C.tileBorder}}/>)}
+            </div>
+          : <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
+        }
         <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
-          <div style={{fontSize:11,fontWeight:600,color:C.accent,letterSpacing:'.02em'}}>Закреплённое сообщение</div>
+          <div style={{fontSize:11,fontWeight:600,color:C.accent,letterSpacing:'.02em'}}>{pinnedList.length > 1 ? `Закреплено · ${idx + 1}/${pinnedList.length}` : 'Закреплённое сообщение'}</div>
           <div style={{fontSize:13,color:C.text,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{preview}</div>
         </div>
-        <button type="button" onClick={(e) => { e.stopPropagation(); unpinMessage(pinned); }} aria-label="Открепить" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+        <button type="button" onClick={(e) => { e.stopPropagation(); unpinMessage(current); }} aria-label="Открепить" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </button>;
