@@ -1983,8 +1983,14 @@ function ChatListModal({ docId, clients, unreadByClient, onOpenChat, onClose }) 
     if (!m) return '';
     if (m.text) return m.text;
     const atts = Array.isArray(m.attachments) ? m.attachments : [];
-    if (atts.length > 0) return atts[0].type === 'image' ? '📷 Фото' : '📎 Файл';
-    return '';
+    if (atts.length === 0) return '';
+    const a = atts[0];
+    const isAudio = a.type === 'audio'
+      || (typeof a.mime === 'string' && a.mime.toLowerCase().startsWith('audio/'))
+      || (typeof a.url === 'string' && /\.(webm|ogg|mp3|m4a|mp4|wav|oga)(?:\?|$)/i.test(a.url));
+    if (isAudio) return '🎙 Голосовое сообщение';
+    if (a.type === 'image') return '📷 Фото';
+    return '📎 Файл';
   };
 
   return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:76,overflow:'hidden',overscrollBehavior:'none'}}>
@@ -2040,7 +2046,7 @@ function ChatListModal({ docId, clients, unreadByClient, onOpenChat, onClose }) 
 // Full-screen chat modal. Single thread per (doc, client) pair.
 // Props: clientId, docId (nullable — resolved on demand), currentUserId, currentUserName,
 //        clientName, initialTagDate, onClose, uploadAttachment(file)
-function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName, initialTagDate, onClose, uploadAttachment, onTagClick }) {
+function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName, initialTagDate, onClose, uploadAttachment, onTagClick, forwardTargets }) {
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [text, setText] = useState('');
@@ -2077,6 +2083,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // Edit-in-place state: when set, the composer shows the message's
   // text and a save button instead of sending a new message.
   const [editingMsg, setEditingMsg] = useState(null);
+  // Reply-to state: when set, the next sent message references the
+  // target via reply_to_id and shows a quoted preview above composer.
+  const [replyToMsg, setReplyToMsg] = useState(null);
   const textareaRef = useRef(null);
 
   // Auto-grow the textarea as the user types — height follows content
@@ -2246,11 +2255,20 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     };
   }, [clientId, resolvedDocId]); // eslint-disable-line
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages. Media (voice players,
+  // images) finish sizing after the first render — re-anchor on a few
+  // short delays so the last message is always flush with the input
+  // toolbar when the chat opens.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    if (!el) return;
+    const snap = () => { el.scrollTop = el.scrollHeight; };
+    snap();
+    const t1 = setTimeout(snap, 60);
+    const t2 = setTimeout(snap, 220);
+    const t3 = setTimeout(snap, 500);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [messages.length, messagesLoading]);
 
   // Typing indicator: join a broadcast channel keyed by the pair so
   // both sides hear each other's "I'm typing" events. The other party
@@ -2363,22 +2381,24 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     if ((!t && atts.length === 0) || !supabase || !currentUserId || sending) return;
     if (!resolvedDocId) return;
     setSending(true);
+    const replyId = replyToMsg?.id || null;
     const tempId = 'tmp-' + Date.now();
     const tempMsg = {
       id: tempId, doc_id: resolvedDocId, client_id: clientId,
       sender_id: currentUserId, sender_name: currentUserName || '',
       date: tagDate || null, text: t, kind: 'comment', read: false,
-      attachments: atts, reactions: {},
+      attachments: atts, reactions: {}, reply_to_id: replyId,
       created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, tempMsg]);
     if (overrides.text === undefined) setText('');
+    setReplyToMsg(null);
     try {
       const { data, error } = await supabase.from('doc_comments').insert({
         doc_id: resolvedDocId, client_id: clientId,
         sender_id: currentUserId, sender_name: currentUserName || '',
         date: tagDate || null, text: t, kind: 'comment', read: false,
-        attachments: atts,
+        attachments: atts, reply_to_id: replyId,
       }).select().maybeSingle();
       if (error) throw error;
       if (data) setMessages(prev => prev.map(m => m.id === tempId ? data : m));
@@ -2388,6 +2408,27 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       if (overrides.text === undefined) setText(t);
     }
     setSending(false);
+  };
+
+  const startReply = (msg) => { if (!msg) return; setEditingMsg(null); setReplyToMsg(msg); setTimeout(() => { try { textareaRef.current?.focus(); } catch (e) {} }, 20); };
+  const cancelReply = () => setReplyToMsg(null);
+
+  // ── Forward ──
+  const [forwardingMsg, setForwardingMsg] = useState(null); // source msg when picking destination
+  const forwardMessage = async (target) => {
+    const src = forwardingMsg;
+    if (!src || !target || !supabase || !currentUserId) return;
+    const fromName = src.sender_id === currentUserId ? (currentUserName || 'Вы') : (src.sender_name || otherParty.name || '');
+    setForwardingMsg(null);
+    try {
+      await supabase.from('doc_comments').insert({
+        doc_id: target.docId, client_id: target.clientId,
+        sender_id: currentUserId, sender_name: currentUserName || '',
+        text: src.text || '', kind: 'comment', read: false,
+        attachments: Array.isArray(src.attachments) ? src.attachments : [],
+        forwarded_from_name: fromName,
+      });
+    } catch (e) { console.error('forward:', e); }
   };
 
   const toggleReaction = async (msg, emoji) => {
@@ -2671,7 +2712,20 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             onTouchMove={cancelLongPress}
             onTouchCancel={cancelLongPress}
             onContextMenu={(e) => { e.preventDefault(); setMsgMenu({ msg: m, isMine }); }}
-            style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none'}}>
+            style={{maxWidth:'82%',padding:m.text||m.reply_to_id?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none'}}>
+            {m.forwarded_from_name && <div style={{fontSize:11,fontWeight:700,color:isMine?'rgba(255,255,255,.85)':C.accent,marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 014-4h12"/></svg>
+              Переслано от {m.forwarded_from_name}
+            </div>}
+            {m.reply_to_id && (() => {
+              const target = messages.find(x => x.id === m.reply_to_id);
+              const tName = target ? (target.sender_id === currentUserId ? 'Вы' : (target.sender_name || otherParty.name || '')) : '';
+              const tText = target ? ((target.text || '').trim() || (Array.isArray(target.attachments) && target.attachments[0]?.type === 'audio' ? '🎙 Голосовое сообщение' : (Array.isArray(target.attachments) && target.attachments[0]?.type === 'image' ? '🖼 Фото' : '📎 Вложение'))) : 'Сообщение удалено';
+              return <button type="button" onClick={(e) => { e.stopPropagation(); target && scrollToMessage(target.id); }} style={{display:'block',width:'100%',textAlign:'left',background:isMine?'rgba(255,255,255,.14)':C.surfaceAlt,border:'none',borderLeft:`3px solid ${isMine?'#fff':C.accent}`,borderRadius:8,padding:'6px 10px',marginBottom:6,cursor:'pointer',fontFamily:'inherit'}}>
+                <div style={{fontSize:11,fontWeight:700,color:isMine?'#fff':C.accent}}>{tName}</div>
+                <div style={{fontSize:12,color:isMine?'rgba(255,255,255,.85)':C.soft,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden',maxWidth:'100%'}}>{tText.slice(0, 80)}</div>
+              </button>;
+            })()}
             {atts.map((a, i) => {
               if (a.type === 'image') return <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>;
               // Voice fallback: also catch legacy messages sent before the
@@ -2721,17 +2775,22 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>
     </div>}
 
-    {/* Editing banner above composer */}
-    {editingMsg && <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,flexShrink:0}}>
-      <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
-      <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
-        <div style={{fontSize:11,fontWeight:600,color:C.accent}}>Редактирование</div>
-        <div style={{fontSize:12,color:C.muted,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{(editingMsg.text || '').slice(0, 80)}</div>
-      </div>
-      <button type="button" onClick={cancelEditing} aria-label="Отмена" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>}
+    {/* Editing / Replying banner above composer */}
+    {(editingMsg || replyToMsg) && (() => {
+      const m = editingMsg || replyToMsg;
+      const mode = editingMsg ? 'edit' : 'reply';
+      const preview = (m.text || '').trim() || (Array.isArray(m.attachments) && m.attachments[0]?.type === 'audio' ? '🎙 Голосовое сообщение' : (Array.isArray(m.attachments) && m.attachments[0]?.type === 'image' ? '🖼 Фото' : '📎 Вложение'));
+      return <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,flexShrink:0}}>
+        <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
+          <div style={{fontSize:11,fontWeight:600,color:C.accent}}>{mode === 'edit' ? 'Редактирование' : 'Ответ'}</div>
+          <div style={{fontSize:12,color:C.muted,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{preview.slice(0, 80)}</div>
+        </div>
+        <button type="button" onClick={mode === 'edit' ? cancelEditing : cancelReply} aria-label="Отмена" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>;
+    })()}
 
     {/* Emoji row */}
     {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 14px',background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,flexShrink:0}}>
@@ -2782,42 +2841,98 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>
     </div>
 
-    {/* Message action sheet — opens on long-press (mobile) or
-        right-click (desktop). Offers pin/unpin, edit (own text only),
-        copy (text only), delete (own only). */}
-    {msgMenu && <div onClick={() => setMsgMenu(null)} style={{position:'fixed',inset:0,zIndex:10001,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'flex-end',justifyContent:'center',animation:'fadeIn .15s'}}>
-      <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:440,background:C.surface,borderRadius:'20px 20px 0 0',padding:'8px 0 max(8px, env(safe-area-inset-bottom))',boxShadow:'0 -8px 32px rgba(0,0,0,.2)',animation:'slideUp .2s ease'}}>
-        <div style={{width:40,height:4,borderRadius:2,background:C.tileBorder,margin:'6px auto 10px'}}/>
+    {/* Forward target picker — opened from the action menu. Shows the
+        doctor's other clients; tap a row to send a copy of the source
+        message into that thread (attribution kept in forwarded_from_name). */}
+    {forwardingMsg && <div onClick={() => setForwardingMsg(null)} style={{position:'fixed',inset:0,zIndex:10002,background:'rgba(0,0,0,.45)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',animation:'fadeIn .15s'}}>
+      <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:360,maxHeight:'70vh',background:C.surface,borderRadius:18,boxShadow:'0 12px 40px rgba(0,0,0,.25)',overflow:'hidden',display:'flex',flexDirection:'column',animation:'slideUp .18s ease'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 18px',borderBottom:`1px solid ${C.surfaceAlt}`}}>
+          <div style={{fontSize:15,fontWeight:700,color:C.text}}>Переслать</div>
+          <button type="button" onClick={() => setForwardingMsg(null)} aria-label="Отмена" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div style={{overflowY:'auto',flex:1}}>
+          {(!forwardTargets || forwardTargets.length === 0)
+            ? <div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:13}}>Нет доступных чатов</div>
+            : forwardTargets.map(t => <button key={t.clientId} type="button" onClick={() => forwardMessage(t)} style={{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'12px 18px',background:'none',border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+              {t.photo
+                ? <img src={t.photo} alt="" style={{width:36,height:36,borderRadius:'50%',objectFit:'cover',flexShrink:0,background:C.surfaceAlt}}/>
+                : <div style={{width:36,height:36,borderRadius:'50%',background:C.accentSoft,color:C.accent,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,flexShrink:0,fontFamily:'var(--fd)'}}>{(t.name||'—').trim().slice(0,2).toUpperCase()}</div>
+              }
+              <span style={{flex:1,fontSize:15,color:C.text,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{t.name || 'Клиент'}</span>
+            </button>)
+          }
+        </div>
+      </div>
+    </div>}
+
+    {/* Message action menu — Telegram-style floating card. Opens on
+        long-press (mobile) or right-click (desktop). zIndex 10002 to
+        beat the app's tab bar (10001). */}
+    {msgMenu && <div onClick={() => setMsgMenu(null)} style={{position:'fixed',inset:0,zIndex:10002,background:'rgba(0,0,0,.45)',backdropFilter:'blur(2px)',WebkitBackdropFilter:'blur(2px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,padding:'24px',animation:'fadeIn .15s'}}>
+      {/* Quick reactions strip — like TG's pill above the context menu */}
+      <div onClick={e => e.stopPropagation()} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:C.surface,borderRadius:100,boxShadow:'0 6px 24px rgba(0,0,0,.2)',animation:'slideUp .18s ease'}}>
+        {REACTION_SET.map(e => {
+          const mine = Array.isArray(msgMenu.msg.reactions?.[e]) && msgMenu.msg.reactions[e].includes(currentUserId);
+          return <button key={e} onClick={() => { toggleReaction(msgMenu.msg, e); setMsgMenu(null); }} style={{fontSize:22,background:mine?C.accentSoft:'none',border:'none',cursor:'pointer',padding:'4px 8px',borderRadius:14,fontFamily:'inherit'}}>{e}</button>;
+        })}
+      </div>
+      <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:280,background:C.surface,borderRadius:16,padding:'6px 0',boxShadow:'0 12px 40px rgba(0,0,0,.25)',animation:'slideUp .18s ease',overflow:'hidden'}}>
         {(() => {
           const m = msgMenu.msg;
           const isOwn = msgMenu.isMine;
           const hasText = !!(m.text || '').trim();
-          const rowStyle = {display:'flex',alignItems:'center',gap:14,width:'100%',padding:'14px 22px',background:'none',border:'none',fontFamily:'inherit',fontSize:15,color:C.text,cursor:'pointer',textAlign:'left'};
-          const iconWrap = {width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,flexShrink:0};
-          return <>
-            {m.pinned
-              ? <button style={rowStyle} onClick={() => { unpinMessage(m); setMsgMenu(null); }}>
-                  <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6M5 8l7 14 7-14M3 8h18"/></svg></span>
-                  Открепить
+          const rowStyle = (danger) => ({display:'flex',alignItems:'center',justifyContent:'space-between',gap:14,width:'100%',padding:'14px 18px',background:'none',border:'none',fontFamily:'inherit',fontSize:15,color:danger?'#D85A30':C.text,cursor:'pointer',textAlign:'left'});
+          const iconWrap = (danger) => ({display:'flex',alignItems:'center',justifyContent:'center',color:danger?'#D85A30':C.text,flexShrink:0,opacity:.85});
+          const divider = <div style={{height:1,background:C.surfaceAlt,margin:'0 14px'}}/>;
+          const rows = [];
+          if (isOwn && hasText) rows.push(
+            <button key="edit" style={rowStyle(false)} onClick={() => { startEditing(m); setMsgMenu(null); }}>
+              <span>Редактировать</span>
+              <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>
+            </button>
+          );
+          rows.push(
+            <button key="reply" style={rowStyle(false)} onClick={() => { startReply(m); setMsgMenu(null); }}>
+              <span>Ответить</span>
+              <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/></svg></span>
+            </button>
+          );
+          if (hasText) rows.push(
+            <button key="copy" style={rowStyle(false)} onClick={() => { copyMessage(m); setMsgMenu(null); }}>
+              <span>Копировать</span>
+              <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span>
+            </button>
+          );
+          if (Array.isArray(forwardTargets) && forwardTargets.length > 0) rows.push(
+            <button key="forward" style={rowStyle(false)} onClick={() => { setForwardingMsg(m); setMsgMenu(null); }}>
+              <span>Переслать</span>
+              <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 014-4h12"/></svg></span>
+            </button>
+          );
+          rows.push(
+            m.pinned
+              ? <button key="unpin" style={rowStyle(false)} onClick={() => { unpinMessage(m); setMsgMenu(null); }}>
+                  <span>Открепить</span>
+                  <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="3" x2="21" y2="21"/><path d="M15 9V4h-4l1 4-1 1m-1 4H5l7 8 2-5"/></svg></span>
                 </button>
-              : <button style={rowStyle} onClick={() => { pinMessage(m); setMsgMenu(null); }}>
-                  <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5M9 2h6l1 8-4 4-4-4 1-8z"/></svg></span>
-                  Закрепить
+              : <button key="pin" style={rowStyle(false)} onClick={() => { pinMessage(m); setMsgMenu(null); }}>
+                  <span>Закрепить</span>
+                  <span style={iconWrap(false)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5M9 2h6l1 8-4 4-4-4 1-8z"/></svg></span>
                 </button>
-            }
-            {isOwn && hasText && <button style={rowStyle} onClick={() => { startEditing(m); setMsgMenu(null); }}>
-              <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>
-              Редактировать
-            </button>}
-            {hasText && <button style={rowStyle} onClick={() => { copyMessage(m); setMsgMenu(null); }}>
-              <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span>
-              Копировать
-            </button>}
-            {isOwn && <button style={{...rowStyle, color:'#D85A30'}} onClick={() => { deleteMessage(m); setMsgMenu(null); }}>
-              <span style={{...iconWrap, color:'#D85A30'}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span>
-              Удалить
-            </button>}
-          </>;
+          );
+          if (isOwn) rows.push(
+            <button key="delete" style={rowStyle(true)} onClick={() => { deleteMessage(m); setMsgMenu(null); }}>
+              <span>Удалить у всех</span>
+              <span style={iconWrap(true)}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span>
+            </button>
+          );
+          return rows.reduce((acc, row, i) => {
+            if (i > 0) acc.push(<div key={'d'+i}>{divider}</div>);
+            acc.push(row);
+            return acc;
+          }, []);
         })()}
       </div>
     </div>}
@@ -5849,6 +5964,7 @@ export default function App(){
       currentUserName={user?.name||''}
       clientName={chatModal.clientName}
       initialTagDate={chatModal.tagDate}
+      forwardTargets={isDoc && user?.id ? clients.filter(c => c.id !== chatModal.clientId && c.status === 'active').map(c => ({ clientId: c.id, docId: user.id, name: c.nick || c.name, photo: c.photo })) : []}
       onClose={()=>setChatModal(null)}
       uploadAttachment={uploadChatAttachment}
       onTagClick={(tagDate)=>{
