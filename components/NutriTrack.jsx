@@ -435,17 +435,12 @@ const collapseRepeats = (s) => {
 };
 
 // Voice message player — Telegram-inspired in our cream/green style:
-// large circular play button, a 28-bar waveform strip, elapsed time,
-// and a "→T" button that requests server-side transcription. The
-// transcribed text, once received, is persisted on the message
-// attachment so both parties see it without re-requesting.
-function VoicePlayer({ url, duration, transcript, isMine, canTranscribe, onTranscribe }) {
+// large circular play button, a 28-bar waveform strip, elapsed time.
+function VoicePlayer({ url, duration, isMine }) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(duration || 0);
-  const [loadingTr, setLoadingTr] = useState(false);
-  const [trError, setTrError] = useState('');
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -485,49 +480,29 @@ function VoicePlayer({ url, duration, transcript, isMine, canTranscribe, onTrans
     }
     return out;
   }, [url]);
-  const handleTranscribe = async () => {
-    if (loadingTr || !onTranscribe) return;
-    setLoadingTr(true); setTrError('');
-    try { await onTranscribe(url); }
-    catch (e) { setTrError(e?.message || 'Не удалось расшифровать'); }
-    setLoadingTr(false);
-  };
   const playBg = isMine ? 'rgba(255,255,255,.95)' : C.accent;
   const playFg = isMine ? C.accent : '#fff';
   const barOn = isMine ? '#ffffff' : C.accent;
   const barOff = isMine ? 'rgba(255,255,255,.40)' : 'rgba(45,95,63,.28)';
   const subText = isMine ? 'rgba(255,255,255,.78)' : C.muted;
-  const trBtnBorder = isMine ? 'rgba(255,255,255,.55)' : C.tileBorder;
-  const trBtnColor = isMine ? '#fff' : C.accent;
-  const trBtnBg = isMine ? 'rgba(255,255,255,.14)' : C.surface;
-  return <div style={{display:'flex',flexDirection:'column',gap:8,minWidth:220}}>
-    <div style={{display:'flex',alignItems:'center',gap:12}}>
-      <audio ref={audioRef} src={url} preload="metadata" style={{display:'none'}}/>
-      <button type="button" onClick={toggle} aria-label={playing?'Пауза':'Воспроизвести'} style={{width:44,height:44,borderRadius:'50%',border:'none',background:playBg,color:playFg,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:isMine?'none':'0 2px 8px rgba(45,95,63,.18)'}}>
-        {playing
-          ? <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-          : <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={{marginLeft:2}}><path d="M8 5v14l11-7z"/></svg>
-        }
-      </button>
-      <div style={{flex:1,display:'flex',flexDirection:'column',gap:5,minWidth:0}}>
-        <div style={{display:'flex',alignItems:'center',gap:2,height:22}}>
-          {bars.map((h, i) => {
-            const thresholdIdx = Math.floor(pct * bars.length);
-            const active = i < thresholdIdx;
-            return <div key={i} style={{width:3,height:Math.max(4, Math.round(h*22))+'px',borderRadius:2,background:active?barOn:barOff,transition:'background .15s'}}/>;
-          })}
-        </div>
-        <div style={{fontSize:11,color:subText,fontVariantNumeric:'tabular-nums'}}>{playing || cur > 0 ? fmt(cur) : (total > 0 ? fmt(total) : '—')}</div>
+  return <div style={{display:'flex',alignItems:'center',gap:12,minWidth:220}}>
+    <audio ref={audioRef} src={url} preload="metadata" style={{display:'none'}}/>
+    <button type="button" onClick={toggle} aria-label={playing?'Пауза':'Воспроизвести'} style={{width:44,height:44,borderRadius:'50%',border:'none',background:playBg,color:playFg,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:isMine?'none':'0 2px 8px rgba(45,95,63,.18)'}}>
+      {playing
+        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        : <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={{marginLeft:2}}><path d="M8 5v14l11-7z"/></svg>
+      }
+    </button>
+    <div style={{flex:1,display:'flex',flexDirection:'column',gap:5,minWidth:0}}>
+      <div style={{display:'flex',alignItems:'center',gap:2,height:22}}>
+        {bars.map((h, i) => {
+          const thresholdIdx = Math.floor(pct * bars.length);
+          const active = i < thresholdIdx;
+          return <div key={i} style={{width:3,height:Math.max(4, Math.round(h*22))+'px',borderRadius:2,background:active?barOn:barOff,transition:'background .15s'}}/>;
+        })}
       </div>
-      {canTranscribe && !transcript && <button type="button" onClick={handleTranscribe} disabled={loadingTr} aria-label="Расшифровать в текст" style={{width:34,height:34,borderRadius:10,border:`1px solid ${trBtnBorder}`,background:trBtnBg,color:trBtnColor,cursor:loadingTr?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontFamily:'inherit',opacity:loadingTr?.6:1}}>
-        {loadingTr
-          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:'spin 1s linear infinite'}}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-          : <span style={{fontSize:12,fontWeight:700,letterSpacing:'.02em',lineHeight:1}}>→T</span>
-        }
-      </button>}
+      <div style={{fontSize:11,color:subText,fontVariantNumeric:'tabular-nums'}}>{playing || cur > 0 ? fmt(cur) : (total > 0 ? fmt(total) : '—')}</div>
     </div>
-    {transcript && <div style={{fontSize:13,lineHeight:1.45,padding:'8px 10px',borderRadius:10,background:isMine?'rgba(255,255,255,.14)':C.surfaceAlt,color:isMine?'#fff':C.text,whiteSpace:'pre-wrap'}}>{transcript}</div>}
-    {trError && <div style={{fontSize:11,color:isMine?'#ffd8d8':C.danger}}>{trError}</div>}
   </div>;
 }
 
@@ -2494,30 +2469,6 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   };
   const stopAndSend = () => finishRecording(false);
   const cancelRecording = () => finishRecording(true);
-
-  // Transcribe a voice attachment on-demand and persist the text back
-  // onto the message row so both parties see it once.
-  const transcribeAudio = async (msg, attIdx, url) => {
-    if (!msg || !url) return;
-    const res = await fetch('/api/transcribe', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    if (!res.ok) {
-      let msgText = 'Не удалось расшифровать';
-      try { const j = await res.json(); if (j?.error) msgText = j.error; } catch(e) {}
-      throw new Error(msgText);
-    }
-    const { text } = await res.json();
-    const newAtts = Array.isArray(msg.attachments) ? msg.attachments.slice() : [];
-    if (newAtts[attIdx]) newAtts[attIdx] = Object.assign({}, newAtts[attIdx], { transcript: text || '' });
-    // Optimistic local update
-    setMessages(prev => prev.map(x => x.id === msg.id ? Object.assign({}, x, { attachments: newAtts }) : x));
-    if (supabase) {
-      try { await supabase.from('doc_comments').update({ attachments: newAtts }).eq('id', msg.id); }
-      catch (e) { console.error('transcript save:', e); }
-    }
-  };
   // Cleanup on unmount — don't leave the mic stream live if the chat closes mid-record
   useEffect(() => () => {
     if (recTimerRef.current) clearInterval(recTimerRef.current);
@@ -2610,7 +2561,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
           <div style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere'}}>
             {atts.map((a, i) => {
               if (a.type === 'image') return <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>;
-              if (a.type === 'audio') return <VoicePlayer key={i} url={a.url} duration={a.duration} transcript={a.transcript} isMine={isMine} canTranscribe onTranscribe={(url) => transcribeAudio(m, i, url)}/>;
+              if (a.type === 'audio') return <VoicePlayer key={i} url={a.url} duration={a.duration} isMine={isMine}/>;
               return <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                 <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
