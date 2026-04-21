@@ -434,6 +434,61 @@ const collapseRepeats = (s) => {
   return out.join(' ');
 };
 
+// Voice message player — compact play/pause + progress bar + time,
+// colours adapt to own vs other party bubble. Used inside chat
+// message bubbles when attachment.type === 'audio'.
+function VoicePlayer({ url, duration, isMine }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(duration || 0);
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onTime = () => setCur(a.currentTime || 0);
+    const onMeta = () => { if (a.duration && isFinite(a.duration)) setDur(a.duration); };
+    const onEnd = () => { setPlaying(false); setCur(0); };
+    a.addEventListener('play', onPlay);
+    a.addEventListener('pause', onPause);
+    a.addEventListener('timeupdate', onTime);
+    a.addEventListener('loadedmetadata', onMeta);
+    a.addEventListener('ended', onEnd);
+    return () => {
+      a.removeEventListener('play', onPlay);
+      a.removeEventListener('pause', onPause);
+      a.removeEventListener('timeupdate', onTime);
+      a.removeEventListener('loadedmetadata', onMeta);
+      a.removeEventListener('ended', onEnd);
+    };
+  }, []);
+  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) a.play(); else a.pause(); };
+  const total = dur || 0;
+  const pct = total > 0 ? Math.min(100, (cur / total) * 100) : 0;
+  const fmt = (s) => { const m = Math.floor(s/60), x = Math.floor(s%60); return `${m}:${String(x).padStart(2,'0')}`; };
+  const fgBtn = isMine ? '#fff' : C.accent;
+  const bgBtn = isMine ? 'rgba(255,255,255,.22)' : C.accentSoft;
+  const track = isMine ? 'rgba(255,255,255,.28)' : C.surfaceAlt;
+  const fill = isMine ? '#fff' : C.accent;
+  const subText = isMine ? 'rgba(255,255,255,.75)' : C.muted;
+  return <div style={{display:'flex',alignItems:'center',gap:10,padding:'2px 2px',minWidth:180}}>
+    <audio ref={audioRef} src={url} preload="metadata" style={{display:'none'}}/>
+    <button type="button" onClick={toggle} style={{width:32,height:32,borderRadius:'50%',border:'none',background:bgBtn,color:fgBtn,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+      {playing
+        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        : <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      }
+    </button>
+    <div style={{flex:1,display:'flex',flexDirection:'column',gap:4,minWidth:0}}>
+      <div style={{height:3,borderRadius:2,background:track,overflow:'hidden'}}>
+        <div style={{height:'100%',width:pct+'%',background:fill,transition:'width .1s linear'}}/>
+      </div>
+      <div style={{fontSize:10,color:subText,fontVariantNumeric:'tabular-nums'}}>{playing || cur > 0 ? fmt(cur) : (total > 0 ? fmt(total) : '—')}</div>
+    </div>
+  </div>;
+}
+
 function MicButton({onResult,onStart,style:st}){
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
@@ -1985,6 +2040,16 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // iOS keyboard awareness: track keyboard height via visualViewport so
   // the modal's inner padding-bottom lifts the input above the keyboard.
   const [kbHeight, setKbHeight] = useState(0);
+  // Voice message recording state — tap mic, toolbar swaps to a
+  // recording panel (×/timer/✓), tap ✓ to upload & send, × to discard.
+  const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const [recUploading, setRecUploading] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const recChunksRef = useRef([]);
+  const recTimerRef = useRef(null);
+  const recStartRef = useRef(0);
+  const recCancelledRef = useRef(false);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -2326,6 +2391,74 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     } catch (err) { console.error('upload att:', err); }
   };
 
+  // ── Voice messages ──
+  const startRecording = async () => {
+    if (recording || recUploading) return;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || typeof window.MediaRecorder === 'undefined') {
+      alert('Запись голоса не поддерживается в этом браузере');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Prefer opus/webm on Chromium; Safari falls back to its default
+      // (audio/mp4), which <audio> plays natively on every client anyway.
+      let options;
+      try {
+        if (window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          options = { mimeType: 'audio/webm;codecs=opus' };
+        }
+      } catch (e) {}
+      const mr = new window.MediaRecorder(stream, options);
+      recChunksRef.current = [];
+      recCancelledRef.current = false;
+      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) recChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+        if (recCancelledRef.current) { recChunksRef.current = []; return; }
+        const blob = new Blob(recChunksRef.current, { type: mr.mimeType || 'audio/webm' });
+        const duration = Math.max(1, Math.round((Date.now() - recStartRef.current) / 1000));
+        recChunksRef.current = [];
+        if (blob.size === 0 || !uploadAttachment) return;
+        setRecUploading(true);
+        try {
+          const ext = ((mr.mimeType || '').split('/')[1] || 'webm').split(';')[0];
+          const voiceFile = new File([blob], `voice_${Date.now()}.${ext}`, { type: blob.type });
+          const url = await uploadAttachment(voiceFile);
+          if (url) await send({ text: '', attachments: [{ type: 'audio', url, name: voiceFile.name, duration, mime: blob.type }] });
+        } catch (err) { console.error('voice upload:', err); }
+        setRecUploading(false);
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      recStartRef.current = Date.now();
+      setRecSecs(0);
+      if (recTimerRef.current) clearInterval(recTimerRef.current);
+      recTimerRef.current = setInterval(() => setRecSecs(Math.round((Date.now() - recStartRef.current) / 1000)), 250);
+      setRecording(true);
+    } catch (e) {
+      console.error('getUserMedia:', e);
+      alert('Не удалось начать запись. Разрешите доступ к микрофону в настройках браузера.');
+    }
+  };
+  const finishRecording = (cancelled) => {
+    const mr = mediaRecorderRef.current;
+    if (!mr) return;
+    recCancelledRef.current = !!cancelled;
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+    try { mr.stop(); } catch (e) {}
+    mediaRecorderRef.current = null;
+    setRecording(false);
+    setRecSecs(0);
+  };
+  const stopAndSend = () => finishRecording(false);
+  const cancelRecording = () => finishRecording(true);
+  // Cleanup on unmount — don't leave the mic stream live if the chat closes mid-record
+  useEffect(() => () => {
+    if (recTimerRef.current) clearInterval(recTimerRef.current);
+    const mr = mediaRecorderRef.current;
+    if (mr) { recCancelledRef.current = true; try { mr.stop(); } catch (e) {} mediaRecorderRef.current = null; }
+  }, []);
+
   // Group messages by calendar day for "сегодня / вчера / дата" separators
   const grouped = [];
   let lastDayLabel = null;
@@ -2409,12 +2542,14 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         const atts = Array.isArray(m.attachments) ? m.attachments : [];
         return <div key={g.key} style={{display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',marginBottom:8}}>
           <div style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere'}}>
-            {atts.map((a, i) => a.type === 'image'
-              ? <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>
-              : <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-                  <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
-                </div>)}
+            {atts.map((a, i) => {
+              if (a.type === 'image') return <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>;
+              if (a.type === 'audio') return <VoicePlayer key={i} url={a.url} duration={a.duration} isMine={isMine}/>;
+              return <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
+              </div>;
+            })}
             {m.text && <div style={{whiteSpace:'pre-wrap'}}>{m.text}</div>}
             {m.date && <button type="button" onClick={() => onTagClick && onTagClick(m.date)} style={{display:'inline-flex',alignItems:'center',gap:4,marginTop:6,padding:'4px 9px',borderRadius:10,background:isMine?'rgba(255,255,255,.18)':C.accentSoft,color:isMine?'#fff':C.accent,fontSize:11,fontWeight:600,border:'none',cursor:'pointer',fontFamily:'inherit',textDecoration:'underline',textUnderlineOffset:2}}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -2459,18 +2594,39 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     <div style={{background:C.surface,padding:'14px 18px 14px',flexShrink:0,boxShadow:'0 -1px 0 rgba(0,0,0,.04)'}}>
       <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
         <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
-        <button onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-        </button>
-        <textarea ref={textareaRef} value={text} onChange={e => { setText(e.target.value); sendTypingPing(); }} placeholder="Сообщение" rows={1}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-          style={{flex:1,minWidth:0,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:16,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.4,maxHeight:120,minHeight:40,overflowY:'auto'}}
-          onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
-        {!text.trim() && <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>}
-        <MicButton onResult={(t) => setText(t)} onStart={() => {}} style={{width:40,height:40,borderRadius:'50%',padding:0,flexShrink:0}}/>
-        {text.trim() && <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        {recording ? <>
+          <button onClick={cancelRecording} aria-label="Отменить запись" style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+          <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,background:C.bg,height:40}}>
+            <div style={{width:10,height:10,borderRadius:'50%',background:'#E74C3C',animation:'pulse 1.2s infinite',flexShrink:0}}/>
+            <span style={{fontSize:14,color:C.text,fontVariantNumeric:'tabular-nums',fontWeight:600}}>{String(Math.floor(recSecs/60))}:{String(recSecs%60).padStart(2,'0')}</span>
+            <span style={{fontSize:12,color:C.muted}}>Запись…</span>
+          </div>
+          <button onClick={stopAndSend} aria-label="Отправить запись" style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </> : <>
+          <button onClick={() => fileInputRef.current && fileInputRef.current.click()} disabled={recUploading} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:recUploading?.5:1}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <textarea ref={textareaRef} value={text} onChange={e => { setText(e.target.value); sendTypingPing(); }} placeholder={recUploading?'Отправляем голосовое…':'Сообщение'} rows={1} disabled={recUploading}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            style={{flex:1,minWidth:0,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:16,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.4,maxHeight:120,minHeight:40,overflowY:'auto',opacity:recUploading?.7:1}}
+            onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
+          {!text.trim() && !recUploading && <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>}
+          {!text.trim() && <button onClick={startRecording} disabled={recUploading} aria-label="Записать голосовое сообщение" style={{width:40,height:40,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:recUploading?'default':'pointer',color:C.muted,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:recUploading?.6:1}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+              <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
           </button>}
+          {text.trim() && <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>}
+        </>}
       </div>
     </div>
   </div>;
