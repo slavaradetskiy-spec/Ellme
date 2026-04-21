@@ -721,18 +721,14 @@ function ScaleHelpButton(){
 
 function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   const d=data||{},upd=(k,v)=>setData({...d,[k]:v});
-  // Water log: stored in localStorage by date, array of {ml, time}
+  // Water log: source of truth is d.water_log (Supabase JSONB). localStorage
+  // stays as a same-device optimistic cache that seeds the list before the
+  // Supabase row finishes loading — nothing in the code path depends on it.
   const lsKey = 'wl_' + (dateKey || '');
-  const [waterLog, setWaterLog] = useState([]);
-  // Reload log from localStorage when date changes
-  useEffect(() => {
-    try {
-      const s = typeof window !== 'undefined' && localStorage.getItem(lsKey);
-      setWaterLog(s ? JSON.parse(s) : []);
-    } catch(e) { setWaterLog([]); }
-  }, [lsKey]);
-  const saveWaterLog = (log) => { setWaterLog(log); try { localStorage.setItem(lsKey, JSON.stringify(log)); } catch(e) {} };
-  // d.water is the source of truth. Log is a local UX aid for showing recent additions.
+  const waterLog = Array.isArray(d.water_log)
+    ? d.water_log
+    : (() => { try { const s = typeof window !== 'undefined' && localStorage.getItem(lsKey); return s ? JSON.parse(s) : []; } catch(e) { return []; } })();
+  const persistLog = (log) => { try { localStorage.setItem(lsKey, JSON.stringify(log)); } catch(e) {} };
   const waterMl = d.water || 0;
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
   const waterPct=Math.min(100,waterPctRaw);
@@ -742,25 +738,26 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     const now = new Date();
     const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
     const newLog = [...waterLog, { ml, time }];
-    const total = (d.water || 0) + ml;
-    saveWaterLog(newLog);
-    upd('water', total);
+    const total = waterMl + ml;
+    setData({ ...d, water: total, water_log: newLog });
+    persistLog(newLog);
     if(waterMl<waterNorm&&total>=waterNorm&&onCelebrate)onCelebrate('water');
   };
   const removeWaterEntry = (idx) => {
     const entry = waterLog[idx];
     const newLog = waterLog.filter((_, i) => i !== idx);
-    saveWaterLog(newLog);
-    upd('water', Math.max(0, (d.water || 0) - (entry?.ml || 0)));
+    const total = Math.max(0, waterMl - (entry?.ml || 0));
+    setData({ ...d, water: total, water_log: newLog });
+    persistLog(newLog);
   };
-  // The log is local-only (localStorage), so on a fresh device/browser the
-  // earlier entries are gone but d.water (Supabase) still reflects them.
-  // Surface that gap as a single "ранее" row so the user can always see
-  // and delete anything that contributes to today's total.
+  // Legacy entries that predate the Supabase water_log (older rows or
+  // localStorage-only sessions) leave d.water_ml bigger than sum(log).
+  // Surface that gap as a single deletable "ранее" row so nothing the
+  // user has tracked becomes invisible.
   const logSum = waterLog.reduce((s, e) => s + (e.ml || 0), 0);
   const unaccounted = Math.max(0, waterMl - logSum);
   const hasAnyLog = waterLog.length > 0 || unaccounted > 0;
-  const removeUnaccounted = () => { upd('water', logSum); };
+  const removeUnaccounted = () => { setData({ ...d, water: logSum }); };
   // Debounced sleep celebration — waits 2s after the last change so the
   // user has time to set BOTH hours AND minutes before the confetti
   // fires. Without this, picking hour "23" (intended "23:55") would
@@ -4960,7 +4957,8 @@ export default function App(){
         meals[m.meal_type] = { time: m.time, hunger: m.hunger, text: m.description, feeling: m.feeling, feelingNote: m.feeling_note, photo: parsedPhoto, liked: !!m.liked };
       });
       return {
-        meals, water: day.water_ml || 0, supplements: day.supplements || '',
+        meals, water: day.water_ml || 0, water_log: Array.isArray(day.water_log) ? day.water_log : [],
+        supplements: day.supplements || '',
         sleep: { wake: day.sleep_wake, bed: day.sleep_bed, quality: day.sleep_quality },
         movement: day.movement || '',
         stress: (()=>{
@@ -4983,7 +4981,8 @@ export default function App(){
     try {
       const payload = {
         user_id: pid, date: dateStr,
-        water_ml: dayData.water || 0, supplements: dayData.supplements || '',
+        water_ml: dayData.water || 0, water_log: Array.isArray(dayData.water_log) ? dayData.water_log : [],
+        supplements: dayData.supplements || '',
         sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
         movement: dayData.movement || '',
         stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
@@ -5072,7 +5071,8 @@ export default function App(){
         // Use sendBeacon for reliable save on tab close
         const payload = {
           user_id: pid, date: dateStr,
-          water_ml: dayData.water || 0, supplements: dayData.supplements || '',
+          water_ml: dayData.water || 0, water_log: Array.isArray(dayData.water_log) ? dayData.water_log : [],
+          supplements: dayData.supplements || '',
           sleep_wake: dayData.sleep?.wake || null, sleep_bed: dayData.sleep?.bed || null, sleep_quality: dayData.sleep?.quality || null,
           movement: dayData.movement || '',
           stress_level: dayData.stress?.level || null, stress_practices: (() => { const list = dayData.stress?.practicesList || []; const text = dayData.stress?.practices || ''; if (list.length === 0 && !text) return ''; if (list.length === 0) return text; return JSON.stringify({ list, text }); })(),
