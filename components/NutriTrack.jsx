@@ -4432,15 +4432,15 @@ function IntroSplash(){
         </div>)}
       </div>
     </div>
-    {/* Russian caption — types character by character */}
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,minHeight:72}}>
+    {/* Russian caption — types character by character, both lines in the same serif font */}
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,minHeight:76}}>
       {RU_LINES.map((line,i)=>{
         const done=ruText[i].length>=line.length;
         const typing=i===activeRu&&!done;
         const isFirst=i===0;
-        return <div key={i} style={{fontSize:isFirst?20:15,fontWeight:isFirst?500:400,fontFamily:isFirst?'var(--fd)':'var(--fb)',color:isFirst?'#2D5F3F':'#5B6B60',textAlign:'center',letterSpacing:'.2px',minHeight:isFirst?26:20,opacity:i<=activeRu?1:0,transition:'opacity .25s'}}>
+        return <div key={i} style={{fontSize:isFirst?22:17,fontFamily:'var(--fd)',fontStyle:isFirst?'normal':'italic',fontWeight:isFirst?500:400,color:isFirst?'#2D5F3F':'#7A8A7F',textAlign:'center',letterSpacing:'.3px',minHeight:isFirst?28:22,opacity:i<=activeRu?1:0,transition:'opacity .25s'}}>
           {ruText[i]}
-          {typing&&<span style={{marginLeft:1,opacity:.7,animation:'blink .9s steps(1) infinite'}}>|</span>}
+          {typing&&<span style={{marginLeft:2,opacity:.6,animation:'blink .9s steps(1) infinite',fontFamily:'var(--fb)'}}>|</span>}
         </div>;
       })}
     </div>
