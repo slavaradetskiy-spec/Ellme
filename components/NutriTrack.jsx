@@ -5436,8 +5436,8 @@ export default function App(){
       </footer>}
     </div>
     {/* Bottom tab bar */}
-    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'max(4px, calc(env(safe-area-inset-bottom) - 10px))'}}>
-      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:52,padding:'0 8px'}}>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'max(2px, calc(env(safe-area-inset-bottom) - 18px))'}}>
+      <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:50,padding:'0 8px'}}>
         {(isDoc
           ? [
               { id:'diary',   label:'Дневник',  icon:I.book,   badge:0 },
