@@ -2551,7 +2551,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>}
       {!messagesLoading && messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
-        if (g.sep) return <div key={g.key} style={{textAlign:'center',fontSize:11,color:C.muted,margin:'12px 0 6px',fontWeight:500}}>{g.sep}</div>;
+        if (g.sep) return <div key={g.key} style={{textAlign:'center',margin:'14px 0 8px'}}>
+          <span style={{fontSize:12,fontWeight:700,color:'#fff',padding:'5px 14px',borderRadius:14,background:'rgba(45,95,63,.72)',display:'inline-block',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',letterSpacing:'.01em',textShadow:'0 1px 2px rgba(0,0,0,.15)'}}>{g.sep}</span>
+        </div>;
         const m = g.msg;
         const isMine = m.sender_id === currentUserId;
         const reactions = m.reactions || {};
