@@ -818,7 +818,31 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
   // case-insensitively unique, preserving the first seen casing.
   const parseSupps = (s) => String(s || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
   const uniqCI = (arr) => { const seen = new Set(); const out = []; for (const x of arr) { const k = x.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(x); } } return out; };
+  // Drop chip candidates that look like whole voice-dictated sentences
+  // rather than supplement names — they pollute the suggestion row as
+  // one giant pill. Real supplement names fit comfortably in 40 chars.
+  const isSupplementChip = (x) => typeof x === 'string' && x.length > 0 && x.length <= 40;
   const [suppHistory, setSuppHistory] = useState({ chips: [], yesterday: '' });
+  // Locally-hidden chips — user can long-press a supplement pill to
+  // banish it from the suggestion row without touching past entries.
+  const suppHideKey = 'supp_hidden_' + (pid || '');
+  const [suppHidden, setSuppHidden] = useState(() => {
+    try { const s = typeof window !== 'undefined' && localStorage.getItem(suppHideKey); const p = s ? JSON.parse(s) : []; return new Set(Array.isArray(p) ? p.map(x => String(x).toLowerCase()) : []); }
+    catch(e) { return new Set(); }
+  });
+  useEffect(() => {
+    try { const s = typeof window !== 'undefined' && localStorage.getItem(suppHideKey); const p = s ? JSON.parse(s) : []; setSuppHidden(new Set(Array.isArray(p) ? p.map(x => String(x).toLowerCase()) : [])); }
+    catch(e) {}
+  }, [suppHideKey]);
+  const hideSuppChip = (chip) => {
+    if (!chip) return;
+    const lc = chip.toLowerCase();
+    const next = new Set(suppHidden); next.add(lc);
+    setSuppHidden(next);
+    try { localStorage.setItem(suppHideKey, JSON.stringify(Array.from(next))); } catch(e) {}
+  };
+  // Chip the user is about to hide — opens a styled confirmation.
+  const [chipToHide, setChipToHide] = useState(null);
   useEffect(() => {
     if (!supabase || !pid || !dateKey) return;
     let mounted = true;
@@ -835,7 +859,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
           .lt('date', dateKey)
           .order('date', { ascending: false });
         if (!mounted) return;
-        const chips = uniqCI((rows || []).flatMap(r => parseSupps(r.supplements || '')));
+        const chips = uniqCI((rows || []).flatMap(r => parseSupps(r.supplements || '')).filter(isSupplementChip));
         const yRow = (rows || []).find(r => r.date === yStr);
         setSuppHistory({ chips, yesterday: (yRow?.supplements || '').trim() });
       } catch(e) { /* ignore */ }
@@ -1125,14 +1149,33 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
               Повторить вчерашнее
             </button>}
-            {!dis && suppHistory.chips.length > 0 && <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-              {suppHistory.chips.map(chip => {
-                const active = currentLc.has(chip.toLowerCase());
-                return <button key={chip} type="button" onClick={() => toggleChip(chip)} style={{padding:'6px 11px',borderRadius:14,border:`1px solid ${active?C.accent:C.tileBorder}`,background:active?C.accentSoft:C.surface,color:active?C.accent:C.soft,fontSize:12,fontWeight:active?600:500,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',display:'inline-flex',alignItems:'center',gap:4}}>
-                  {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                  {chip}
-                </button>;
-              })}
+            {(() => {
+              const visibleChips = suppHistory.chips.filter(c => !suppHidden.has(c.toLowerCase()));
+              if (dis || visibleChips.length === 0) return null;
+              return <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                {visibleChips.map(chip => {
+                  const active = currentLc.has(chip.toLowerCase());
+                  return <div key={chip} style={{display:'inline-flex',alignItems:'stretch',borderRadius:14,border:`1px solid ${active?C.accent:C.tileBorder}`,background:active?C.accentSoft:C.surface,overflow:'hidden',transition:'all .15s'}}>
+                    <button type="button" onClick={() => toggleChip(chip)} style={{padding:'6px 4px 6px 11px',background:'none',border:'none',color:active?C.accent:C.soft,fontSize:12,fontWeight:active?600:500,cursor:'pointer',fontFamily:'inherit',display:'inline-flex',alignItems:'center',gap:4}}>
+                      {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                      {chip}
+                    </button>
+                    <button type="button" onClick={() => setChipToHide(chip)} aria-label={`Убрать «${chip}» из подсказок`} style={{padding:'0 8px 0 4px',background:'none',border:'none',color:active?C.accent:C.muted,cursor:'pointer',fontFamily:'inherit',display:'inline-flex',alignItems:'center',justifyContent:'center',opacity:.55}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>;
+                })}
+              </div>;
+            })()}
+            {chipToHide && <div onClick={() => setChipToHide(null)} style={{position:'fixed',inset:0,zIndex:10003,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',animation:'fadeIn .15s'}}>
+              <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:300,background:C.surface,borderRadius:18,padding:'22px 20px 16px',boxShadow:'0 12px 40px rgba(0,0,0,.25)',animation:'slideUp .18s ease'}}>
+                <div style={{fontSize:15,fontWeight:600,color:C.text,textAlign:'center',lineHeight:1.45,marginBottom:6}}>Убрать из подсказок?</div>
+                <div style={{fontSize:13,color:C.muted,textAlign:'center',marginBottom:18}}>«{chipToHide}» больше не будет появляться в списке</div>
+                <div style={{display:'flex',gap:8}}>
+                  <button type="button" onClick={() => setChipToHide(null)} style={{flex:1,padding:'12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,background:'transparent',color:C.soft,fontSize:14,fontWeight:500,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
+                  <button type="button" onClick={() => { hideSuppChip(chipToHide); setChipToHide(null); }} style={{flex:1,padding:'12px',borderRadius:12,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Убрать</button>
+                </div>
+              </div>
             </div>}
           </>;
         })()}
@@ -1882,20 +1925,37 @@ function DayChatPreview({ clientId, docId, currentUserId, dateKey, role, clientN
     </div>}
 
     {/* State 2 — exactly one message */}
-    {!loading && count === 1 && <div style={{background:C.accentSoft,borderRadius:14,padding:'12px 14px',marginBottom:14}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5,fontSize:12,fontWeight:600,color:C.text}}>
-        <span style={{width:8,height:8,borderRadius:'50%',background:singleFromOther?dotColor:C.muted,flexShrink:0}}/>
-        <span>{single.sender_name || (singleFromOther ? (role==='client'?'Нутрициолог':'Клиент') : 'Вы')}</span>
-        <span style={{color:C.muted,fontWeight:400,fontSize:11}}>· {fmtChatTime(single.created_at)}</span>
-      </div>
-      <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{single.text}»</div>
-    </div>}
+    {!loading && count === 1 && (() => {
+      const name = single.sender_name || (singleFromOther ? (role==='client'?'нутрициолога':'клиента') : 'вас');
+      const headerText = singleFromOther ? `Новое сообщение от ${name}` : `Ваше сообщение · ${name}`;
+      const t = (single.text || '').trim();
+      const atts = Array.isArray(single.attachments) ? single.attachments : [];
+      return <div style={{background:C.accentSoft,borderRadius:14,padding:'12px 14px',marginBottom:14}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:t||atts.length>0?6:0,fontSize:13,fontWeight:600,color:C.text}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:singleFromOther?dotColor:C.muted,flexShrink:0}}/>
+          <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{headerText}</span>
+          <span style={{color:C.muted,fontWeight:400,fontSize:11,flexShrink:0}}>{fmtChatTime(single.created_at)}</span>
+        </div>
+        {t
+          ? <div style={{fontSize:14,color:C.text,lineHeight:1.5,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>«{t}»</div>
+          : atts.length > 0 && <div style={{fontSize:13,color:C.soft,lineHeight:1.5,fontStyle:'italic'}}>Сообщение с вложением</div>
+        }
+      </div>;
+    })()}
 
     {/* State 3 — 2+ messages */}
-    {!loading && count >= 2 && <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:C.accentSoft,borderRadius:14,marginBottom:14}}>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      <div style={{fontSize:14,color:C.text,fontWeight:500}}>{count} {count%10===1&&count!==11?'сообщение':count%10>=2&&count%10<=4&&(count<10||count>20)?'сообщения':'сообщений'} за этот день</div>
-    </div>}
+    {!loading && count >= 2 && (() => {
+      // All messages from the same "other" sender → surface their name
+      const others = dayMessages.filter(x => x.sender_id !== currentUserId);
+      const uniqNames = Array.from(new Set(others.map(x => x.sender_name).filter(Boolean)));
+      const senderLine = others.length > 0 && uniqNames.length === 1 ? ` от ${uniqNames[0]}` : '';
+      const word = count%10===1&&count!==11?'новое':count%10>=2&&count%10<=4&&(count<10||count>20)?'новых':'новых';
+      const noun = count%10===1&&count!==11?'сообщение':count%10>=2&&count%10<=4&&(count<10||count>20)?'сообщения':'сообщений';
+      return <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:C.accentSoft,borderRadius:14,marginBottom:14}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <div style={{fontSize:14,color:C.text,fontWeight:500}}>{count} {word} {noun}{senderLine}</div>
+      </div>;
+    })()}
 
     <button onClick={onOpenChat} style={{width:'100%',padding:'13px 16px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 2px 8px rgba(45,95,63,.2)',transition:'all .2s'}}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -2086,6 +2146,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // Reply-to state: when set, the next sent message references the
   // target via reply_to_id and shows a quoted preview above composer.
   const [replyToMsg, setReplyToMsg] = useState(null);
+  // Which pinned message the banner currently shows (multiple pins
+  // are allowed; tap banner cycles forward).
+  const [pinnedIdx, setPinnedIdx] = useState(0);
   const textareaRef = useRef(null);
 
   // Auto-grow the textarea as the user types — height follows content
@@ -2574,14 +2637,13 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   // ── Message actions (pin / unpin / delete) ──
   const pinMessage = async (msg) => {
     if (!supabase || !msg) return;
-    // Optimistic: mark this pinned, clear the rest in the thread
-    setMessages(prev => prev.map(x => Object.assign({}, x, { pinned: x.id === msg.id })));
-    try {
-      let unpinQ = supabase.from('doc_comments').update({ pinned: false }).eq('client_id', clientId).eq('pinned', true).neq('id', msg.id);
-      if (resolvedDocId) unpinQ = unpinQ.eq('doc_id', resolvedDocId);
-      await unpinQ;
-      await supabase.from('doc_comments').update({ pinned: true }).eq('id', msg.id);
-    } catch (e) { console.error('pin:', e); }
+    // Multiple pins allowed — just mark this one pinned, leave others alone.
+    setMessages(prev => prev.map(x => x.id === msg.id ? Object.assign({}, x, { pinned: true }) : x));
+    // The pinned banner shows newest-first; reset cycle to 0 so the
+    // freshly-pinned message is the one that appears right away.
+    setPinnedIdx(0);
+    try { await supabase.from('doc_comments').update({ pinned: true }).eq('id', msg.id); }
+    catch (e) { console.error('pin:', e); }
   };
   const unpinMessage = async (msg) => {
     if (!supabase || !msg) return;
@@ -2712,24 +2774,28 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </>}
     </div>
 
-    {/* Pinned message banner — tap to scroll to the original */}
+    {/* Pinned message banner — supports multiple pins. Newest shown
+        first (reversed from chronological order); tap cycles to the
+        next older one and scrolls to it; × unpins just the current. */}
     {(() => {
-      const pinned = messages.find(m => m.pinned);
-      if (!pinned) return null;
-      const preview = pinned.text
-        ? pinned.text
-        : (Array.isArray(pinned.attachments) && pinned.attachments[0]?.type === 'audio'
-            ? '🎙 Голосовое сообщение'
-            : (Array.isArray(pinned.attachments) && pinned.attachments[0]?.type === 'image'
-                ? '🖼 Фото'
-                : '📎 Вложение'));
-      return <button type="button" onClick={() => scrollToMessage(pinned.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',background:C.surface,border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',width:'100%',textAlign:'left',fontFamily:'inherit',flexShrink:0}}>
-        <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
+      const pinnedList = messages.filter(m => m.pinned).slice().reverse();
+      if (pinnedList.length === 0) return null;
+      const idx = pinnedIdx % pinnedList.length;
+      const current = pinnedList[idx];
+      const preview = (current.text || '').trim()
+        || (Array.isArray(current.attachments) && current.attachments.length > 0 ? 'Вложение' : '');
+      return <button type="button" onClick={() => { scrollToMessage(current.id); if (pinnedList.length > 1) setPinnedIdx((idx + 1) % pinnedList.length); }} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',background:C.surface,border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',width:'100%',textAlign:'left',fontFamily:'inherit',flexShrink:0}}>
+        {pinnedList.length > 1
+          ? <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
+              {pinnedList.map((_, i) => <div key={i} style={{width:3,height:14,borderRadius:2,background:i===idx?C.accent:C.tileBorder}}/>)}
+            </div>
+          : <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
+        }
         <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
-          <div style={{fontSize:11,fontWeight:600,color:C.accent,letterSpacing:'.02em'}}>Закреплённое сообщение</div>
+          <div style={{fontSize:11,fontWeight:600,color:C.accent,letterSpacing:'.02em'}}>{pinnedList.length > 1 ? `Закреплено · ${idx + 1}/${pinnedList.length}` : 'Закреплённое сообщение'}</div>
           <div style={{fontSize:13,color:C.text,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{preview}</div>
         </div>
-        <button type="button" onClick={(e) => { e.stopPropagation(); unpinMessage(pinned); }} aria-label="Открепить" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+        <button type="button" onClick={(e) => { e.stopPropagation(); unpinMessage(current); }} aria-label="Открепить" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </button>;
@@ -6080,7 +6146,7 @@ export default function App(){
     {/* Floating "back to chat" button shown after navigating from a tag */}
     {returnToChat && !chatModal && <button
       onClick={()=>{setChatModal(returnToChat);setReturnToChat(null);}}
-      style={{position:'fixed',right:16,bottom:'calc(76px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
+      style={{position:'fixed',right:16,bottom:'calc(160px + env(safe-area-inset-bottom))',zIndex:9998,background:C.accent,color:'#fff',border:'none',borderRadius:100,padding:'12px 18px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 20px rgba(45,95,63,.35)',display:'flex',alignItems:'center',gap:8,animation:'enter .25s'}}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 14l-4-4 4-4M5 10h11a4 4 0 014 4v0a4 4 0 01-4 4H9"/></svg>
       Вернуться в чат
     </button>}
