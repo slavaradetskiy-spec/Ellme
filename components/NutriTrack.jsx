@@ -3132,7 +3132,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         const imgBox = cachedSrc
           ? `<img src="${cachedSrc}" style="display:block;width:180px;height:180px;border-radius:8px"/>`
           : `<div style="display:block;width:180px;height:180px;background:#E5E7EB;border-radius:8px"></div>`;
-        const descShort = ((m.description || '').replace(/</g,'&lt;')).slice(0, 90);
+        const descFull = (m.description || '').replace(/</g,'&lt;');
         const metaParts = [];
         if (m.hunger) metaParts.push('Голод: ' + m.hunger);
         if (m.feeling) metaParts.push('После: ' + m.feeling);
@@ -3142,7 +3142,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
             ${imgBox}
             <div style="width:100%;margin-top:6px">
               <div style="font-size:10px;color:#2D5F3F;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mealLabels[m.meal_type] || m.meal_type}${m.time ? ' · ' + m.time.slice(0,5) : ''}</div>
-              ${descShort ? `<div style="font-size:11px;color:#1a1a1a;margin-top:2px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis">${descShort}</div>` : ''}
+              ${descFull ? `<div style="font-size:11px;color:#1a1a1a;margin-top:2px;line-height:1.3;word-wrap:break-word;overflow-wrap:break-word">${descFull}</div>` : ''}
               ${metaLine}
             </div>
           </div>`;
