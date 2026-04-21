@@ -721,13 +721,19 @@ function ScaleHelpButton(){
 
 function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
   const d=data||{},upd=(k,v)=>setData({...d,[k]:v});
-  // Water log: source of truth is d.water_log (Supabase JSONB). localStorage
-  // stays as a same-device optimistic cache that seeds the list before the
-  // Supabase row finishes loading — nothing in the code path depends on it.
+  // Water log: primary source is d.water_log (Supabase JSONB). localStorage
+  // survives as a same-device cache AND a fallback for rows that existed
+  // before migration 008 (water_log default is [] — can't tell from []
+  // whether the server is intentionally empty or just not populated yet,
+  // so when the server log is empty we prefer the local log if present;
+  // the next setData will sync it up to Supabase automatically).
   const lsKey = 'wl_' + (dateKey || '');
-  const waterLog = Array.isArray(d.water_log)
-    ? d.water_log
-    : (() => { try { const s = typeof window !== 'undefined' && localStorage.getItem(lsKey); return s ? JSON.parse(s) : []; } catch(e) { return []; } })();
+  const readLocalLog = () => {
+    try { const s = typeof window !== 'undefined' && localStorage.getItem(lsKey); const p = s ? JSON.parse(s) : []; return Array.isArray(p) ? p : []; }
+    catch(e) { return []; }
+  };
+  const serverLog = Array.isArray(d.water_log) ? d.water_log : null;
+  const waterLog = serverLog && serverLog.length > 0 ? serverLog : readLocalLog();
   const persistLog = (log) => { try { localStorage.setItem(lsKey, JSON.stringify(log)); } catch(e) {} };
   const waterMl = d.water || 0;
   const waterPctRaw=Math.round((waterMl/waterNorm)*100);
