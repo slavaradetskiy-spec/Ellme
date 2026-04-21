@@ -2617,6 +2617,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     if (!supabase || !msg) return;
     // Multiple pins allowed — just mark this one pinned, leave others alone.
     setMessages(prev => prev.map(x => x.id === msg.id ? Object.assign({}, x, { pinned: true }) : x));
+    // The pinned banner shows newest-first; reset cycle to 0 so the
+    // freshly-pinned message is the one that appears right away.
+    setPinnedIdx(0);
     try { await supabase.from('doc_comments').update({ pinned: true }).eq('id', msg.id); }
     catch (e) { console.error('pin:', e); }
   };
@@ -2749,10 +2752,11 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </>}
     </div>
 
-    {/* Pinned message banner — supports multiple pins. Tap cycles to
-        the next one (scrolling to it); × unpins just the current. */}
+    {/* Pinned message banner — supports multiple pins. Newest shown
+        first (reversed from chronological order); tap cycles to the
+        next older one and scrolls to it; × unpins just the current. */}
     {(() => {
-      const pinnedList = messages.filter(m => m.pinned);
+      const pinnedList = messages.filter(m => m.pinned).slice().reverse();
       if (pinnedList.length === 0) return null;
       const idx = pinnedIdx % pinnedList.length;
       const current = pinnedList[idx];
