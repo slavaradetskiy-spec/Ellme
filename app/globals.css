@@ -1,7 +1,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0}
 :root{--fd:'Instrument Serif',Georgia,serif;--fb:'Plus Jakarta Sans',sans-serif}
 html{scrollbar-gutter:stable}
-body{font-family:var(--fb);background:#F4F1EB;color:#1A1A1A;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{font-family:var(--fb);background:#F4F1EB;color:#1A1A1A;-webkit-font-smoothing:antialiased}
 ::selection{background:#E3EFE7;color:#2D5F3F}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#ccc;border-radius:4px}
 input,textarea,select,button{font-family:var(--fb)}
