@@ -1150,19 +1150,18 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
             {(() => {
               const visibleChips = suppHistory.chips.filter(c => !suppHidden.has(c.toLowerCase()));
               if (dis || visibleChips.length === 0) return null;
-              const longPressTimers = { current: null };
               return <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                 {visibleChips.map(chip => {
                   const active = currentLc.has(chip.toLowerCase());
-                  const begin = () => { if (longPressTimers.current) clearTimeout(longPressTimers.current); longPressTimers.current = setTimeout(() => { if (confirm(`Убрать «${chip}» из подсказок?`)) hideSuppChip(chip); longPressTimers.current = null; }, 500); };
-                  const cancel = () => { if (longPressTimers.current) { clearTimeout(longPressTimers.current); longPressTimers.current = null; } };
-                  return <button key={chip} type="button" onClick={() => toggleChip(chip)}
-                    onTouchStart={begin} onTouchEnd={cancel} onTouchMove={cancel} onTouchCancel={cancel}
-                    onContextMenu={(e) => { e.preventDefault(); if (confirm(`Убрать «${chip}» из подсказок?`)) hideSuppChip(chip); }}
-                    style={{padding:'6px 11px',borderRadius:14,border:`1px solid ${active?C.accent:C.tileBorder}`,background:active?C.accentSoft:C.surface,color:active?C.accent:C.soft,fontSize:12,fontWeight:active?600:500,cursor:'pointer',fontFamily:'inherit',transition:'all .15s',display:'inline-flex',alignItems:'center',gap:4}}>
-                    {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                    {chip}
-                  </button>;
+                  return <div key={chip} style={{display:'inline-flex',alignItems:'stretch',borderRadius:14,border:`1px solid ${active?C.accent:C.tileBorder}`,background:active?C.accentSoft:C.surface,overflow:'hidden',transition:'all .15s'}}>
+                    <button type="button" onClick={() => toggleChip(chip)} style={{padding:'6px 4px 6px 11px',background:'none',border:'none',color:active?C.accent:C.soft,fontSize:12,fontWeight:active?600:500,cursor:'pointer',fontFamily:'inherit',display:'inline-flex',alignItems:'center',gap:4}}>
+                      {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                      {chip}
+                    </button>
+                    <button type="button" onClick={() => hideSuppChip(chip)} aria-label={`Убрать «${chip}» из подсказок`} style={{padding:'0 8px 0 4px',background:'none',border:'none',color:active?C.accent:C.muted,cursor:'pointer',fontFamily:'inherit',display:'inline-flex',alignItems:'center',justifyContent:'center',opacity:.55}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>;
                 })}
               </div>;
             })()}
