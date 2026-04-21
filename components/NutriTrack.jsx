@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Chart, registerables } from 'chart.js';
 import { createClient } from '@supabase/supabase-js';
 
@@ -434,14 +434,18 @@ const collapseRepeats = (s) => {
   return out.join(' ');
 };
 
-// Voice message player — compact play/pause + progress bar + time,
-// colours adapt to own vs other party bubble. Used inside chat
-// message bubbles when attachment.type === 'audio'.
-function VoicePlayer({ url, duration, isMine }) {
+// Voice message player — Telegram-inspired in our cream/green style:
+// large circular play button, a 28-bar waveform strip, elapsed time,
+// and a "→T" button that requests server-side transcription. The
+// transcribed text, once received, is persisted on the message
+// attachment so both parties see it without re-requesting.
+function VoicePlayer({ url, duration, transcript, isMine, canTranscribe, onTranscribe }) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(duration || 0);
+  const [loadingTr, setLoadingTr] = useState(false);
+  const [trError, setTrError] = useState('');
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -465,27 +469,65 @@ function VoicePlayer({ url, duration, isMine }) {
   }, []);
   const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) a.play(); else a.pause(); };
   const total = dur || 0;
-  const pct = total > 0 ? Math.min(100, (cur / total) * 100) : 0;
+  const pct = total > 0 ? Math.min(1, cur / total) : 0;
   const fmt = (s) => { const m = Math.floor(s/60), x = Math.floor(s%60); return `${m}:${String(x).padStart(2,'0')}`; };
-  const fgBtn = isMine ? '#fff' : C.accent;
-  const bgBtn = isMine ? 'rgba(255,255,255,.22)' : C.accentSoft;
-  const track = isMine ? 'rgba(255,255,255,.28)' : C.surfaceAlt;
-  const fill = isMine ? '#fff' : C.accent;
-  const subText = isMine ? 'rgba(255,255,255,.75)' : C.muted;
-  return <div style={{display:'flex',alignItems:'center',gap:10,padding:'2px 2px',minWidth:180}}>
-    <audio ref={audioRef} src={url} preload="metadata" style={{display:'none'}}/>
-    <button type="button" onClick={toggle} style={{width:32,height:32,borderRadius:'50%',border:'none',background:bgBtn,color:fgBtn,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-      {playing
-        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-        : <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-      }
-    </button>
-    <div style={{flex:1,display:'flex',flexDirection:'column',gap:4,minWidth:0}}>
-      <div style={{height:3,borderRadius:2,background:track,overflow:'hidden'}}>
-        <div style={{height:'100%',width:pct+'%',background:fill,transition:'width .1s linear'}}/>
+  // Deterministic pseudo-waveform from the URL so each voice message
+  // has a consistent visual identity across renders and devices.
+  const bars = useMemo(() => {
+    let h = 0; const s = String(url || '');
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    const N = 28;
+    const out = [];
+    for (let i = 0; i < N; i++) {
+      h = (h * 1103515245 + 12345) | 0;
+      const v = 0.25 + (Math.abs(h % 100) / 100) * 0.75; // 0.25..1
+      out.push(v);
+    }
+    return out;
+  }, [url]);
+  const handleTranscribe = async () => {
+    if (loadingTr || !onTranscribe) return;
+    setLoadingTr(true); setTrError('');
+    try { await onTranscribe(url); }
+    catch (e) { setTrError(e?.message || 'Не удалось расшифровать'); }
+    setLoadingTr(false);
+  };
+  const playBg = isMine ? 'rgba(255,255,255,.95)' : C.accent;
+  const playFg = isMine ? C.accent : '#fff';
+  const barOn = isMine ? '#ffffff' : C.accent;
+  const barOff = isMine ? 'rgba(255,255,255,.40)' : 'rgba(45,95,63,.28)';
+  const subText = isMine ? 'rgba(255,255,255,.78)' : C.muted;
+  const trBtnBorder = isMine ? 'rgba(255,255,255,.55)' : C.tileBorder;
+  const trBtnColor = isMine ? '#fff' : C.accent;
+  const trBtnBg = isMine ? 'rgba(255,255,255,.14)' : C.surface;
+  return <div style={{display:'flex',flexDirection:'column',gap:8,minWidth:220}}>
+    <div style={{display:'flex',alignItems:'center',gap:12}}>
+      <audio ref={audioRef} src={url} preload="metadata" style={{display:'none'}}/>
+      <button type="button" onClick={toggle} aria-label={playing?'Пауза':'Воспроизвести'} style={{width:44,height:44,borderRadius:'50%',border:'none',background:playBg,color:playFg,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,boxShadow:isMine?'none':'0 2px 8px rgba(45,95,63,.18)'}}>
+        {playing
+          ? <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+          : <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={{marginLeft:2}}><path d="M8 5v14l11-7z"/></svg>
+        }
+      </button>
+      <div style={{flex:1,display:'flex',flexDirection:'column',gap:5,minWidth:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:2,height:22}}>
+          {bars.map((h, i) => {
+            const thresholdIdx = Math.floor(pct * bars.length);
+            const active = i < thresholdIdx;
+            return <div key={i} style={{width:3,height:Math.max(4, Math.round(h*22))+'px',borderRadius:2,background:active?barOn:barOff,transition:'background .15s'}}/>;
+          })}
+        </div>
+        <div style={{fontSize:11,color:subText,fontVariantNumeric:'tabular-nums'}}>{playing || cur > 0 ? fmt(cur) : (total > 0 ? fmt(total) : '—')}</div>
       </div>
-      <div style={{fontSize:10,color:subText,fontVariantNumeric:'tabular-nums'}}>{playing || cur > 0 ? fmt(cur) : (total > 0 ? fmt(total) : '—')}</div>
+      {canTranscribe && !transcript && <button type="button" onClick={handleTranscribe} disabled={loadingTr} aria-label="Расшифровать в текст" style={{width:34,height:34,borderRadius:10,border:`1px solid ${trBtnBorder}`,background:trBtnBg,color:trBtnColor,cursor:loadingTr?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontFamily:'inherit',opacity:loadingTr?.6:1}}>
+        {loadingTr
+          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{animation:'spin 1s linear infinite'}}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          : <span style={{fontSize:12,fontWeight:700,letterSpacing:'.02em',lineHeight:1}}>→T</span>
+        }
+      </button>}
     </div>
+    {transcript && <div style={{fontSize:13,lineHeight:1.45,padding:'8px 10px',borderRadius:10,background:isMine?'rgba(255,255,255,.14)':C.surfaceAlt,color:isMine?'#fff':C.text,whiteSpace:'pre-wrap'}}>{transcript}</div>}
+    {trError && <div style={{fontSize:11,color:isMine?'#ffd8d8':C.danger}}>{trError}</div>}
   </div>;
 }
 
@@ -2452,6 +2494,30 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   };
   const stopAndSend = () => finishRecording(false);
   const cancelRecording = () => finishRecording(true);
+
+  // Transcribe a voice attachment on-demand and persist the text back
+  // onto the message row so both parties see it once.
+  const transcribeAudio = async (msg, attIdx, url) => {
+    if (!msg || !url) return;
+    const res = await fetch('/api/transcribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      let msgText = 'Не удалось расшифровать';
+      try { const j = await res.json(); if (j?.error) msgText = j.error; } catch(e) {}
+      throw new Error(msgText);
+    }
+    const { text } = await res.json();
+    const newAtts = Array.isArray(msg.attachments) ? msg.attachments.slice() : [];
+    if (newAtts[attIdx]) newAtts[attIdx] = Object.assign({}, newAtts[attIdx], { transcript: text || '' });
+    // Optimistic local update
+    setMessages(prev => prev.map(x => x.id === msg.id ? Object.assign({}, x, { attachments: newAtts }) : x));
+    if (supabase) {
+      try { await supabase.from('doc_comments').update({ attachments: newAtts }).eq('id', msg.id); }
+      catch (e) { console.error('transcript save:', e); }
+    }
+  };
   // Cleanup on unmount — don't leave the mic stream live if the chat closes mid-record
   useEffect(() => () => {
     if (recTimerRef.current) clearInterval(recTimerRef.current);
@@ -2544,7 +2610,7 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
           <div style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere'}}>
             {atts.map((a, i) => {
               if (a.type === 'image') return <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>;
-              if (a.type === 'audio') return <VoicePlayer key={i} url={a.url} duration={a.duration} isMine={isMine}/>;
+              if (a.type === 'audio') return <VoicePlayer key={i} url={a.url} duration={a.duration} transcript={a.transcript} isMine={isMine} canTranscribe onTranscribe={(url) => transcribeAudio(m, i, url)}/>;
               return <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                 <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
@@ -2595,16 +2661,16 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
         <input ref={fileInputRef} type="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style={{display:'none'}} onChange={onPickFile}/>
         {recording ? <>
-          <button onClick={cancelRecording} aria-label="Отменить запись" style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <button onClick={cancelRecording} aria-label="Отменить запись" style={{width:44,height:44,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:'#E74C3C',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
           </button>
-          <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,background:C.bg,height:40}}>
-            <div style={{width:10,height:10,borderRadius:'50%',background:'#E74C3C',animation:'pulse 1.2s infinite',flexShrink:0}}/>
-            <span style={{fontSize:14,color:C.text,fontVariantNumeric:'tabular-nums',fontWeight:600}}>{String(Math.floor(recSecs/60))}:{String(recSecs%60).padStart(2,'0')}</span>
-            <span style={{fontSize:12,color:C.muted}}>Запись…</span>
+          <div style={{flex:1,minWidth:0,display:'flex',alignItems:'center',gap:10,padding:'0 16px',borderRadius:22,background:C.accentSoft,height:44}}>
+            <div style={{width:10,height:10,borderRadius:'50%',background:'#E74C3C',animation:'pulse 1.2s infinite',flexShrink:0,boxShadow:'0 0 0 0 rgba(231,76,60,.45)'}}/>
+            <span style={{fontSize:15,color:C.accent,fontVariantNumeric:'tabular-nums',fontWeight:700,letterSpacing:'.02em'}}>{String(Math.floor(recSecs/60))}:{String(recSecs%60).padStart(2,'0')}</span>
+            <span style={{fontSize:12,color:C.muted,marginLeft:'auto'}}>Запись…</span>
           </div>
-          <button onClick={stopAndSend} aria-label="Отправить запись" style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <button onClick={stopAndSend} aria-label="Отправить запись" style={{width:44,height:44,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 14px rgba(45,95,63,.32)',animation:'pulse 1.5s infinite'}}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
           </button>
         </> : <>
           <button onClick={() => fileInputRef.current && fileInputRef.current.click()} disabled={recUploading} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:recUploading?.5:1}}>
