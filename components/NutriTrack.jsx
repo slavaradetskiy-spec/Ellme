@@ -349,8 +349,7 @@ function ProgressBar({duration=3,label="Загрузка...",onDone}){
     return()=>{if(raf)cancelAnimationFrame(raf)};
   },[]);
   return <div style={{width:'min(280px,80vw)',textAlign:'center'}}>
-    <div style={{fontSize:32,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'.06em',color:C.text,marginBottom:4}}>ELLME</div>
-    <div style={{fontSize:10,color:C.muted,letterSpacing:'.15em',textTransform:'uppercase',marginBottom:32}}>Eat Live Love ME</div>
+    <img src="/logo-source.png" alt="ELLME" width={72} height={72} style={{display:'inline-block',borderRadius:'50%',marginBottom:28,boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
     <div style={{height:4,borderRadius:2,background:C.surfaceAlt,overflow:'hidden',marginBottom:8,position:'relative'}}>
       <div style={{height:'100%',borderRadius:2,background:C.accent,width:pct+'%',transition:'width .3s ease'}}/>
     </div>
@@ -5094,7 +5093,18 @@ export default function App(){
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [user?.id, date, diaries, screen, selClient?.id]);
 
-  const login = (r,n,c) => { setUser({role:r,name:n,cid:c}); setScreen('home'); };
+  const login = (r,n,c) => { setUser({role:r,name:n,cid:c}); setScreen(r==='doc'?'myDiary':'home'); };
+
+  // On first load after auth restore, send nutritionists straight to their
+  // own diary instead of the client list — that's the screen they use
+  // most, and it matches the client landing (their own diary too).
+  const initialNavRef = useRef(false);
+  useEffect(() => {
+    if (!user) { initialNavRef.current = false; return; }
+    if (initialNavRef.current) return;
+    initialNavRef.current = true;
+    if (user.role === 'doc') setScreen('myDiary');
+  }, [user?.id]);
   const logout = async () => {
     try { if (supabase) await supabase.auth.signOut(); } catch(e) {}
     try { localStorage.removeItem('ellme_photo'); } catch(e) {}
