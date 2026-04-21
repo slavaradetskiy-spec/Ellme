@@ -841,6 +841,8 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
     setSuppHidden(next);
     try { localStorage.setItem(suppHideKey, JSON.stringify(Array.from(next))); } catch(e) {}
   };
+  // Chip the user is about to hide — opens a styled confirmation.
+  const [chipToHide, setChipToHide] = useState(null);
   useEffect(() => {
     if (!supabase || !pid || !dateKey) return;
     let mounted = true;
@@ -1158,13 +1160,23 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
                       {active && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
                       {chip}
                     </button>
-                    <button type="button" onClick={() => hideSuppChip(chip)} aria-label={`Убрать «${chip}» из подсказок`} style={{padding:'0 8px 0 4px',background:'none',border:'none',color:active?C.accent:C.muted,cursor:'pointer',fontFamily:'inherit',display:'inline-flex',alignItems:'center',justifyContent:'center',opacity:.55}}>
+                    <button type="button" onClick={() => setChipToHide(chip)} aria-label={`Убрать «${chip}» из подсказок`} style={{padding:'0 8px 0 4px',background:'none',border:'none',color:active?C.accent:C.muted,cursor:'pointer',fontFamily:'inherit',display:'inline-flex',alignItems:'center',justifyContent:'center',opacity:.55}}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                   </div>;
                 })}
               </div>;
             })()}
+            {chipToHide && <div onClick={() => setChipToHide(null)} style={{position:'fixed',inset:0,zIndex:10003,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px',animation:'fadeIn .15s'}}>
+              <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:300,background:C.surface,borderRadius:18,padding:'22px 20px 16px',boxShadow:'0 12px 40px rgba(0,0,0,.25)',animation:'slideUp .18s ease'}}>
+                <div style={{fontSize:15,fontWeight:600,color:C.text,textAlign:'center',lineHeight:1.45,marginBottom:6}}>Убрать из подсказок?</div>
+                <div style={{fontSize:13,color:C.muted,textAlign:'center',marginBottom:18}}>«{chipToHide}» больше не будет появляться в списке</div>
+                <div style={{display:'flex',gap:8}}>
+                  <button type="button" onClick={() => setChipToHide(null)} style={{flex:1,padding:'12px',borderRadius:12,border:`1.5px solid ${C.tileBorder}`,background:'transparent',color:C.soft,fontSize:14,fontWeight:500,cursor:'pointer',fontFamily:'inherit'}}>Отмена</button>
+                  <button type="button" onClick={() => { hideSuppChip(chipToHide); setChipToHide(null); }} style={{flex:1,padding:'12px',borderRadius:12,border:'none',background:C.accent,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 2px 8px rgba(45,95,63,.2)'}}>Убрать</button>
+                </div>
+              </div>
+            </div>}
           </>;
         })()}
       </div>
