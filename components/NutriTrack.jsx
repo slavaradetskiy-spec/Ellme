@@ -5517,7 +5517,7 @@ export default function App(){
 
   // ═══ CLIENT — HOME ═══
   if(!isDoc&&!selMeal)return shell(<>
-    <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/>}/>
+    <TopBar left={null} title="Мой дневник" onHome={goHome} right={<IcoBtn icon={I.bell} badge={unread} onClick={()=>setShowNotif(true)}/>}/>
     <Cal sel={date} onSelect={setDate}/>
 
     <WeeklyGoalWidget goal={user.weeklyGoal} goalDays={user.weeklyGoalDays} goalStarted={user.weeklyGoalStarted} goalSetBy={user.weeklyGoalSetBy} daysDone={goalDays} onToggleDay={toggleGoalDay}/>
@@ -5656,7 +5656,7 @@ export default function App(){
     const invLink=invCode?((typeof window!=='undefined'?window.location.origin:'https://ellme.ru')+'/?invite='+invCode):'';
 
     return shell(<>
-      <TopBar left={null} title="ELLME" subtitle="Eat Live Love ME" onHome={goHome} right={<IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/>}/>
+      <TopBar left={null} title="Мои клиенты" onHome={goHome} right={<IcoBtn icon={I.bell} badge={docUnread} onClick={()=>setShowNotif(true)}/>}/>
 
       {/* Nutritionist dashboard banner — opens aggregated analytics */}
       <button onClick={()=>setScreen('docDashboard')} style={{width:'100%',padding:'20px 22px',borderRadius:20,border:'none',background:C.accent,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:16,marginBottom:14,boxShadow:'0 6px 20px rgba(45,95,63,.22)',transition:'all .25s',transform:'perspective(400px) rotateX(0)',textAlign:'left'}}
