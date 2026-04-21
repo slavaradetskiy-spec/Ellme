@@ -1983,8 +1983,14 @@ function ChatListModal({ docId, clients, unreadByClient, onOpenChat, onClose }) 
     if (!m) return '';
     if (m.text) return m.text;
     const atts = Array.isArray(m.attachments) ? m.attachments : [];
-    if (atts.length > 0) return atts[0].type === 'image' ? '📷 Фото' : '📎 Файл';
-    return '';
+    if (atts.length === 0) return '';
+    const a = atts[0];
+    const isAudio = a.type === 'audio'
+      || (typeof a.mime === 'string' && a.mime.toLowerCase().startsWith('audio/'))
+      || (typeof a.url === 'string' && /\.(webm|ogg|mp3|m4a|mp4|wav|oga)(?:\?|$)/i.test(a.url));
+    if (isAudio) return '🎙 Голосовое сообщение';
+    if (a.type === 'image') return '📷 Фото';
+    return '📎 Файл';
   };
 
   return <div style={{position:'fixed',inset:0,zIndex:10000,background:C.bg,display:'flex',flexDirection:'column',animation:'fadeIn .2s',paddingTop:'env(safe-area-inset-top)',paddingBottom:76,overflow:'hidden',overscrollBehavior:'none'}}>
@@ -2249,11 +2255,20 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     };
   }, [clientId, resolvedDocId]); // eslint-disable-line
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages. Media (voice players,
+  // images) finish sizing after the first render — re-anchor on a few
+  // short delays so the last message is always flush with the input
+  // toolbar when the chat opens.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    if (!el) return;
+    const snap = () => { el.scrollTop = el.scrollHeight; };
+    snap();
+    const t1 = setTimeout(snap, 60);
+    const t2 = setTimeout(snap, 220);
+    const t3 = setTimeout(snap, 500);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [messages.length, messagesLoading]);
 
   // Typing indicator: join a broadcast channel keyed by the pair so
   // both sides hear each other's "I'm typing" events. The other party
