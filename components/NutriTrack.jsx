@@ -4390,12 +4390,25 @@ function Login({onLogin}){
 // ═══ INTRO SPLASH ═══
 function IntroSplash(){
   // Single page: logo + English caption next to it — both visible instantly.
-  // Russian caption below fades in smoothly after a short delay.
-  const LINES=['Eat healthier','Listen to your body','Live longer'];
-  const [showRu,setShowRu]=useState(false);
+  // Russian lines below type out character-by-character (like the old intro animation).
+  const EN_LINES=['Eat healthier','Listen to your body','Live longer'];
+  const RU_LINES=['Больше, чем дневник питания','Пространство заботы о себе'];
+  const [ruText,setRuText]=useState(['','']);
+  const [activeRu,setActiveRu]=useState(-1);
   useEffect(()=>{
-    const t=setTimeout(()=>setShowRu(true),500);
-    return()=>clearTimeout(t);
+    const timers=[];
+    const CHAR_MS=70, GAP_MS=280, START_MS=600;
+    let t=START_MS;
+    RU_LINES.forEach((line,li)=>{
+      timers.push(setTimeout(()=>setActiveRu(li),t));
+      for(let i=1;i<=line.length;i++){
+        timers.push(setTimeout(()=>{
+          setRuText(prev=>{const next=[...prev];next[li]=line.slice(0,i);return next});
+        },t+i*CHAR_MS));
+      }
+      t+=line.length*CHAR_MS+GAP_MS;
+    });
+    return()=>timers.forEach(clearTimeout);
   },[]);
 
   // Logo: solid green circle with "ELL🌿ME" (white text + leaf between L and M)
@@ -4403,7 +4416,7 @@ function IntroSplash(){
     <path d="M20 3c-8 0-14 4-14 11 0 2.5 1 5 3 6.5C10 16 14 12 19 10c-4 3-7 6-9 12 5 0 12-3 12-11 0-3-1-5-2-8Z" fill="#fff"/>
   </svg>;
 
-  return <div style={{position:'fixed',inset:0,background:'#FFFFFF',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:36,zIndex:100000,padding:'0 24px'}}>
+  return <div style={{position:'fixed',inset:0,background:'#FFFFFF',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:40,zIndex:100000,padding:'0 24px'}}>
     {/* Logo + English caption next to it — both instant */}
     <div style={{display:'flex',alignItems:'center',gap:18,flexWrap:'nowrap'}}>
       <div style={{width:128,height:128,borderRadius:'50%',background:'#3DA155',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 10px 30px rgba(61,161,85,.28)',flexShrink:0}}>
@@ -4414,15 +4427,22 @@ function IntroSplash(){
         </div>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start'}}>
-        {LINES.map((line,i)=><div key={i} style={{fontSize:18,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.3}}>
+        {EN_LINES.map((line,i)=><div key={i} style={{fontSize:18,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.3}}>
           <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
         </div>)}
       </div>
     </div>
-    {/* Russian caption — smooth fade-in */}
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,opacity:showRu?1:0,transform:showRu?'translateY(0)':'translateY(10px)',transition:'opacity .9s ease, transform .9s cubic-bezier(.16,1,.3,1)'}}>
-      <div style={{fontSize:20,fontWeight:500,fontFamily:'var(--fd)',color:'#2D5F3F',textAlign:'center',letterSpacing:'.3px'}}>Больше, чем дневник питания</div>
-      <div style={{fontSize:15,color:'#5B6B60',textAlign:'center',letterSpacing:'.2px'}}>Пространство заботы о себе</div>
+    {/* Russian caption — types character by character */}
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:10,minHeight:72}}>
+      {RU_LINES.map((line,i)=>{
+        const done=ruText[i].length>=line.length;
+        const typing=i===activeRu&&!done;
+        const isFirst=i===0;
+        return <div key={i} style={{fontSize:isFirst?20:15,fontWeight:isFirst?500:400,fontFamily:isFirst?'var(--fd)':'var(--fb)',color:isFirst?'#2D5F3F':'#5B6B60',textAlign:'center',letterSpacing:'.2px',minHeight:isFirst?26:20,opacity:i<=activeRu?1:0,transition:'opacity .25s'}}>
+          {ruText[i]}
+          {typing&&<span style={{marginLeft:1,opacity:.7,animation:'blink .9s steps(1) infinite'}}>|</span>}
+        </div>;
+      })}
     </div>
   </div>;
 }
@@ -4443,7 +4463,7 @@ export default function App(){
     const t=setTimeout(()=>{
       try{sessionStorage.setItem('ellme_intro_seen','1')}catch(e){}
       setShowIntro(false);
-    },2800);
+    },5600);
     return()=>clearTimeout(t);
   },[showIntro]);
   const[isOffline,setIsOffline]=useState(typeof navigator!=='undefined'&&!navigator.onLine);
