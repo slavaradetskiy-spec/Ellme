@@ -5436,7 +5436,7 @@ export default function App(){
       </footer>}
     </div>
     {/* Bottom tab bar */}
-    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'max(2px, calc(env(safe-area-inset-bottom) - 18px))'}}>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:10001,background:'#FFFFFF',borderTop:'0.5px solid #E8E8E8',paddingBottom:'max(2px, calc(env(safe-area-inset-bottom) - 18px))',transform:'translateZ(0)',willChange:'transform',WebkitTransform:'translateZ(0)'}}>
       <div style={{maxWidth:520,margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-around',height:50,padding:'0 8px'}}>
         {(isDoc
           ? [
@@ -5638,7 +5638,7 @@ export default function App(){
   if(isDoc&&screen==='myDiary'){
     const md=getDay(user.id),mm=md.meals||{};
     return shell(<>
-      <TopBar left={<BackBtn onClick={()=>setScreen('home')}/>} title="Мой дневник" right={<IcoBtn icon={I.chart} onClick={()=>{setAnalytics(null);setAnalyticsRange('7d');setScreen('analytics')}} style={{color:C.accent}}/>}/>
+      <TopBar left={null} title="Мой дневник" right={<IcoBtn icon={I.chart} onClick={()=>{setAnalytics(null);setAnalyticsRange('7d');setScreen('analytics')}} style={{color:C.accent}}/>}/>
       <Cal sel={date} onSelect={setDate}/>
       <SecCard icon={I.fork} title="Приёмы пищи">
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingTop:12}}>
