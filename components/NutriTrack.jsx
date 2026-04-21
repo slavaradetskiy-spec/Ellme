@@ -4178,6 +4178,18 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
   </div>;
 }
 
+// Login brand mark — hoisted out of Login so it doesn't remount (and
+// refetch the img, causing a flicker) on every keystroke in the inputs.
+const LOGIN_LOGO_LINES = ['Eat healthier', 'Listen to your body', 'Live longer'];
+const LoginLogo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:18,marginBottom:48}}>
+  <img src="/logo-source.png" alt="ELLME" width={80} height={80} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
+  <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
+    {LOGIN_LOGO_LINES.map((line,i)=><div key={i} style={{fontSize:14,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.35}}>
+      <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
+    </div>)}
+  </div>
+</div>;
+
 function Login({onLogin}){
   const[mode,setMode]=useState('auth'); // auth | register | doc | reset | docReg
   const[email,setEmail]=useState('');
@@ -4353,16 +4365,7 @@ function Login({onLogin}){
     <span style={{position:'relative',background:C.bg,padding:'0 16px',fontSize:12,color:C.muted,letterSpacing:'.02em'}}>{text}</span>
   </div>;
 
-  // ── Logo ──
-  const LOGO_LINES = ['Eat healthier', 'Listen to your body', 'Live longer'];
-  const Logo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:18,marginBottom:48}}>
-    <img src="/logo-source.png" alt="ELLME" width={80} height={80} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
-    <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
-      {LOGO_LINES.map((line,i)=><div key={i} style={{fontSize:14,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.35}}>
-        <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
-      </div>)}
-    </div>
-  </div>;
+  // Logo lives at module scope (LoginLogo) — see comment there.
 
   return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',background:C.bg,padding:'10vh 24px 40px'}}>
     {/* OAuth loading overlay */}
@@ -4372,7 +4375,7 @@ function Login({onLogin}){
     <div style={{width:'100%',maxWidth:400,margin:'0 auto',opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all .7s cubic-bezier(.16,1,.3,1)'}}>
 
       {mode==='auth'&&<>
-        <Logo/>
+        <LoginLogo/>
         {errBox}{sucBox}
 
         <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
@@ -4400,7 +4403,7 @@ function Login({onLogin}){
       </>}
 
       {mode==='register'&&<div style={{animation:'enter .3s'}}>
-        <Logo/>
+        <LoginLogo/>
         <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:8}}>Создайте аккаунт</h2>
         <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Введите данные для регистрации</p>
         {errBox}{sucBox}
@@ -4440,7 +4443,7 @@ function Login({onLogin}){
       </div>}
 
       {mode==='doc'&&<div style={{animation:'enter .3s'}}>
-        <Logo/>
+        <LoginLogo/>
         <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:6}}>Кабинет специалиста</h2>
         <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Вход для нутрициолога</p>
         {errBox}{sucBox}
