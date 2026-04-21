@@ -2756,18 +2756,18 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
         const reactionEntries = Object.entries(reactions).filter(([,users]) => Array.isArray(users) && users.length > 0);
         const atts = Array.isArray(m.attachments) ? m.attachments : [];
         const checked = selectedIds.has(m.id);
-        return <div key={g.key} id={'chat-msg-' + m.id} onClick={selectionMode ? () => toggleSelected(m.id) : undefined} style={{display:'flex',flexDirection:'row',alignItems:'center',gap:8,justifyContent:isMine?'flex-end':'flex-start',marginBottom:8,scrollMarginTop:80,cursor:selectionMode?'pointer':'default',background:checked?'rgba(61,161,85,.08)':'transparent',borderRadius:12,padding:selectionMode?'2px 6px':0,transition:'background .15s'}}>
-          {selectionMode && !isMine && <div style={{width:22,height:22,borderRadius:'50%',border:`2px solid ${checked?C.accent:C.tileBorder}`,background:checked?C.accent:'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexShrink:0}}>
-            {checked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+        return <div key={g.key} id={'chat-msg-' + m.id} onClick={selectionMode ? () => toggleSelected(m.id) : undefined} style={{display:'flex',flexDirection:'row',alignItems:'center',gap:selectionMode?10:0,marginBottom:8,scrollMarginTop:80,cursor:selectionMode?'pointer':'default',transition:'gap .15s'}}>
+          {selectionMode && <div style={{width:24,height:24,borderRadius:'50%',border:`2px solid ${checked?C.accent:C.tileBorder}`,background:checked?C.accent:'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexShrink:0}}>
+            {checked && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
           </div>}
-          <div style={{display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',flex:selectionMode?1:'initial',maxWidth:selectionMode?'calc(100% - 32px)':'100%'}}>
+          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',minWidth:0}}>
           <div
             onTouchStart={selectionMode ? undefined : () => beginLongPress(m, isMine)}
             onTouchEnd={selectionMode ? undefined : cancelLongPress}
             onTouchMove={selectionMode ? undefined : cancelLongPress}
             onTouchCancel={selectionMode ? undefined : cancelLongPress}
             onContextMenu={selectionMode ? undefined : (e) => { e.preventDefault(); setMsgMenu({ msg: m, isMine }); }}
-            style={{maxWidth:'100%',padding:m.text||m.reply_to_id?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none',outline:checked?`2px solid ${C.accent}`:'none'}}>
+            style={{maxWidth:'82%',padding:m.text||m.reply_to_id?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none'}}>
             {m.forwarded_from_name && <div style={{fontSize:11,fontWeight:700,color:isMine?'rgba(255,255,255,.85)':C.accent,marginBottom:4,display:'flex',alignItems:'center',gap:4}}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 014-4h12"/></svg>
               Переслано от {m.forwarded_from_name}
@@ -2815,9 +2815,6 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
             {!isMine && <ReactionPicker onPick={(e) => toggleReaction(m, e)} active={reactionEntries.map(([e])=>e)}/>}
           </div>}
           </div>
-          {selectionMode && isMine && <div style={{width:22,height:22,borderRadius:'50%',border:`2px solid ${checked?C.accent:C.tileBorder}`,background:checked?C.accent:'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',flexShrink:0}}>
-            {checked && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-          </div>}
         </div>;
       })}
     </div>
