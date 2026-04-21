@@ -409,19 +409,40 @@ function Mood({value:v,onChange,dis}){
 }
 
 // Microphone button — speech-to-text via Web Speech API
+// Collapse immediately-repeated 1–3-gram sequences. Android Chrome's
+// SpeechRecognition sometimes re-emits the same finalized phrase twice
+// or three times in a row ("привет привет привет всем всем всем"); we
+// strip consecutive duplicate words, pairs, and triples to restore the
+// user's intent. Punctuation/case are ignored for the comparison.
+const collapseRepeats = (s) => {
+  if (!s) return s;
+  const norm = (w) => w.toLowerCase().replace(/[.,!?;:—–…]/g, '');
+  const words = String(s).split(/\s+/).filter(Boolean);
+  const out = [];
+  let i = 0;
+  while (i < words.length) {
+    let dropped = false;
+    for (const n of [3, 2, 1]) {
+      if (out.length >= n && i + n <= words.length) {
+        const tail = out.slice(-n).map(norm);
+        const next = words.slice(i, i + n).map(norm);
+        if (tail.every((t, j) => t && t === next[j])) { i += n; dropped = true; break; }
+      }
+    }
+    if (!dropped) { out.push(words[i]); i++; }
+  }
+  return out.join(' ');
+};
+
 function MicButton({onResult,onStart,style:st}){
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
-  const finalBufferRef=useRef('');
-  const seenFinalsRef=useRef(null);
   const stopRec=()=>{
     const r=recRef.current;
     if(!r)return;
     recRef.current=null;
     try{r.onresult=null;r.onend=null;r.onerror=null}catch(e){}
     try{r.stop()}catch(e){try{r.abort()}catch(e2){}}
-    finalBufferRef.current='';
-    seenFinalsRef.current=null;
     setListening(false);
   };
   useEffect(()=>()=>{stopRec()},[]);
@@ -433,29 +454,26 @@ function MicButton({onResult,onStart,style:st}){
     rec.lang='ru-RU';
     rec.continuous=true;
     rec.interimResults=true;
-    finalBufferRef.current='';
-    seenFinalsRef.current=new Set();
     onStart&&onStart();
     rec.onresult=(e)=>{
       if(recRef.current!==rec)return;
+      // Rebuild final + interim from scratch on every event — e.results
+      // is the engine's authoritative snapshot, so appending (the old
+      // approach) could double-count when Android re-emits a segment.
+      let final='';
       let interim='';
       for(let i=0;i<e.results.length;i++){
         const result=e.results[i];
         const transcript=result[0].transcript;
-        if(result.isFinal){
-          const key=i+'::'+transcript.trim();
-          if(!seenFinalsRef.current?.has(key)){
-            finalBufferRef.current+=transcript+' ';
-            seenFinalsRef.current?.add(key);
-          }
-        }else{
-          interim+=transcript+' ';
-        }
+        if(result.isFinal) final+=transcript+' ';
+        else interim+=transcript+' ';
       }
-      onResult&&onResult((finalBufferRef.current+interim).trim());
+      const cleanedFinal=collapseRepeats(final);
+      const combined=(cleanedFinal+(interim?' '+interim.trim():'')).trim();
+      onResult&&onResult(combined);
     };
-    rec.onend=()=>{if(recRef.current===rec){recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;setListening(false);}};
-    rec.onerror=()=>{if(recRef.current===rec){recRef.current=null;finalBufferRef.current='';seenFinalsRef.current=null;setListening(false);}};
+    rec.onend=()=>{if(recRef.current===rec){recRef.current=null;setListening(false);}};
+    rec.onerror=()=>{if(recRef.current===rec){recRef.current=null;setListening(false);}};
     recRef.current=rec;
     try{rec.start();setListening(true);}catch(e){recRef.current=null;setListening(false);}
   };
@@ -4178,6 +4196,18 @@ function AnalyticsScreen({ analytics, range, onRangeChange, onBack, waterNorm, t
   </div>;
 }
 
+// Login brand mark — hoisted out of Login so it doesn't remount (and
+// refetch the img, causing a flicker) on every keystroke in the inputs.
+const LOGIN_LOGO_LINES = ['Eat healthier', 'Listen to your body', 'Live longer'];
+const LoginLogo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:18,marginBottom:48}}>
+  <img src="/logo-source.png" alt="ELLME" width={80} height={80} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
+  <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
+    {LOGIN_LOGO_LINES.map((line,i)=><div key={i} style={{fontSize:14,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.35}}>
+      <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
+    </div>)}
+  </div>
+</div>;
+
 function Login({onLogin}){
   const[mode,setMode]=useState('auth'); // auth | register | doc | reset | docReg
   const[email,setEmail]=useState('');
@@ -4353,16 +4383,7 @@ function Login({onLogin}){
     <span style={{position:'relative',background:C.bg,padding:'0 16px',fontSize:12,color:C.muted,letterSpacing:'.02em'}}>{text}</span>
   </div>;
 
-  // ── Logo ──
-  const LOGO_LINES = ['Eat healthier', 'Listen to your body', 'Live longer'];
-  const Logo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:18,marginBottom:48}}>
-    <img src="/logo-source.png" alt="ELLME" width={80} height={80} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
-    <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
-      {LOGO_LINES.map((line,i)=><div key={i} style={{fontSize:14,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.35}}>
-        <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
-      </div>)}
-    </div>
-  </div>;
+  // Logo lives at module scope (LoginLogo) — see comment there.
 
   return <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',background:C.bg,padding:'10vh 24px 40px'}}>
     {/* OAuth loading overlay */}
@@ -4372,7 +4393,7 @@ function Login({onLogin}){
     <div style={{width:'100%',maxWidth:400,margin:'0 auto',opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all .7s cubic-bezier(.16,1,.3,1)'}}>
 
       {mode==='auth'&&<>
-        <Logo/>
+        <LoginLogo/>
         {errBox}{sucBox}
 
         <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
@@ -4400,7 +4421,7 @@ function Login({onLogin}){
       </>}
 
       {mode==='register'&&<div style={{animation:'enter .3s'}}>
-        <Logo/>
+        <LoginLogo/>
         <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:8}}>Создайте аккаунт</h2>
         <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Введите данные для регистрации</p>
         {errBox}{sucBox}
@@ -4440,7 +4461,7 @@ function Login({onLogin}){
       </div>}
 
       {mode==='doc'&&<div style={{animation:'enter .3s'}}>
-        <Logo/>
+        <LoginLogo/>
         <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:6}}>Кабинет специалиста</h2>
         <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Вход для нутрициолога</p>
         {errBox}{sucBox}
