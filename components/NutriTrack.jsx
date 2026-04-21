@@ -818,6 +818,10 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
   // case-insensitively unique, preserving the first seen casing.
   const parseSupps = (s) => String(s || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
   const uniqCI = (arr) => { const seen = new Set(); const out = []; for (const x of arr) { const k = x.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(x); } } return out; };
+  // Drop chip candidates that look like whole voice-dictated sentences
+  // rather than supplement names — they pollute the suggestion row as
+  // one giant pill. Real supplement names fit comfortably in 40 chars.
+  const isSupplementChip = (x) => typeof x === 'string' && x.length > 0 && x.length <= 40;
   const [suppHistory, setSuppHistory] = useState({ chips: [], yesterday: '' });
   // Locally-hidden chips — user can long-press a supplement pill to
   // banish it from the suggestion row without touching past entries.
@@ -853,7 +857,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey,pid}){
           .lt('date', dateKey)
           .order('date', { ascending: false });
         if (!mounted) return;
-        const chips = uniqCI((rows || []).flatMap(r => parseSupps(r.supplements || '')));
+        const chips = uniqCI((rows || []).flatMap(r => parseSupps(r.supplements || '')).filter(isSupplementChip));
         const yRow = (rows || []).find(r => r.date === yStr);
         setSuppHistory({ chips, yesterday: (yRow?.supplements || '').trim() });
       } catch(e) { /* ignore */ }
