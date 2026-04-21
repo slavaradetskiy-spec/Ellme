@@ -2735,8 +2735,8 @@ function DetailLineChart({ data, color, norm, metricKey, range, height: chartHei
             ticks: baseTicks,
           };
           if (isStool) return { ...base, min: -0.15, max: 1.15, afterBuildTicks: axis => { axis.ticks = [{value:0},{value:1}]; } };
-          if (isScale10) return { ...base, min: 0, max: 10, ticks: { ...baseTicks, stepSize: 2 } };
-          if (isMood) return { ...base, min: 1, max: 5, ticks: { ...baseTicks, stepSize: 1 } };
+          if (isScale10) return { ...base, min: 0, max: 12, ticks: { ...baseTicks, stepSize: 2 } };
+          if (isMood) return { ...base, min: 1, max: 6, ticks: { ...baseTicks, stepSize: 1 } };
           if (isBedtime) return { ...base, reverse: true, grace: '15%' };
           return { ...base, grace: '15%' };
         })()
@@ -3217,8 +3217,8 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
     const vMax = Math.max(...valid.map(p=>p.v));
     let yMin, yMax;
     if (metricKey === 'stool') { yMin = -0.15; yMax = 1.15; }
-    else if (metricKey === 'sleepQuality' || metricKey === 'stress' || metricKey === 'energy') { yMin = 0; yMax = 10; }
-    else if (metricKey === 'mood') { yMin = 1; yMax = 5; }
+    else if (metricKey === 'sleepQuality' || metricKey === 'stress' || metricKey === 'energy') { yMin = 0; yMax = 12; }
+    else if (metricKey === 'mood') { yMin = 1; yMax = 6; }
     else if (metricKey === 'water') { yMin = 0; yMax = Math.max(vMax * 1.15, (waterNorm||2200)); }
     else {
       const span = vMax - vMin || Math.max(1, Math.abs(vMax) * 0.2);
