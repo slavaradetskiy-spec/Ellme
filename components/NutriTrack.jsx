@@ -92,6 +92,7 @@ input,textarea,select,button{font-family:var(--fb)}
 input::-ms-reveal,input::-ms-clear{display:none !important;width:0;height:0}
 @keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes slideRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideLeft{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:translateX(0)}}
 @keyframes tileIn{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
@@ -2069,6 +2070,13 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   const recCancelledRef = useRef(false);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  // Message action sheet (Telegram-like long-press menu) + pinned msg
+  const [msgMenu, setMsgMenu] = useState(null); // { msg, isMine }
+  const longPressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
+  // Edit-in-place state: when set, the composer shows the message's
+  // text and a save button instead of sending a new message.
+  const [editingMsg, setEditingMsg] = useState(null);
   const textareaRef = useRef(null);
 
   // Auto-grow the textarea as the user types — height follows content
@@ -2404,7 +2412,9 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
     if (!file || !uploadAttachment) return;
     try {
       const url = await uploadAttachment(file);
-      if (url) await send({ text: '', attachments: [{ type: file.type.startsWith('image/') ? 'image' : 'file', url, name: file.name }] });
+      const t = file.type || '';
+      const pickedType = t.startsWith('image/') ? 'image' : t.startsWith('audio/') ? 'audio' : 'file';
+      if (url) await send({ text: '', attachments: [{ type: pickedType, url, name: file.name, mime: t }] });
     } catch (err) { console.error('upload att:', err); }
   };
 
@@ -2469,6 +2479,78 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
   };
   const stopAndSend = () => finishRecording(false);
   const cancelRecording = () => finishRecording(true);
+
+  // ── Message actions (pin / unpin / delete) ──
+  const pinMessage = async (msg) => {
+    if (!supabase || !msg) return;
+    // Optimistic: mark this pinned, clear the rest in the thread
+    setMessages(prev => prev.map(x => Object.assign({}, x, { pinned: x.id === msg.id })));
+    try {
+      let unpinQ = supabase.from('doc_comments').update({ pinned: false }).eq('client_id', clientId).eq('pinned', true).neq('id', msg.id);
+      if (resolvedDocId) unpinQ = unpinQ.eq('doc_id', resolvedDocId);
+      await unpinQ;
+      await supabase.from('doc_comments').update({ pinned: true }).eq('id', msg.id);
+    } catch (e) { console.error('pin:', e); }
+  };
+  const unpinMessage = async (msg) => {
+    if (!supabase || !msg) return;
+    setMessages(prev => prev.map(x => x.id === msg.id ? Object.assign({}, x, { pinned: false }) : x));
+    try { await supabase.from('doc_comments').update({ pinned: false }).eq('id', msg.id); }
+    catch (e) { console.error('unpin:', e); }
+  };
+  const startEditing = (msg) => {
+    if (!msg || msg.sender_id !== currentUserId) return;
+    setEditingMsg(msg);
+    setText(msg.text || '');
+    setTimeout(() => { try { textareaRef.current?.focus(); } catch (e) {} }, 20);
+  };
+  const cancelEditing = () => { setEditingMsg(null); setText(''); };
+  const saveEdit = async () => {
+    if (!editingMsg) return;
+    const newText = text.trim();
+    if (!newText) { cancelEditing(); return; }
+    if (newText === (editingMsg.text || '').trim()) { cancelEditing(); return; }
+    const id = editingMsg.id;
+    setMessages(prev => prev.map(x => x.id === id ? Object.assign({}, x, { text: newText, edited_at: new Date().toISOString() }) : x));
+    setEditingMsg(null); setText('');
+    try {
+      if (supabase) await supabase.from('doc_comments').update({ text: newText }).eq('id', id);
+    } catch (e) { console.error('edit msg:', e); }
+  };
+
+  const deleteMessage = async (msg) => {
+    if (!supabase || !msg) return;
+    if (!confirm('Удалить сообщение?')) return;
+    const prev = messages;
+    setMessages(p => p.filter(x => x.id !== msg.id));
+    try {
+      const { error } = await supabase.from('doc_comments').delete().eq('id', msg.id);
+      if (error) throw error;
+    } catch (e) { console.error('delete msg:', e); setMessages(prev); }
+  };
+  const copyMessage = (msg) => {
+    const txt = msg?.text || '';
+    if (!txt) return;
+    try { navigator.clipboard?.writeText(txt); } catch (e) {}
+  };
+  const scrollToMessage = (id) => {
+    const el = typeof document !== 'undefined' && document.getElementById('chat-msg-' + id);
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  // Long-press helpers — fire a haptic tap and open the action sheet
+  // after 500ms of continuous touch; any move or early release cancels.
+  const beginLongPress = (msg, isMine) => {
+    longPressFiredRef.current = false;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      try { navigator.vibrate && navigator.vibrate(20); } catch (e) {}
+      setMsgMenu({ msg, isMine });
+    }, 500);
+  };
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; }
+  };
   // Cleanup on unmount — don't leave the mic stream live if the chat closes mid-record
   useEffect(() => () => {
     if (recTimerRef.current) clearInterval(recTimerRef.current);
@@ -2532,6 +2614,29 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>
     </div>
 
+    {/* Pinned message banner — tap to scroll to the original */}
+    {(() => {
+      const pinned = messages.find(m => m.pinned);
+      if (!pinned) return null;
+      const preview = pinned.text
+        ? pinned.text
+        : (Array.isArray(pinned.attachments) && pinned.attachments[0]?.type === 'audio'
+            ? '🎙 Голосовое сообщение'
+            : (Array.isArray(pinned.attachments) && pinned.attachments[0]?.type === 'image'
+                ? '🖼 Фото'
+                : '📎 Вложение'));
+      return <button type="button" onClick={() => scrollToMessage(pinned.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',background:C.surface,border:'none',borderBottom:`1px solid ${C.surfaceAlt}`,cursor:'pointer',width:'100%',textAlign:'left',fontFamily:'inherit',flexShrink:0}}>
+        <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
+          <div style={{fontSize:11,fontWeight:600,color:C.accent,letterSpacing:'.02em'}}>Закреплённое сообщение</div>
+          <div style={{fontSize:13,color:C.text,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{preview}</div>
+        </div>
+        <button type="button" onClick={(e) => { e.stopPropagation(); unpinMessage(pinned); }} aria-label="Открепить" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </button>;
+    })()}
+
     {/* Pull-to-refresh indicator (chat) */}
     {(pullDist>0||refreshing)&&<div style={{position:'absolute',top:'calc(60px + env(safe-area-inset-top))',left:0,right:0,display:'flex',alignItems:'center',justifyContent:'center',height:Math.max(pullDist,refreshing?60:0),pointerEvents:'none',zIndex:5,transition:refreshing?'none':'height .1s'}}>
       <div style={{width:36,height:36,borderRadius:'50%',background:C.surface,boxShadow:'0 2px 12px rgba(0,0,0,.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -2552,18 +2657,31 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       {!messagesLoading && messages.length === 0 && <div style={{textAlign:'center',color:C.muted,fontSize:13,padding:'24px 0'}}>Нет сообщений</div>}
       {grouped.map(g => {
         if (g.sep) return <div key={g.key} style={{textAlign:'center',margin:'14px 0 8px'}}>
-          <span style={{fontSize:12,fontWeight:700,color:'#fff',padding:'5px 14px',borderRadius:14,background:'rgba(45,95,63,.72)',display:'inline-block',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',letterSpacing:'.01em',textShadow:'0 1px 2px rgba(0,0,0,.15)'}}>{g.sep}</span>
+          <span style={{fontSize:12,fontWeight:600,color:'#fff',padding:'5px 14px',borderRadius:14,background:'rgba(50,55,60,.55)',display:'inline-block',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)',letterSpacing:'.01em'}}>{g.sep}</span>
         </div>;
         const m = g.msg;
         const isMine = m.sender_id === currentUserId;
         const reactions = m.reactions || {};
         const reactionEntries = Object.entries(reactions).filter(([,users]) => Array.isArray(users) && users.length > 0);
         const atts = Array.isArray(m.attachments) ? m.attachments : [];
-        return <div key={g.key} style={{display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',marginBottom:8}}>
-          <div style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere'}}>
+        return <div key={g.key} id={'chat-msg-' + m.id} style={{display:'flex',flexDirection:'column',alignItems:isMine?'flex-end':'flex-start',marginBottom:8,scrollMarginTop:80}}>
+          <div
+            onTouchStart={() => beginLongPress(m, isMine)}
+            onTouchEnd={cancelLongPress}
+            onTouchMove={cancelLongPress}
+            onTouchCancel={cancelLongPress}
+            onContextMenu={(e) => { e.preventDefault(); setMsgMenu({ msg: m, isMine }); }}
+            style={{maxWidth:'82%',padding:m.text?'10px 14px':'6px',borderRadius:isMine?'16px 16px 4px 16px':'16px 16px 16px 4px',background:isMine?C.accent:C.surface,color:isMine?'#fff':C.text,fontSize:14,lineHeight:1.5,boxShadow:C.shadowCard,wordBreak:'break-word',overflowWrap:'anywhere',WebkitUserSelect:'none',userSelect:'none'}}>
             {atts.map((a, i) => {
               if (a.type === 'image') return <img key={i} src={a.url} alt="" style={{display:'block',width:'100%',maxWidth:220,borderRadius:10,marginBottom:m.text?6:0}}/>;
-              if (a.type === 'audio') return <VoicePlayer key={i} url={a.url} duration={a.duration} isMine={isMine}/>;
+              // Voice fallback: also catch legacy messages sent before the
+              // 'audio' attachment type existed — detect by mime or file
+              // extension so they still render inline instead of opening
+              // in the system audio player.
+              const isAudio = a.type === 'audio'
+                || (typeof a.mime === 'string' && a.mime.toLowerCase().startsWith('audio/'))
+                || (typeof a.url === 'string' && /\.(webm|ogg|mp3|m4a|mp4|wav|oga)(?:\?|$)/i.test(a.url));
+              if (isAudio) return <VoicePlayer key={i} url={a.url} duration={a.duration} isMine={isMine}/>;
               return <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:13,padding:'4px 0'}}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                 <a href={a.url} target="_blank" rel="noopener noreferrer" style={{color:isMine?'#fff':C.accent,textDecoration:'underline'}}>{a.name || 'Файл'}</a>
@@ -2603,6 +2721,18 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
       </div>
     </div>}
 
+    {/* Editing banner above composer */}
+    {editingMsg && <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,flexShrink:0}}>
+      <div style={{width:3,height:32,borderRadius:2,background:C.accent,flexShrink:0}}/>
+      <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
+        <div style={{fontSize:11,fontWeight:600,color:C.accent}}>Редактирование</div>
+        <div style={{fontSize:12,color:C.muted,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{(editingMsg.text || '').slice(0, 80)}</div>
+      </div>
+      <button type="button" onClick={cancelEditing} aria-label="Отмена" style={{width:28,height:28,borderRadius:'50%',border:'none',background:C.surfaceAlt,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>}
+
     {/* Emoji row */}
     {showEmoji && <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 14px',background:C.surface,borderTop:`1px solid ${C.surfaceAlt}`,flexShrink:0}}>
       {EMOJIS.map(e => <button key={e} onClick={() => { setText(text + e); setShowEmoji(false); }} style={{fontSize:22,background:'none',border:'none',cursor:'pointer',padding:4,borderRadius:8}}>{e}</button>)}
@@ -2629,12 +2759,12 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
           <button onClick={() => fileInputRef.current && fileInputRef.current.click()} disabled={recUploading} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',color:C.soft,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:recUploading?.5:1}}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
           </button>
-          <textarea ref={textareaRef} value={text} onChange={e => { setText(e.target.value); sendTypingPing(); }} placeholder={recUploading?'Отправляем голосовое…':'Сообщение'} rows={1} disabled={recUploading}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          <textarea ref={textareaRef} value={text} onChange={e => { setText(e.target.value); if (!editingMsg) sendTypingPing(); }} placeholder={recUploading?'Отправляем голосовое…':(editingMsg?'Редактируем сообщение…':'Сообщение')} rows={1} disabled={recUploading}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (editingMsg) saveEdit(); else send(); } if (e.key === 'Escape' && editingMsg) { e.preventDefault(); cancelEditing(); } }}
             style={{flex:1,minWidth:0,padding:'10px 16px',borderRadius:20,border:`1.5px solid ${C.tileBorder}`,fontSize:16,fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',background:C.bg,lineHeight:1.4,maxHeight:120,minHeight:40,overflowY:'auto',opacity:recUploading?.7:1}}
             onFocus={e => e.target.style.borderColor = C.accent} onBlur={e => e.target.style.borderColor = C.tileBorder}/>
-          {!text.trim() && !recUploading && <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>}
-          {!text.trim() && <button onClick={startRecording} disabled={recUploading} aria-label="Записать голосовое сообщение" style={{width:40,height:40,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:recUploading?'default':'pointer',color:C.muted,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:recUploading?.6:1}}>
+          {!text.trim() && !recUploading && !editingMsg && <button onClick={() => setShowEmoji(!showEmoji)} style={{width:38,height:38,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>😊</button>}
+          {!text.trim() && !editingMsg && <button onClick={startRecording} disabled={recUploading} aria-label="Записать голосовое сообщение" style={{width:40,height:40,borderRadius:'50%',background:C.surfaceAlt,border:'none',cursor:recUploading?'default':'pointer',color:C.muted,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:recUploading?.6:1}}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
               <path d="M19 10v2a7 7 0 01-14 0v-2"/>
@@ -2642,12 +2772,55 @@ function ChatModal({ clientId, docId, currentUserId, currentUserName, clientName
               <line x1="8" y1="23" x2="16" y2="23"/>
             </svg>
           </button>}
-          {text.trim() && <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
+          {editingMsg && <button onClick={saveEdit} aria-label="Сохранить" style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>}
+          {text.trim() && !editingMsg && <button disabled={sending} onClick={() => send()} style={{width:40,height:40,borderRadius:'50%',border:'none',background:C.accent,color:'#fff',cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 2px 8px rgba(45,95,63,.25)'}}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
             </button>}
         </>}
       </div>
     </div>
+
+    {/* Message action sheet — opens on long-press (mobile) or
+        right-click (desktop). Offers pin/unpin, edit (own text only),
+        copy (text only), delete (own only). */}
+    {msgMenu && <div onClick={() => setMsgMenu(null)} style={{position:'fixed',inset:0,zIndex:10001,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'flex-end',justifyContent:'center',animation:'fadeIn .15s'}}>
+      <div onClick={e => e.stopPropagation()} style={{width:'100%',maxWidth:440,background:C.surface,borderRadius:'20px 20px 0 0',padding:'8px 0 max(8px, env(safe-area-inset-bottom))',boxShadow:'0 -8px 32px rgba(0,0,0,.2)',animation:'slideUp .2s ease'}}>
+        <div style={{width:40,height:4,borderRadius:2,background:C.tileBorder,margin:'6px auto 10px'}}/>
+        {(() => {
+          const m = msgMenu.msg;
+          const isOwn = msgMenu.isMine;
+          const hasText = !!(m.text || '').trim();
+          const rowStyle = {display:'flex',alignItems:'center',gap:14,width:'100%',padding:'14px 22px',background:'none',border:'none',fontFamily:'inherit',fontSize:15,color:C.text,cursor:'pointer',textAlign:'left'};
+          const iconWrap = {width:24,height:24,display:'flex',alignItems:'center',justifyContent:'center',color:C.accent,flexShrink:0};
+          return <>
+            {m.pinned
+              ? <button style={rowStyle} onClick={() => { unpinMessage(m); setMsgMenu(null); }}>
+                  <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6M5 8l7 14 7-14M3 8h18"/></svg></span>
+                  Открепить
+                </button>
+              : <button style={rowStyle} onClick={() => { pinMessage(m); setMsgMenu(null); }}>
+                  <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5M9 2h6l1 8-4 4-4-4 1-8z"/></svg></span>
+                  Закрепить
+                </button>
+            }
+            {isOwn && hasText && <button style={rowStyle} onClick={() => { startEditing(m); setMsgMenu(null); }}>
+              <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>
+              Редактировать
+            </button>}
+            {hasText && <button style={rowStyle} onClick={() => { copyMessage(m); setMsgMenu(null); }}>
+              <span style={iconWrap}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span>
+              Копировать
+            </button>}
+            {isOwn && <button style={{...rowStyle, color:'#D85A30'}} onClick={() => { deleteMessage(m); setMsgMenu(null); }}>
+              <span style={{...iconWrap, color:'#D85A30'}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span>
+              Удалить
+            </button>}
+          </>;
+        })()}
+      </div>
+    </div>}
   </div>;
 }
 
