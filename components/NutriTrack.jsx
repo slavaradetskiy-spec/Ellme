@@ -4412,9 +4412,9 @@ function IntroSplash(){
   },[]);
 
   return <div style={{position:'fixed',inset:0,background:'#FFFFFF',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:40,zIndex:100000,padding:'0 24px'}}>
-    {/* Logo plate — contains real ELLME icon + English caption */}
+    {/* Logo plate — real ELLME icon clipped to a circle + English caption */}
     <div style={{display:'flex',alignItems:'center',gap:20,flexWrap:'nowrap',background:'#F7F9F5',borderRadius:24,padding:'20px 26px',boxShadow:'0 8px 28px rgba(61,161,85,.12), 0 0 0 1px rgba(61,161,85,.08)'}}>
-      <img src="/logo-source.png" alt="ELLME" width={112} height={112} style={{display:'block',flexShrink:0,borderRadius:22}}/>
+      <img src="/logo-source.png" alt="ELLME" width={120} height={120} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 20px rgba(61,161,85,.25)'}}/>
       <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start'}}>
         {EN_LINES.map((line,i)=><div key={i} style={{fontSize:18,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.3}}>
           <span style={{color:'#3DA155',fontWeight:700}}>{line.charAt(0)}</span>{line.slice(1)}
