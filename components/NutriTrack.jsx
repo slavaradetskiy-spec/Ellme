@@ -4275,7 +4275,7 @@ function Login({onLogin}){
 
   // ── Logo ──
   const LOGO_LINES = ['Eat healthier', 'Listen to your body', 'Live longer'];
-  const Logo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,marginBottom:36}}>
+  const Logo = () => <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:18,marginBottom:48}}>
     <img src="/logo-source.png" alt="ELLME" width={80} height={80} style={{display:'block',flexShrink:0,borderRadius:'50%',boxShadow:'0 6px 18px rgba(61,161,85,.22)'}}/>
     <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
       {LOGO_LINES.map((line,i)=><div key={i} style={{fontSize:14,fontWeight:500,color:'#1A1A1A',letterSpacing:'.2px',lineHeight:1.35}}>
@@ -4321,8 +4321,8 @@ function Login({onLogin}){
 
       {mode==='register'&&<div style={{animation:'enter .3s'}}>
         <Logo/>
-        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:6,marginTop:-16}}>Создайте аккаунт</h2>
-        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Введите данные для регистрации</p>
+        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:8}}>Создайте аккаунт</h2>
+        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Введите данные для регистрации</p>
         {errBox}{sucBox}
         {!success&&<>
           <input value={regName} onChange={e=>setRegName(e.target.value)} placeholder="Имя и фамилия" style={inputStyle} onFocus={onFB} onBlur={offFB}/>
@@ -4361,8 +4361,8 @@ function Login({onLogin}){
 
       {mode==='doc'&&<div style={{animation:'enter .3s'}}>
         <Logo/>
-        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:4,marginTop:-16}}>Кабинет специалиста</h2>
-        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:24}}>Вход для нутрициолога</p>
+        <h2 style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:400,textAlign:'center',marginBottom:6}}>Кабинет специалиста</h2>
+        <p style={{textAlign:'center',fontSize:13,color:C.muted,marginBottom:32}}>Вход для нутрициолога</p>
         {errBox}{sucBox}
         <input placeholder="Email" type="email" style={inputStyle} value={email} onChange={e=>setEmail(e.target.value)} onFocus={onFB} onBlur={offFB}/>
         {passInput(pass,setPass,'Пароль',showP1,setShowP1,{onKeyDown:e=>{if(e.key==='Enter')handleDocSignIn()}})}
