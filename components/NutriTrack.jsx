@@ -754,6 +754,14 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
     saveWaterLog(newLog);
     upd('water', Math.max(0, (d.water || 0) - (entry?.ml || 0)));
   };
+  // The log is local-only (localStorage), so on a fresh device/browser the
+  // earlier entries are gone but d.water (Supabase) still reflects them.
+  // Surface that gap as a single "ранее" row so the user can always see
+  // and delete anything that contributes to today's total.
+  const logSum = waterLog.reduce((s, e) => s + (e.ml || 0), 0);
+  const unaccounted = Math.max(0, waterMl - logSum);
+  const hasAnyLog = waterLog.length > 0 || unaccounted > 0;
+  const removeUnaccounted = () => { upd('water', logSum); };
   // Debounced sleep celebration — waits 2s after the last change so the
   // user has time to set BOTH hours AND minutes before the confetti
   // fires. Without this, picking hour "23" (intended "23:55") would
@@ -777,8 +785,8 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
       <div style={{padding:'14px 0'}}>
         <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
           {/* Bottle visualization — tap to show/hide log */}
-          <div onClick={waterLog.length>0?()=>setShowWaterLog(!showWaterLog):undefined} style={{width:48,position:'relative',flexShrink:0,cursor:waterLog.length>0?'pointer':'default'}}>
-            <div style={{width:48,height:100,borderRadius:12,border:`2px solid ${waterLog.length>0?'#7BC8E8':C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt,transition:'border-color .2s'}}>
+          <div onClick={hasAnyLog?()=>setShowWaterLog(!showWaterLog):undefined} style={{width:48,position:'relative',flexShrink:0,cursor:hasAnyLog?'pointer':'default'}}>
+            <div style={{width:48,height:100,borderRadius:12,border:`2px solid ${hasAnyLog?'#7BC8E8':C.tileBorder}`,position:'relative',overflow:'hidden',background:C.surfaceAlt,transition:'border-color .2s'}}>
               <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${waterPct}%`,transition:'height .5s cubic-bezier(.34,1.56,.64,1)'}}>
                 {waterPct>0&&<svg viewBox="0 0 96 8" preserveAspectRatio="none" style={{position:'absolute',top:-4,left:0,width:'200%',height:8,animation:'wave 3s linear infinite'}}>
                   <path d="M0 4 Q6 0 12 4 T24 4 T36 4 T48 4 T60 4 T72 4 T84 4 T96 4 V8 H0Z" fill="#A8DFF0"/>
@@ -787,7 +795,7 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
               </div>
               <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:waterPct>45?'#fff':C.soft,textShadow:waterPct>45?'0 1px 3px rgba(0,0,0,.2)':'none',zIndex:1}}>{waterPctRaw}%</div>
             </div>
-            {waterLog.length>0&&!dis&&<div style={{position:'absolute',top:-4,right:-4,width:20,height:20,borderRadius:6,background:'#7BC8E8',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 4px rgba(0,0,0,.15)'}}>
+            {hasAnyLog&&!dis&&<div style={{position:'absolute',top:-4,right:-4,width:20,height:20,borderRadius:6,background:'#7BC8E8',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 4px rgba(0,0,0,.15)'}}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             </div>}
           </div>
@@ -805,7 +813,17 @@ function DayExtras({data,setData,dis,waterNorm=2200,onCelebrate,dateKey}){
           </div>
         </div>
         {/* Water log — history of additions */}
-        {showWaterLog&&waterLog.length>0&&<div style={{marginBottom:12,background:C.surfaceAlt,borderRadius:14,padding:'8px 0',animation:'enter .2s'}}>
+        {showWaterLog&&hasAnyLog&&<div style={{marginBottom:12,background:C.surfaceAlt,borderRadius:14,padding:'8px 0',animation:'enter .2s'}}>
+          {unaccounted>0&&<div style={{display:'flex',alignItems:'center',padding:'8px 14px',borderBottom:waterLog.length>0?`1px solid ${C.tileBorder}`:'none'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flex:1}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7BC8E8" strokeWidth="1.5"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>
+              <div style={{fontSize:13,fontWeight:500,color:C.text}}>Вода — {unaccounted} мл</div>
+            </div>
+            <span style={{fontSize:12,color:C.muted,marginRight:10}}>ранее</span>
+            {!dis&&<button onClick={removeUnaccounted} style={{background:'none',border:'none',cursor:'pointer',color:'#D85A30',display:'flex',padding:4}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>}
+          </div>}
           {waterLog.map((entry, i) => <div key={i} style={{display:'flex',alignItems:'center',padding:'8px 14px',borderBottom:i<waterLog.length-1?`1px solid ${C.tileBorder}`:'none'}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flex:1}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7BC8E8" strokeWidth="1.5"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>
