@@ -214,7 +214,7 @@ function mkComments(){return{c1:[{id:"cm1",date:dk(ago(1)),text:"Анна, хо�
 
 // ═══ PRIMITIVES ═══
 function TopBar({left,title,subtitle,right,onHome,noBorder}){
-  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 0 12px',minHeight:52,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:noBorder?'none':`1px solid ${C.surfaceAlt}`,gap:8}}>
+  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',height:60,position:'sticky',top:0,background:C.bg,zIndex:100,borderBottom:noBorder?'none':`1px solid ${C.surfaceAlt}`,gap:8}}>
     <div style={{minWidth:48,display:'flex',justifyContent:'flex-start',flexShrink:0}}>{left}</div>
     <div style={{flex:1,textAlign:'center',cursor:onHome?'pointer':'default',minWidth:0}} onClick={onHome||undefined}>
       <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--fd)',letterSpacing:'-.02em',color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{title}</div>
