@@ -5173,6 +5173,7 @@ export default function App(){
   const userRef=useRef(null);
   useEffect(()=>{userRef.current=user},[user]);
   const[authLoading,setAuthLoading]=useState(!!supabase);
+  const[sessionExpired,setSessionExpired]=useState(false);
   const[loadingPhase,setLoadingPhase]=useState('Идёт загрузка, это может занять несколько секунд...');
   const[showIntro,setShowIntro]=useState(()=>{
     if(typeof window==='undefined')return false;
@@ -5620,7 +5621,38 @@ export default function App(){
         setAuthLoading(false);
       }
     } else {
-      supabase.auth.getSession().then(({ data }) => loadProfile(data?.session)).catch(() => {
+      supabase.auth.getSession().then(async ({ data }) => {
+        const session = data?.session;
+        // Check if token is expired (Safari kills tabs → JWT goes stale)
+        if (session?.expires_at && Date.now() / 1000 > session.expires_at) {
+          try {
+            const { data: refreshed, error } = await supabase.auth.refreshSession();
+            if (!error && refreshed?.session) { loadProfile(refreshed.session); return; }
+          } catch (e) { /* refresh failed */ }
+          // Refresh failed — session is truly dead
+          if (userRef.current) {
+            userRef.current = null;
+            setUser(null);
+            setSessionExpired(true);
+          }
+          setAuthLoading(false);
+          return;
+        }
+        // No session at all (never logged in, or token fully gone)
+        if (!session && userRef.current) {
+          // Had a cached user but session vanished — try refresh
+          try {
+            const { data: refreshed, error } = await supabase.auth.refreshSession();
+            if (!error && refreshed?.session) { loadProfile(refreshed.session); return; }
+          } catch (e) { /* refresh failed */ }
+          userRef.current = null;
+          setUser(null);
+          setSessionExpired(true);
+          setAuthLoading(false);
+          return;
+        }
+        loadProfile(session);
+      }).catch(() => {
         // Network error on initial load — if user was cached, keep them
         if (userRef.current) { setAuthLoading(false); return; }
         setUser(null); setAuthLoading(false);
@@ -5638,6 +5670,31 @@ export default function App(){
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Session heartbeat — every 3 minutes check if the JWT is still
+  // valid. Safari kills background tabs; when the user comes back
+  // after hours the token is expired and all Supabase queries return
+  // empty (looks like "all data disappeared"). This heartbeat catches
+  // that and shows a clear "session expired" screen instead.
+  useEffect(() => {
+    if (!supabase || !user) return;
+    const check = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const s = data?.session;
+        if (!s || (s.expires_at && Date.now() / 1000 > s.expires_at)) {
+          const { data: refreshed, error } = await supabase.auth.refreshSession();
+          if (error || !refreshed?.session) {
+            userRef.current = null;
+            setUser(null);
+            setSessionExpired(true);
+          }
+        }
+      } catch (e) { /* network error — ignore, keep cached user */ }
+    };
+    const id = setInterval(check, 3 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [user]);
 
   // ── Database: load day ──
   const loadDayFromDb = async (pid, dateStr) => {
@@ -5825,6 +5882,18 @@ export default function App(){
     </div></>;
   }
 
+  if (sessionExpired) return <><style>{CSS}</style>
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.bg,padding:'0 32px',textAlign:'center'}}>
+      <div style={{width:64,height:64,borderRadius:16,background:C.accentSoft,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20}}>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div style={{fontFamily:'var(--fd)',fontSize:26,color:C.text,marginBottom:8}}>Сессия истекла</div>
+      <div style={{fontSize:14,color:C.soft,lineHeight:1.5,maxWidth:320,marginBottom:28}}>Войдите заново — все ваши данные на месте, ничего не пропало.</div>
+      <button onClick={()=>{setSessionExpired(false);}} style={{padding:'14px 36px',borderRadius:14,border:'none',background:C.accent,color:'#fff',fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 4px 14px rgba(45,95,63,.25)'}}>
+        Войти
+      </button>
+    </div>
+  </>;
   if(!user) return <><style>{CSS}</style><Login onLogin={login}/></>;
   const key=dk(date);
   const getDay=pid=>(diaries[pid]||{})[key]||{};
