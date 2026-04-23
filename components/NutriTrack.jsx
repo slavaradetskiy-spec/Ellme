@@ -1237,7 +1237,7 @@ function Cal({sel,onSelect}){
 }
 
 // ═══ PROFILE PAGE ═══
-function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNormChange,onZoom,onOpenAnalytics}){
+function Profile({user,onBack,onLogout,loggingOut,photo,onPhotoChange,waterNorm,onWaterNormChange,onZoom,onOpenAnalytics}){
   const[name,setName]=useState(user.name||'');
   const[email,setEmail]=useState('');
   const[phone,setPhone]=useState('');
@@ -1434,7 +1434,7 @@ function Profile({user,onBack,onLogout,photo,onPhotoChange,waterNorm,onWaterNorm
       </div>}
     </div>
 
-    <button onClick={onLogout} style={{width:'100%',marginTop:16,marginBottom:40,padding:'16px',borderRadius:14,border:'none',background:C.dangerSoft,color:C.danger,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,WebkitTapHighlightColor:'transparent'}}>{I.logout} Выйти из аккаунта</button>
+    <button onClick={onLogout} disabled={loggingOut} style={{width:'100%',marginTop:16,marginBottom:40,padding:'16px',borderRadius:14,border:'none',background:loggingOut?'#ddd':C.dangerSoft,color:loggingOut?'#999':C.danger,fontSize:15,fontWeight:600,cursor:loggingOut?'default':'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center',gap:8,WebkitTapHighlightColor:'transparent',transition:'all .15s'}}>{loggingOut?'Выходим...':(<>{I.logout} Выйти из аккаунта</>)}</button>
   </div>;
 }
 
@@ -5864,11 +5864,21 @@ export default function App(){
     initialNavRef.current = true;
     if (user.role === 'doc') setScreen('myDiary');
   }, [user?.id]);
+  const[loggingOut,setLoggingOut]=useState(false);
   const logout = async () => {
-    try { if (supabase) await supabase.auth.signOut(); } catch(e) {}
+    setLoggingOut(true);
+    try {
+      if (supabase) {
+        const signOutPromise = supabase.auth.signOut();
+        const timeout = new Promise(r => setTimeout(r, 3000));
+        await Promise.race([signOutPromise, timeout]);
+      }
+    } catch(e) {}
     try { localStorage.removeItem('ellme_photo'); } catch(e) {}
+    userRef.current = null;
     setUser(null); setScreen('home'); setSelClient(null); setSelMeal(null);
     setDiaries({}); setComments({}); setClients([]);
+    setLoggingOut(false);
     window.location.href = '/';
   };
 
@@ -6318,7 +6328,7 @@ export default function App(){
   </div>;
 
   // ═══ PROFILE ═══
-  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb} onOpenAnalytics={()=>setScreen('analytics')}/>);
+  if(screen==='profile') return shell(<Profile user={user} onBack={()=>setScreen('home')} onLogout={logout} loggingOut={loggingOut} photo={profilePhoto} onPhotoChange={updatePhoto} waterNorm={waterNorm} onWaterNormChange={setWaterNorm} onZoom={setLb} onOpenAnalytics={()=>setScreen('analytics')}/>);
 
   // Nutritionist aggregated dashboard
   if(isDoc && screen==='docDashboard') return shell(<DocDashboard
