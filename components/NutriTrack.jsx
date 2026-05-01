@@ -5183,7 +5183,7 @@ function IntroSplash(){
   const [activeRu,setActiveRu]=useState(-1);
   useEffect(()=>{
     const timers=[];
-    const CHAR_MS=70, GAP_MS=280, START_MS=600;
+    const CHAR_MS=38, GAP_MS=100, START_MS=80;
     let t=START_MS;
     RU_LINES.forEach((line,li)=>{
       timers.push(setTimeout(()=>setActiveRu(li),t));
@@ -5239,7 +5239,7 @@ export default function App(){
     const t=setTimeout(()=>{
       try{sessionStorage.setItem('ellme_intro_seen','1')}catch(e){}
       setShowIntro(false);
-    },5600);
+    },2500);
     return()=>clearTimeout(t);
   },[showIntro]);
   const[isOffline,setIsOffline]=useState(typeof navigator!=='undefined'&&!navigator.onLine);
