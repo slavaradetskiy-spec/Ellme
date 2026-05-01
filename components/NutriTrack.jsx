@@ -510,29 +510,37 @@ function VoicePlayer({ url, duration, isMine }) {
 function MicButton({onResult,onStart,style:st}){
   const[listening,setListening]=useState(false);
   const recRef=useRef(null);
+  // Android Chrome silently stops SpeechRecognition after ~2s. We auto-
+  // restart on `onend` until the user taps the button again. Because each
+  // SpeechRecognition session has its own `e.results`, we must accumulate
+  // text across sessions ourselves — otherwise the new session's results
+  // *replace* the previous ones (text disappears) or get appended on top
+  // of the still-visible old text (looped duplication).
+  const accFinalRef=useRef('');         // committed text from all closed sessions
+  const sessionFinalRef=useRef('');     // latest final snapshot from the live session
+  const userStoppedRef=useRef(false);   // tap-to-stop vs. engine-end
+  const restartCountRef=useRef(0);      // safety cap on auto-restart loop
   const stopRec=()=>{
+    userStoppedRef.current=true;
     const r=recRef.current;
-    if(!r)return;
     recRef.current=null;
-    try{r.onresult=null;r.onend=null;r.onerror=null}catch(e){}
-    try{r.stop()}catch(e){try{r.abort()}catch(e2){}}
+    if(r){
+      try{r.onresult=null;r.onend=null;r.onerror=null}catch(e){}
+      try{r.stop()}catch(e){try{r.abort()}catch(e2){}}
+    }
     setListening(false);
   };
   useEffect(()=>()=>{stopRec()},[]);
-  const toggle=()=>{
-    if(listening||recRef.current){stopRec();return;}
+  const startRec=()=>{
     const SR=typeof window!=='undefined'&&(window.SpeechRecognition||window.webkitSpeechRecognition);
     if(!SR){alert('Голосовой ввод не поддерживается в этом браузере');return;}
     const rec=new SR();
     rec.lang='ru-RU';
     rec.continuous=true;
     rec.interimResults=true;
-    onStart&&onStart();
+    sessionFinalRef.current='';
     rec.onresult=(e)=>{
       if(recRef.current!==rec)return;
-      // Rebuild final + interim from scratch on every event — e.results
-      // is the engine's authoritative snapshot, so appending (the old
-      // approach) could double-count when Android re-emits a segment.
       let final='';
       let interim='';
       for(let i=0;i<e.results.length;i++){
@@ -541,14 +549,51 @@ function MicButton({onResult,onStart,style:st}){
         if(result.isFinal) final+=transcript+' ';
         else interim+=transcript+' ';
       }
-      const cleanedFinal=collapseRepeats(final);
+      sessionFinalRef.current=final;
+      const acc=accFinalRef.current;
+      const sep=acc&&!acc.endsWith(' ')?' ':'';
+      const cleanedFinal=collapseRepeats(acc+sep+final);
       const combined=(cleanedFinal+(interim?' '+interim.trim():'')).trim();
       onResult&&onResult(combined);
     };
-    rec.onend=()=>{if(recRef.current===rec){recRef.current=null;setListening(false);}};
-    rec.onerror=()=>{if(recRef.current===rec){recRef.current=null;setListening(false);}};
+    rec.onend=()=>{
+      if(recRef.current!==rec)return;
+      // Commit the last final snapshot from this session before it's lost.
+      const sess=sessionFinalRef.current;
+      if(sess){
+        const acc=accFinalRef.current;
+        const sep=acc&&!acc.endsWith(' ')?' ':'';
+        accFinalRef.current=collapseRepeats(acc+sep+sess);
+      }
+      sessionFinalRef.current='';
+      recRef.current=null;
+      if(userStoppedRef.current||restartCountRef.current>=60){
+        setListening(false);
+        return;
+      }
+      restartCountRef.current++;
+      // Tiny delay so the engine releases the mic before we re-grab it.
+      setTimeout(()=>{if(!userStoppedRef.current)startRec()},120);
+    };
+    rec.onerror=(e)=>{
+      // Permission-style errors are terminal; everything else (no-speech,
+      // network, aborted) is handled by onend's auto-restart path.
+      const err=e&&e.error;
+      if(err==='not-allowed'||err==='service-not-allowed'||err==='audio-capture'){
+        userStoppedRef.current=true;
+      }
+    };
     recRef.current=rec;
     try{rec.start();setListening(true);}catch(e){recRef.current=null;setListening(false);}
+  };
+  const toggle=()=>{
+    if(listening||recRef.current){stopRec();return;}
+    userStoppedRef.current=false;
+    accFinalRef.current='';
+    sessionFinalRef.current='';
+    restartCountRef.current=0;
+    onStart&&onStart();
+    startRec();
   };
   return <button type="button" onClick={toggle} aria-label={listening?'Остановить запись':'Голосовой ввод'} style={{background:listening?'#E74C3C':C.surfaceAlt,border:'none',borderRadius:12,cursor:'pointer',padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'center',color:listening?'#fff':C.muted,transition:'all .2s',animation:listening?'pulse 1.5s infinite':'none',...(st||{})}}>
     {listening
@@ -670,18 +715,24 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
   const d=data||{},upd=(k,v)=>onChange({...d,[k]:v});
   const fRef=useRef(null),cRef=useRef(null);
   const[uploading,setUploading]=useState(false);
+  const[uploadError,setUploadError]=useState(null);
   const photos=Array.isArray(d.photo)?d.photo:(d.photo?[d.photo]:[]);
   const autoTime = () => { const now = new Date(); return String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0'); };
   const addPhoto = (url) => { const updates = { ...d, photo: [...photos, url] }; if (!d.time) updates.time = autoTime(); onChange(updates); };
   const hFile=async(e)=>{
     const f=e.target.files?.[0];if(!f)return;
     e.target.value='';
+    setUploadError(null);
     if(onUploadPhoto){
       setUploading(true);
       try{
         const url=await onUploadPhoto(f);
         if(url) addPhoto(url);
-      }catch(err){console.error('Photo upload error:',err)}
+        else setUploadError('Фото не загрузилось, попробуйте ещё раз');
+      }catch(err){
+        console.error('Photo upload error:',err);
+        setUploadError('Фото не загрузилось, попробуйте ещё раз');
+      }
       setUploading(false);
     }else{
       const r=new FileReader();r.onload=ev=>addPhoto(ev.target.result);r.readAsDataURL(f);
@@ -743,6 +794,10 @@ function MealDetail({meal,data,onChange,onZoom,onBack,dis,onUploadPhoto}){
               </button>)
           }
         </div>
+        {uploadError&&<div role="alert" style={{marginTop:10,padding:'10px 12px',borderRadius:12,border:`1.5px solid ${C.danger}`,background:C.dangerSoft,fontSize:13,color:C.danger,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+          <span>⚠️ {uploadError}</span>
+          <button onClick={()=>setUploadError(null)} style={{background:'none',border:'none',color:C.danger,cursor:'pointer',padding:4,fontSize:18,lineHeight:1,fontFamily:'inherit'}} aria-label="Закрыть">×</button>
+        </div>}
       </div>}
 
       <div style={{marginBottom:18}}>
@@ -5128,7 +5183,7 @@ function IntroSplash(){
   const [activeRu,setActiveRu]=useState(-1);
   useEffect(()=>{
     const timers=[];
-    const CHAR_MS=70, GAP_MS=280, START_MS=600;
+    const CHAR_MS=38, GAP_MS=100, START_MS=80;
     let t=START_MS;
     RU_LINES.forEach((line,li)=>{
       timers.push(setTimeout(()=>setActiveRu(li),t));
@@ -5184,7 +5239,7 @@ export default function App(){
     const t=setTimeout(()=>{
       try{sessionStorage.setItem('ellme_intro_seen','1')}catch(e){}
       setShowIntro(false);
-    },5600);
+    },2500);
     return()=>clearTimeout(t);
   },[showIntro]);
   const[isOffline,setIsOffline]=useState(typeof navigator!=='undefined'&&!navigator.onLine);
@@ -5790,6 +5845,10 @@ export default function App(){
   }, [date, user?.id, screen, selClient?.id]);
 
   // ═══ PHOTO UPLOAD TO STORAGE ═══
+  // Slow mobile networks frequently stall the supabase-js upload silently
+  // (Promise never resolves), so we wrap each attempt in a timeout race
+  // and retry up to 3 times with linear backoff. On final failure the
+  // caller surfaces «Фото не загрузилось, попробуйте ещё раз».
   const uploadMealPhoto = async (pid, dateStr, mealId, file) => {
     if (!supabase || !pid) {
       // Fallback: return data URL for dev mode
@@ -5799,17 +5858,34 @@ export default function App(){
         r.readAsDataURL(file);
       });
     }
-    // Compress image before upload (max 1200px, quality 0.80)
     const compressed = await compressImage(file, 1200, 0.80);
     const ext = file.type === 'image/png' ? 'png' : 'jpg';
     const path = `${pid}/meals/${dateStr}/${mealId}_${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('photos').upload(path, compressed, {
-      upsert: true,
-      contentType: compressed.type || 'image/jpeg',
-    });
-    if (error) throw error;
-    const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path);
-    return urlData?.publicUrl ? urlData.publicUrl + '?t=' + Date.now() : null;
+    const TIMEOUT_MS = 30000;
+    const MAX_ATTEMPTS = 3;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const uploadPromise = supabase.storage.from('photos').upload(path, compressed, {
+          upsert: true,
+          contentType: compressed.type || 'image/jpeg',
+        });
+        const result = await Promise.race([
+          uploadPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('UPLOAD_TIMEOUT')), TIMEOUT_MS)),
+        ]);
+        if (result && result.error) throw result.error;
+        const { data: urlData } = supabase.storage.from('photos').getPublicUrl(path);
+        return urlData?.publicUrl ? urlData.publicUrl + '?t=' + Date.now() : null;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Photo upload attempt ${attempt}/${MAX_ATTEMPTS} failed:`, err);
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
+      }
+    }
+    throw lastErr || new Error('Upload failed');
   };
 
   // ═══ BEFOREUNLOAD — flush pending saves ═══
