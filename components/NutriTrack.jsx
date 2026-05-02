@@ -3924,7 +3924,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
             </div>
           </div>`;
       }).join('');
-      const waterLine = day?.water_ml ? `Вода: ${day.water_ml} мл` : '';
+      const waterLine = day?.water_ml ? `Вода: ${day.water_ml} / ${waterNorm||2200} мл` : '';
       const stoolStr = day?.stool_state ? 'Стул: ' + day.stool_state : '';
       const extras = [waterLine, stoolStr].filter(Boolean).join(' · ');
       return `
