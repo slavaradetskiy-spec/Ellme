@@ -171,7 +171,6 @@ const ACTIVITIES = [
   {id:'walk',label:'Ходьба'},
   {id:'run',label:'Бег'},
   {id:'bike',label:'Велосипед'},
-  {id:'yoga',label:'Йога'},
   {id:'swim',label:'Плавание'},
   {id:'strength',label:'Силовая'},
   {id:'pilates',label:'Пилатес'},
@@ -3909,7 +3908,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         const cachedSrc = urls.length ? photoCache[urls.join('|')] : null;
         const imgBox = cachedSrc
           ? `<img src="${cachedSrc}" style="display:block;width:180px;height:180px;border-radius:8px"/>`
-          : `<div style="display:block;width:180px;height:180px;background:#E5E7EB;border-radius:8px"></div>`;
+          : `<div style="display:block;width:180px;height:180px;background:#E3EFE7;border-radius:8px"></div>`;
         const descFull = (m.description || '').replace(/</g,'&lt;');
         const metaParts = [];
         if (m.hunger) metaParts.push('Голод: ' + m.hunger);
@@ -3964,7 +3963,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
   // so the unit ('мл','мин','ч','/10') can be set in a lighter sans
   // while the big number keeps the serif headline feel.
   const metricDefs = [
-    { key:'water',         label:'Вода',                color:'#7BC8E8', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' мл'} },
+    { key:'water',         label:'Вода',                color:'#7BC8E8', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' / '+(waterNorm||2200)+' мл'} },
     { key:'stool',         label:'Стул (% нормы)',      color:'#A47148', fmt: v => v==null ? {n:'—',u:''} : {n: Math.round(v), u:' %'} },
     { key:'sleepDuration', label:'Длительность сна',    color:'#7B6FDB', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' ч'} },
     { key:'sleepQuality',  label:'Качество сна',        color:'#9B7ED9', fmt: v => v==null ? {n:'—',u:''} : {n: fmt1(v), u:' /10'} },
