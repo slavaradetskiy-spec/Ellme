@@ -3908,7 +3908,7 @@ async function generateReportPDF({ userId, profile, photoUrl, days, allMeals, su
         const cachedSrc = urls.length ? photoCache[urls.join('|')] : null;
         const imgBox = cachedSrc
           ? `<img src="${cachedSrc}" style="display:block;width:180px;height:180px;border-radius:8px"/>`
-          : `<div style="display:block;width:180px;height:180px;background:#E3EFE7;border-radius:8px"></div>`;
+          : `<div style="display:flex;align-items:center;justify-content:center;width:180px;height:180px;background:#E3EFE7;border-radius:8px"><svg width="60" height="52" viewBox="0 0 32 24" fill="none" stroke="#B8D4BE" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="5" width="30" height="18" rx="3"/><path d="M10 5 L12 1 L20 1 L22 5"/><circle cx="16" cy="14" r="5"/><circle cx="16" cy="14" r="2"/></svg></div>`;
         const descFull = (m.description || '').replace(/</g,'&lt;');
         const metaParts = [];
         if (m.hunger) metaParts.push('Голод: ' + m.hunger);
